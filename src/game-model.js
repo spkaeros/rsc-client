@@ -1,4 +1,4 @@
-const Utility = require('./utility');
+const {Utility} = require('./utility');
 const Scene = require('./scene');
 
 const COLOUR_TRANSPARENT = 12345678;
@@ -118,8 +118,8 @@ class GameModel {
         gameModel.lightDirectionY = 155;
         gameModel.lightDirectionZ = 95;
         gameModel.lightDirectionMagnitude = 256;
-        gameModel.lightDiffuse = 512;
-        gameModel.lightAmbience = 32;
+        gameModel.lightDiffuse = 32;
+        gameModel.lightAmbience = 8;
 
         gameModel.allocate(numVertices, numFaces);
 
@@ -152,7 +152,7 @@ class GameModel {
         gameModel.lightDirectionY = 155;
         gameModel.lightDirectionZ = 95;
         gameModel.lightDirectionMagnitude = 256;
-        gameModel.lightDiffuse = 512;
+        gameModel.lightDiffuse = 32;
         gameModel.lightAmbience = 32;
 
         gameModel.merge(pieces, count, true);
@@ -179,7 +179,7 @@ class GameModel {
         gameModel.lightDirectionY = 155;
         gameModel.lightDirectionZ = 95;
         gameModel.lightDirectionMagnitude = 256;
-        gameModel.lightDiffuse = 512;
+        gameModel.lightDiffuse = 32;
         gameModel.lightAmbience = 32;
 
         let j = Utility.getUnsignedShort(data, offset);
@@ -279,7 +279,7 @@ class GameModel {
         gameModel.lightDirectionY = 155;
         gameModel.lightDirectionZ = 95;
         gameModel.lightDirectionMagnitude = 256;
-        gameModel.lightDiffuse = 512;
+        gameModel.lightDiffuse = 32;
         gameModel.lightAmbience = 32;
         gameModel.autocommit = autocommit;
         gameModel.isolated = isolated;
@@ -305,7 +305,7 @@ class GameModel {
         gameModel.lightDirectionY = 155;
         gameModel.lightDirectionZ = 95;
         gameModel.lightDirectionMagnitude = 256;
-        gameModel.lightDiffuse = 512;
+        gameModel.lightDiffuse = 32;
         gameModel.lightAmbience = 32;
         gameModel.autocommit = autocommit;
         gameModel.isolated = isolated;

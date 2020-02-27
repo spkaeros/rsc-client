@@ -1,4 +1,4 @@
-const Utility = require('./utility');
+const {Utility} = require('./utility');
 
 const C_0 = '0'.charCodeAt(0);
 const C_9 = '9'.charCodeAt(0);

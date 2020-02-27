@@ -1,144 +1,111 @@
-const C_A = 'a'.charCodeAt(0);
-const C_AT = '@'.charCodeAt(0);
-const C_DOT = '.'.charCodeAt(0);
-const C_EXCLM = '!'.charCodeAt(0);
-const C_PRCNT = '%'.charCodeAt(0);
-const C_SPACE = ' '.charCodeAt(0);
-const C_Z = 'z'.charCodeAt(0);
-const C_CENT = '\uFFE0'.charCodeAt(0);
+// const charMap = new TextEncoder('utf8').encode(' etaoihnsrdlumwcyfgpbvkxjqz0123456789 !?.,:;()-&*\\\'@#+=£$%"[]');
+const encoder = new TextEncoder('utf-8');
+const decoder = new TextDecoder('utf-8');
 
-function fromCharArray(a) {
-    return Array.from(a).map(c => String.fromCharCode(c)).join('');
-}
+const C_SPACE = 32;
+const C_EXCLM = 33;
+const C_PRCNT = 37;
+const C_DOT = 46;
+const C_COLON = 58;
+const C_AT = 64;
+const C_A = 97;
+const C_Z = 122;
+const C_CENT = 65504;
 
-class ChatMessage {
-    static descramble(buff, off, len) {
-        try {
-            let newLen = 0;
-            let l = -1;
-
-            for (let idx = 0; idx < len; idx++) {
-                let current = buff[off++] & 0xff;
-                let k1 = current >> 4 & 0xf;
-
-                if (l === -1) {
-                    if (k1 < 13) {
-                        ChatMessage.chars[newLen++] = ChatMessage.charMap[k1];
-                    } else {
-                        l = k1;
-                    }
-                } else {
-                    ChatMessage.chars[newLen++] = ChatMessage.charMap[((l << 4) + k1) - 195];
-                    l = -1;
-                }
-
-                k1 = current & 0xf;
-
-                if (l === -1) {
-                    if (k1 < 13) {
-                        ChatMessage.chars[newLen++] = ChatMessage.charMap[k1];
-                    } else {
-                        l = k1;
-                    }
-                } else {
-                    ChatMessage.chars[newLen++] = ChatMessage.charMap[((l << 4) + k1) - 195];
-                    l = -1;
-                }
-            }
-
-            let flag = true;
-
-            for (let l1 = 0; l1 < newLen; l1++) {
-                let c = ChatMessage.chars[l1];
-
-                if (l1 > 4 && c === C_AT) {
-                    ChatMessage.chars[l1] = C_SPACE;
-                }
-
-                if (c === C_PRCNT) {
-                    ChatMessage.chars[l1] = C_SPACE;
-                }
-
-                if (flag && c >= C_A && c <= C_Z) {
-                    ChatMessage.chars[l1] += C_CENT;
-                    flag = false;
-                }
-
-                if (c === C_DOT || c === C_EXCLM) {
-                    flag = true;
-                }
-            }
-
-            return fromCharArray(ChatMessage.chars.slice(0, newLen));
-        } catch (e) {
-            return '.';
-        }
-    }
-
-    static scramble(s) {
-        if (s.length > 80) {
-            s = s.slice(0, 80);
-        }
-
-        s = s.toLowerCase();
-
-        let off = 0;
-        let lshift = -1;
-
-        for (let k = 0; k < s.length; k++) {
-            let currentChar = s.charCodeAt(k);
-            let foundCharMapIdx = 0;
-
-            for (let n = 0; n < ChatMessage.charMap.length; n++) {
-                if (currentChar !== ChatMessage.charMap[n]) {
-                    continue;
-                }
-
-                foundCharMapIdx = n;
-                break;
-            }
-
-            if (foundCharMapIdx > 12) {
-                foundCharMapIdx += 195;
-            }
-
-            if (lshift === -1) {
-                if (foundCharMapIdx < 13) {
-                    lshift = foundCharMapIdx;
-                } else {
-                    ChatMessage.scrambledBytes[off++] = foundCharMapIdx & 0xff;
-                }
-            } else if (foundCharMapIdx < 13) {
-                ChatMessage.scrambledBytes[off++] = ((lshift << 4) + foundCharMapIdx) & 0xff;
-                lshift = -1;
+let normalize = msg => {
+    let nextCaseMod = C_CENT;
+    for (let index = 0; index < msg.length; index++) {
+        if (msg[index] === C_AT) {
+            if (index === 4 && msg[index-4] === C_AT)
+                nextCaseMod = C_CENT;
+            else if (index === 0 && msg[index+4] === C_AT) {
+                nextCaseMod = 0;
             } else {
-                ChatMessage.scrambledBytes[off++] = ((lshift << 4) + (foundCharMapIdx >> 4)) & 0xff;
-                lshift = foundCharMapIdx & 0xf;
+                msg[index] = C_SPACE;
             }
+        } else if (msg[index] === C_PRCNT) {
+            msg[index] = C_SPACE;
+        } else if (msg[index] === C_DOT || msg[index] === C_EXCLM) {
+            nextCaseMod = C_CENT;
+        } else if (msg[index] >= C_A && msg[index] <= C_Z) {
+            msg[index] += nextCaseMod;
+            nextCaseMod = 0;
         }
-
-        if (lshift !== -1) {
-            ChatMessage.scrambledBytes[off++] = (lshift << 4) & 0xff;
-        }
-
-        return off;
     }
-}
+    return msg;
+};
 
-ChatMessage.scrambledBytes = new Int8Array(100);
-ChatMessage.chars = new Uint16Array(100);
-ChatMessage.charMap = [
-    ' ', 'e', 't', 'a', 'o', 'i', 'h', 'n', 's', 'r',
-    'd', 'l', 'u', 'm', 'w', 'c', 'y', 'f', 'g', 'p',
-    'b', 'v', 'k', 'x', 'j', 'q', 'z', '0', '1', '2',
-    '3', '4', '5', '6', '7', '8', '9', ' ', '!', '?',
-    '.', ',', ':', ';', '(', ')', '-', '&', '*', '\\',
-    '\'', '@', '#', '+', '=', '\243', '$', '%', '"', '[',
-    ']'
-];
+const decodeString = buff => {
+    return decoder.decode(normalize(buff));
+    // let msg = new Uint8Array(100);
+    // let bitsBuf = -1;
+    // let off = 0;
+    // // we read lower 4 bits, see if they are of use right now, and if not stash them
+    // // then read upper 4 bits and add the two halfs to get your next message characters alphabet idx.
+    // // repeat until all data is exhausted
+    // for (let current of buff) {
+    //     for (let curHalf of [(current >> 4) & 0xF, current & 0xF]) {
+    //         if (bitsBuf === -1) {
+    //             if (curHalf < 13) {
+    //                 msg[off++] = charMap[curHalf];
+    //             } else {
+    //                 bitsBuf = curHalf;
+    //             }
+    //         } else {
+    //             msg[off++] = charMap[((bitsBuf << 4) | curHalf) - 195];
+    //             bitsBuf = -1;
+    //         }
+    //     }
+    // }
+    
+    // return String(normalize(msg.slice(0, off)).map(c => String.fromCharCode(c)).join(''));
+};
 
-ChatMessage.charMap = new Uint16Array(ChatMessage.charMap.map(c => {
-    return c.charCodeAt(0);
-}));
+const encodeString = (s) => {
+    if (s.length > 80) {
+        s = s.slice(0, 80);
+    }
+    s = s.toLowerCase();
+    
+    return encoder.encode(s);
+    // let off = 0;
+    // let msg = new Uint8Array(100);
+    // let bitBuf = -1;
+    //
+    // for (let k = 0; k < s.length; k++) {
+    //     let foundCharMapIdx = 0; // 0 is space key, if no matches default to it.
+    //
+    //     for (let n = 0; n < charMap.length; n++) {
+    //         if (s.charCodeAt(k) === charMap[n]) {
+    //             foundCharMapIdx = n;
+    //             break;
+    //         }
+    //     }
+    //     if (foundCharMapIdx > 12) {
+    //         // why rly?
+    //         foundCharMapIdx += 195;
+    //     }
+    //
+    //     if (bitBuf === -1) {
+    //         if (foundCharMapIdx < 13) {
+    //             bitBuf = foundCharMapIdx;
+    //         } else {
+    //             msg[off++] = foundCharMapIdx & 0xFF;
+    //         }
+    //     } else if (foundCharMapIdx < 13) {
+    //         msg[off++] = (bitBuf << 4) + foundCharMapIdx & 0xFF;
+    //         bitBuf = -1;
+    //     } else {
+    //         msg[off++] = (bitBuf << 4) + (foundCharMapIdx >> 4) & 0xFF;
+    //         bitBuf = foundCharMapIdx & 0xF;
+    //     }
+    // }
+    //
+    // if (bitBuf !== -1) {
+    //     msg[off++] = (bitBuf << 4) & 0xFF;
+    // }
+    //
+    // return msg.slice(0, off);
+};
 
-module.exports = ChatMessage;
+module.exports = {decodeString, encodeString};

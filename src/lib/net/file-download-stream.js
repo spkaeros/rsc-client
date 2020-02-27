@@ -1,5 +1,3 @@
-// a quick shim for downloading files
-
 const sleep = require('sleep-promise');
 
 class FileDownloadStream {

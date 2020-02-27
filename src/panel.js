@@ -124,7 +124,7 @@ class Panel {
         }
     }
 
-    keyPress(key) {
+    keyPress(code, key) {
         if (key === 0) {
             return;
         }
@@ -132,28 +132,27 @@ class Panel {
         if (this.focusControlIndex !== -1 && this.controlText[this.focusControlIndex] !== null && this.controlShown[this.focusControlIndex]) {
             let inputLen = this.controlText[this.focusControlIndex].length;
 
-            if (key === 8 && inputLen > 0) {
+            if (code === 'Backspace' && inputLen > 0) {
                 this.controlText[this.focusControlIndex] = this.controlText[this.focusControlIndex].slice(0, inputLen - 1);
+                return;
             }
 
-            if ((key === 10 || key === 13) && inputLen > 0) {
+            if ((code === 'Enter' || code === 'NumpadEnter') && inputLen > 0) {
                 this.controlClicked[this.focusControlIndex] = true;
+                return;
             }
 
-            let s = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!"£$%^&*()-_=+[{]};:\'@#~,<.>/?\\| ';
-
-            if (inputLen < this.controlInputMaxLen[this.focusControlIndex]) {
-                for (let k = 0; k < s.length; k++) {
-                    if (key === s.charCodeAt(k)) {
-                        this.controlText[this.focusControlIndex] += String.fromCharCode(key);
-                    }
-                }
-            }
-
-            if (key === 9) {
+            if (code === 'Tab') {
                 do {
                     this.focusControlIndex = (this.focusControlIndex + 1) % this.controlCount;
                 } while (this.controlType[this.focusControlIndex] !== 5 && this.controlType[this.focusControlIndex] !== 6);
+                return;
+            }
+
+            if (inputLen < this.controlInputMaxLen[this.focusControlIndex]) {
+                if (key !== 65535) {
+                    this.controlText[this.focusControlIndex] += String.fromCharCode(key);
+                }
             }
         }
     }
@@ -519,7 +518,7 @@ class Panel {
             }
 
             // the up and down arrow buttons on the scrollbar
-            if (this.mouseButtonDown === 1 && this.mouseX >= cornerTopRight && this.mouseX <= cornerTopRight + 12) { 
+            if (this.mouseButtonDown === 1 && this.mouseX >= cornerTopRight && this.mouseX <= cornerTopRight + 12) {
                 if (this.mouseY > y && this.mouseY < y + 12 && listEntryPosition > 0) {
                     listEntryPosition--;
                 }
@@ -600,6 +599,30 @@ class Panel {
             }
         }
     }
+
+    toggleCheckbox(control, activated) {
+        this.controlListEntryMouseButtonDown[control] = (activated ? 1 : 0);
+    }
+
+    isActivated(control) {
+        return this.controlListEntryMouseButtonDown[control] !== 0;
+    }
+
+
+    // TODO rename this to addText
+    addString(x, y, text, size, flag) {
+        this.controlType[this.controlCount] = CONTROL_TYPES.TEXT;
+        this.controlShown[this.controlCount] = true;
+        this.controlClicked[this.controlCount] = false;
+        this.controlTextSize[this.controlCount] = size;
+        this.controlUseAlternativeColour[this.controlCount] = flag;
+        this.controlX[this.controlCount] = x;
+        this.controlY[this.controlCount] = y;
+        this.controlText[this.controlCount] = text;
+
+        return this.controlCount++;
+    }
+
 
     addText(x, y, text, size, flag) {
         this.controlType[this.controlCount] = 1;

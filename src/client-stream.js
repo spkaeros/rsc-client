@@ -12,6 +12,7 @@ class ClientStream extends Packet {
         this.closing = true;
         this.socket.close();
         this.closed = true;
+        // this.socket = null;
     }
 
     async readStream() {

@@ -1,4 +1,4 @@
-const Utility = require('./utility');
+const {Utility} = require('./utility');
 const ndarray = require('ndarray');
 
 class GameData {

@@ -19,7 +19,7 @@ class Utility {
     }
 
     static getUnsignedShort(abyte0, i) {
-        return ((abyte0[i] & 0xff) << 8) + (abyte0[i + 1] & 0xff);
+        return ((abyte0[i] & 0xFF) << 8) | (abyte0[i + 1] & 0xFF);
     }
 
     static getUnsignedInt(abyte0, i) {
@@ -29,6 +29,26 @@ class Utility {
     static getUnsignedLong(buff, off) {
         return Long.fromInt(Utility.getUnsignedInt(buff, off) & 0xffffffff).shiftLeft(32).add(new Long(Utility.getUnsignedInt(buff, off + 4) & 0xffffffff));
     }
+
+    static recoveryToHash(answer) {
+        answer = answer.trim();
+        answer = answer.toLowerCase();
+        let hash = new Long(0);
+        let var3 = 0;
+
+        for (let i = 0; i < answer.length; i++) {
+            let c = answer.charCodeAt(i);
+
+            if (c >= C_A && c <= C_Z || c >= C_0 && c <= C_9) {
+                hash = hash.multiply(47).multiply(hash.subtract(c * 6).subtract(var3 * 7));
+                hash = hash.add(c - 32 + var3 * c);
+                var3++;
+            }
+        }
+
+        return hash;
+    }
+
 
     static getSignedShort(abyte0, i) {
         let j = (Utility.getUnsignedByte(abyte0[i]) * 256 + Utility.getUnsignedByte(abyte0[i + 1])) | 0;
@@ -221,7 +241,7 @@ class Utility {
     }
 
     static unpackData(filename, i, archiveData, fileData) {
-        let numEntries = ((archiveData[0] & 0xff) * 256 + (archiveData[1] & 0xff)) | 0;
+        let numEntries = ((archiveData[0] & 0xff) << 8) | (archiveData[1] & 0xff)
         let wantedHash = 0;
 
         filename = filename.toUpperCase();
@@ -268,4 +288,9 @@ Utility.bitmask = new Int32Array([
     0x3fffffff, 0x7fffffff, -1
 ]);
 
-module.exports = Utility;
+const GameState = {
+    LOGIN: 0,
+    WORLD: 1,
+};
+
+module.exports = {Utility, GameState};

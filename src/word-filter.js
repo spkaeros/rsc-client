@@ -58,7 +58,8 @@ class WordFilter {
     }
 
     static loadBad(buffer) {
-        let wordCount = buffer.getUnsignedInt();
+        // let wordCount = buffer.getUnsignedInt();
+        let wordCount = 0;
 
         WordFilter.badList = [];
         WordFilter.badList.length = wordCount;
@@ -67,7 +68,7 @@ class WordFilter {
         WordFilter.badCharIds.length = wordCount;
         WordFilter.badCharIds.fill(null);
 
-        WordFilter.readBuffer(buffer, WordFilter.badList, WordFilter.badCharIds);
+        // WordFilter.readBuffer(buffer, WordFilter.badList, WordFilter.badCharIds);
     }
 
     static loadHost(buffer) {
@@ -85,7 +86,7 @@ class WordFilter {
 
     static loadFragments(buffer) {
         WordFilter.hashFragments = new Int32Array(buffer.getUnsignedInt());
-
+        
         for (let i = 0; i < WordFilter.hashFragments.length; i++) {
             WordFilter.hashFragments[i] = buffer.getUnsignedShort();
         }
