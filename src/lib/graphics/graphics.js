@@ -21,7 +21,7 @@ class Graphics {
     }
 
     setFont(font) {
-        this.ctx.font = font.toCanvasFont();
+        this.ctx.font = String(font);
     }
 
     drawString(s, x, y) {

@@ -1,5 +1,4 @@
 class GameBuffer {
-    // buffer is an Int8Array
     constructor(buffer) {
         this.buffer = buffer;
         this.offset = 0;
@@ -50,11 +49,14 @@ class GameBuffer {
             ((this.buffer[this.offset - 2] & 0xff) << 8) + 
             (this.buffer[this.offset - 1] & 0xff);
     }
-
-    getBytes(dest, destPos, len) {
-        for (let i = destPos; i < len; i++) {
-            dest[destPos + i] = this.buffer[this.offset++];
-        }
+    
+    getString(len = 0) {
+        if (len < 0)
+            return '';
+        this.offset += len;
+        if (this.offset > this.buffer.length)
+            this.offset = this.buffer.length;
+        return new TextDecoder().decode(this.buffer.slice(this.offset-len, this.offset));
     }
 }
 

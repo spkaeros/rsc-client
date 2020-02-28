@@ -25,6 +25,57 @@ const ZOOM_MAX = 1250;
 const ZOOM_INDOORS = 550;
 const ZOOM_OUTDOORS = 750;
 
+const loadTld = buffer => {
+    WordFilter.tldList = [];
+    
+    for (let i = 0; i < buffer.getUnsignedInt(); i++) {
+        const tldScore = buffer.getUnsignedByte();
+        let tldValue = buffer.getString(buffer.getUnsignedByte());
+        
+        if (tldValue.length > 0) {
+            WordFilter.tldList.push({
+                score: tldScore,
+                tld: tldValue
+            });
+        }
+    }
+};
+
+const loadBad = buffer => {
+    // let wordCount = buffer.getUnsignedInt();
+    let wordCount = 0;
+    
+    WordFilter.badList = [];
+    // WordFilter.badList.length = wordCount;
+    // WordFilter.badList.fill(null);
+    WordFilter.badCharIds = [];
+    // WordFilter.badCharIds.length = wordCount;
+    // WordFilter.badCharIds.fill(null);
+    
+    // WordFilter.readBuffer(buffer, WordFilter.badList, WordFilter.badCharIds);
+};
+
+const loadHost = buffer => {
+    let wordCount = buffer.getUnsignedInt();
+    
+    WordFilter.hostList = [];
+    WordFilter.hostList.length = wordCount;
+    WordFilter.hostList.fill(null);
+    WordFilter.hostCharIds = [];
+    WordFilter.hostCharIds.length = wordCount;
+    WordFilter.hostCharIds.fill(null);
+    
+    WordFilter.readBuffer(buffer, WordFilter.hostList, WordFilter.hostCharIds);
+};
+
+const loadFragments = buffer => {
+    WordFilter.hashFragments = new Uint16Array(buffer.getUnsignedInt());
+    
+    for (let i = 0; i < WordFilter.hashFragments.length; i++) {
+        WordFilter.hashFragments[i] = buffer.getUnsignedShort();
+    }
+};
+
 const getCookie = cname => {
     const name = cname + '=';
     const decodedCookie = decodeURIComponent(document.cookie);
@@ -3276,18 +3327,12 @@ class mudclient extends GameConnection {
 
         let abyte1 = await this.readDataFile('filter' + VERSION.FILTER + '.jag', 'Chat system', 15);
 
-        if (abyte1 === null) {
-            this.errorLoadingData = true;
-            
-        } else {
-            let buffragments = Utility.loadData('fragmentsenc.txt', 0, abyte1);
-            let buffbandenc = Utility.loadData('badenc.txt', 0, abyte1);
-            let buffhostenc = Utility.loadData('hostenc.txt', 0, abyte1);
-            let bufftldlist = Utility.loadData('tldlist.txt', 0, abyte1);
-
-            WordFilter.loadFilters(new GameBuffer(buffragments), new GameBuffer(buffbandenc), new GameBuffer(buffhostenc), new GameBuffer(bufftldlist));
-            
-        }
+        if (abyte1 !== null) {
+            loadBad(new GameBuffer(Utility.loadData('badenc.txt', 0, abyte1)));
+            loadHost(new GameBuffer(Utility.loadData('hostenc.txt', 0, abyte1)));
+            loadFragments(new GameBuffer(Utility.loadData('fragmentsenc.txt', 0, abyte1)));
+            loadTld(new GameBuffer(Utility.loadData('tldlist.txt', 0, abyte1)));
+        } else this.errorLoadingData = true;
     }
 
     addNpc(serverIndex, x, y, sprite, type) {
@@ -4566,7 +4611,7 @@ class mudclient extends GameConnection {
         }
 
         if (!this.errorLoadingData) {
-            this.showLoadingProgress(100, 'Starting game...');
+            this.drawLoadingStatus(100, 'Starting game...');
             this.createMessageTabPanel();
             this.createLoginPanels();
             this.createAppearancePanel();

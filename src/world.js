@@ -1774,43 +1774,40 @@ class World {
         }
 
         if (GameData.objectType[id] === 1 || GameData.objectType[id] === 2) {
-            let l = this.getTileDirection(x, y);
-            let i1 = 0;
-            let j1 = 0;
+            let direction = this.getTileDirection(x, y);
+            let height = GameData.objectHeight[id];
+            let width = GameData.objectWidth[id];
 
-            if (l === 0 || l === 4) {
-                i1 = GameData.objectWidth[id];
-                j1 = GameData.objectHeight[id];
-            } else {
-                j1 = GameData.objectWidth[id];
-                i1 = GameData.objectHeight[id];
+            if (direction === 0 || direction === 4) {
+                height = GameData.objectWidth[id];
+                width = GameData.objectHeight[id];
             }
 
-            for (let k1 = x; k1 < x + i1; k1++) {
-                for (let l1 = y; l1 < y + j1; l1++) {
+            for (let k1 = x; k1 < x + height; k1++) {
+                for (let l1 = y; l1 < y + width; l1++) {
                     const adjacency = this.objectAdjacency.get(k1, l1);
 
                     if (GameData.objectType[id] === 1) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111110111111);
-                    } else if (l === 0) {
+                    } else if (direction === 0) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111111111101);
 
                         if (k1 > 0) {
                             this.method407(k1 - 1, l1, 8);
                         }
-                    } else if (l === 2) {
+                    } else if (direction === 2) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111111111011);
 
                         if (l1 < 95) {
                             this.method407(k1, l1 + 1, 1);
                         }
-                    } else if (l === 4) {
+                    } else if (direction === 4) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111111110111);
 
                         if (k1 < 95) {
                             this.method407(k1 + 1, l1, 2);
                         }
-                    } else if (l === 6) {
+                    } else if (direction === 6) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111111111110);
 
                         if (l1 > 0) {
@@ -1820,7 +1817,7 @@ class World {
                 }
             }
 
-            this.method404(x, y, i1, j1);
+            this.method404(x, y, height, width);
         }
     }
     
