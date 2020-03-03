@@ -4,6 +4,7 @@ const GameModel = require('./game-model');
 const {Utility} = require('./utility');
 const ndarray = require('ndarray');
 
+const OBJECT_MAPS_START = 48000;
 class World {
     constructor(scene, surface) {
         this.regionWidth = 96;
@@ -296,7 +297,7 @@ class World {
         }
     }
 
-    _loadSection_from4I(x, y, plane, chunk) {
+    decodeSector(x, y, plane, chunk) {
         let mapName = 'm' + plane + ((x / 10) | 0) + x % 10 + ((y / 10) | 0) + y % 10;
             if (this.landscapePack !== null) {
                 let mapData = Utility.loadData(mapName + '.hei', 0, this.landscapePack);
@@ -479,10 +480,10 @@ class World {
             return this._loadSection_from3(...args);
         case 4:
             if (typeof args[3] === 'number') {
-                return this._loadSection_from4I(...args);
+                return this.decodeSector(...args);
             }
 
-            return this._loadSection_from4(...args);
+            return this.loadRegionThenMakeModel(...args);
         }
     }
 
@@ -566,11 +567,11 @@ class World {
     fillEmptySectorsAndBorder() {
         for (let x = 0; x < this.regionWidth; x++) {
             for (let y = 0; y < this.regionHeight; y++) {
-                if (this.getTileDecoration(x, y, 0) === 250) {
+                if (this.getOverlayID(x, y, 0) === 250) {
                     // fills in the white edge surrounding ground-level sectors
-                    if (x === 47 && this.getTileDecoration(x + 1, y, 0) !== 250 && this.getTileDecoration(x + 1, y, 0) !== 2) {
+                    if (x === 47 && this.getOverlayID(x + 1, y, 0) !== 250 && this.getOverlayID(x + 1, y, 0) !== 2) {
                         this.setTileDecoration(x, y, 9);
-                    } else if (y === 47 && this.getTileDecoration(x, y + 1, 0) !== 250 && this.getTileDecoration(x, y + 1, 0) !== 2) {
+                    } else if (y === 47 && this.getOverlayID(x, y + 1, 0) !== 250 && this.getOverlayID(x, y + 1, 0) !== 2) {
                         this.setTileDecoration(x, y, 9); 
                     } else {
                         // Fills in the empty ground-level landscape to water overlay
@@ -657,7 +658,7 @@ class World {
         return this.tileDecoration.get(h, x * 48 + y) & 0xff;
     }
 
-    getTileDecoration(...args) {
+    getOverlayID(...args) {
         switch (args.length) {
         case 3:
             return this._getTileDecoration_from3(...args);
@@ -868,14 +869,14 @@ class World {
         }
     }
 
-    _loadSection_from4(x, y, plane, flag) {
+    loadRegionThenMakeModel(x, y, plane, flag) {
         let l = ((x + 24) / 48) | 0;
         let i1 = ((y + 24) / 48) | 0;
 
-        this._loadSection_from4I(l - 1, i1 - 1, plane, 0);
-        this._loadSection_from4I(l, i1 - 1, plane, 1);
-        this._loadSection_from4I(l - 1, i1, plane, 2);
-        this._loadSection_from4I(l, i1, plane, 3);
+        this.decodeSector(l - 1, i1 - 1, plane, 0);
+        this.decodeSector(l, i1 - 1, plane, 1);
+        this.decodeSector(l - 1, i1, plane, 2);
+        this.decodeSector(l, i1, plane, 3);
         this.fillEmptySectorsAndBorder();
 
         if (this.parentModel === null) {
@@ -893,36 +894,48 @@ class World {
 
             let gameModel = this.parentModel;
             gameModel.clear();
+    
+            // for each tile, we offset the ambient lighting, to make the world seem less fake??
+            // the tile vectors new ambience will be set to (256 - (rand(-5, 5)*4)
+            for (let x = 0; x < this.regionWidth; x++) for (let y = 0; y < this.regionHeight; y++) {
+                let z = -this.getTerrainHeight(x, y);
+    
+                for (let xOff = -1; xOff < 1; xOff++) {
+                    for (let yOff = -1; yOff < 1; yOff++) {
+                        let overlayID = this.getOverlayID(x + xOff, y + yOff, plane);
+                        if (overlayID > 0 && GameData.overlays[overlayID-1] === 4) {
+                            z = 0;
+                            break;
+                        }
+                    }
+                }
+                // if (this.getOverlayID(x, y, plane) > 0 && GameData.overlays[this.getOverlayID(x, y, plane) - 1] === 4) {
+                //     z = 0;
+                // }
+                //
+                // if (this.getOverlayID(x - 1, y, plane) > 0 && GameData.overlays[this.getOverlayID(x - 1, y, plane) - 1] === 4) {
+                //     z = 0;
+                // }
+                //
+                // if (this.getOverlayID(x, y - 1, plane) > 0 && GameData.overlays[this.getOverlayID(x, y - 1, plane) - 1] === 4) {
+                //     z = 0;
+                // }
+                //
+                // if (this.getOverlayID(x - 1, y - 1, plane) > 0 && GameData.overlays[this.getOverlayID(x - 1, y - 1, plane) - 1] === 4) {
+                //     z = 0;
+                // }
+    
+                let vertexHandle = gameModel.vertexAt(x * this.tileSize, z, y * this.tileSize);
+                // let ambienceOffset = rand(-5, 5)
+                let ambienceOffset = (Math.random() * 10 | 0) - 5;
 
-            for (let j2 = 0; j2 < this.regionWidth; j2++) for (let i3 = 0; i3 < this.regionHeight; i3++) {
-                let i4 = -this.getTerrainHeight(j2, i3);
-    
-                if (this.getTileDecoration(j2, i3, plane) > 0 && GameData.tileType[this.getTileDecoration(j2, i3, plane) - 1] === 4) {
-                    i4 = 0;
-                }
-    
-                if (this.getTileDecoration(j2 - 1, i3, plane) > 0 && GameData.tileType[this.getTileDecoration(j2 - 1, i3, plane) - 1] === 4) {
-                    i4 = 0;
-                }
-    
-                if (this.getTileDecoration(j2, i3 - 1, plane) > 0 && GameData.tileType[this.getTileDecoration(j2, i3 - 1, plane) - 1] === 4) {
-                    i4 = 0;
-                }
-    
-                if (this.getTileDecoration(j2 - 1, i3 - 1, plane) > 0 && GameData.tileType[this.getTileDecoration(j2 - 1, i3 - 1, plane) - 1] === 4) {
-                    i4 = 0;
-                }
-    
-                let j5 = gameModel.vertexAt(j2 * this.tileSize, i4, i3 * this.tileSize);
-                let j7 = ((Math.random() * 10) | 0) - 5;
-    
-                gameModel.setVertexAmbience(j5, j7);
+                gameModel.setVertexAmbience(vertexHandle, ambienceOffset);
             }
     
             for (let lx = 0; lx < 95; lx++) {
                 for (let ly = 0; ly < 95; ly++) {
-                    let colourIndex = this.getTerrainColour(lx, ly);
-                    let colour = this.terrainColours[colourIndex];
+                    let groundColor = this.getTerrainColour(lx, ly);
+                    let colour = this.terrainColours[groundColor];
                     let colour_1 = colour;
                     let colour_2 = colour;
                     let l14 = 0;
@@ -932,41 +945,41 @@ class World {
                         colour_1 = World.colourTransparent;
                         colour_2 = World.colourTransparent;
                     }
-
-                    if (this.getTileDecoration(lx, ly, plane) > 0) {
-                        let decorationType = this.getTileDecoration(lx, ly, plane);
-                        let decorationTileType = GameData.tileType[decorationType - 1];
+    
+                    let overlayIndex = this.getOverlayID(lx, ly, plane);
+                    if (overlayIndex > 0) {
+                        let overlay = GameData.overlays[overlayIndex - 1];
                         let tileType = this.getTileType(lx, ly, plane);
 
-                        colour = colour_1 = GameData.tileDecoration[decorationType - 1];
+                        colour = colour_1 = GameData.tileDecoration[overlayIndex - 1];
 
-                        if (decorationTileType === 4) {
+                        if (overlay === 4) {
                             colour = 1;
                             colour_1 = 1;
 
-                            if (decorationType === 12) {
+                            if (overlayIndex === 12) {
                                 colour = 31;
                                 colour_1 = 31;
                             }
                         }
 
-                        if (decorationTileType === 5) {
+                        if (overlay === 5) {
                             if (this.getWallDiagonal(lx, ly) > 0 && this.getWallDiagonal(lx, ly) < 24000) {
-                                if (this.getTileDecoration(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getTileDecoration(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
-                                    colour = this.getTileDecoration(lx - 1, ly, plane, colour_2);
+                                if (this.getOverlayID(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
+                                    colour = this.getOverlayID(lx - 1, ly, plane, colour_2);
                                     l14 = 0;
-                                } else if (this.getTileDecoration(lx + 1, ly, plane, colour_2) !== World.colourTransparent && this.getTileDecoration(lx, ly + 1, plane, colour_2) !== World.colourTransparent) {
-                                    colour_1 = this.getTileDecoration(lx + 1, ly, plane, colour_2);
+                                } else if (this.getOverlayID(lx + 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly + 1, plane, colour_2) !== World.colourTransparent) {
+                                    colour_1 = this.getOverlayID(lx + 1, ly, plane, colour_2);
                                     l14 = 0;
-                                } else if (this.getTileDecoration(lx + 1, ly, plane, colour_2) !== World.colourTransparent && this.getTileDecoration(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
-                                    colour_1 = this.getTileDecoration(lx + 1, ly, plane, colour_2);
+                                } else if (this.getOverlayID(lx + 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
+                                    colour_1 = this.getOverlayID(lx + 1, ly, plane, colour_2);
                                     l14 = 1;
-                                } else if (this.getTileDecoration(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getTileDecoration(lx, ly + 1, plane, colour_2) !== World.colourTransparent) {
-                                    colour = this.getTileDecoration(lx - 1, ly, plane, colour_2);
+                                } else if (this.getOverlayID(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly + 1, plane, colour_2) !== World.colourTransparent) {
+                                    colour = this.getOverlayID(lx - 1, ly, plane, colour_2);
                                     l14 = 1;
                                 }
                             }
-                        } else if (decorationTileType !== 2 || this.getWallDiagonal(lx, ly) > 0 && this.getWallDiagonal(lx, ly) < 24000) {
+                        } else if (overlay !== 2 || this.getWallDiagonal(lx, ly) > 0 && this.getWallDiagonal(lx, ly) < 24000) {
                             if (this.getTileType(lx - 1, ly, plane) !== tileType && this.getTileType(lx, ly - 1, plane) !== tileType) {
                                 colour = colour_2;
                                 l14 = 0;
@@ -982,12 +995,12 @@ class World {
                             }
                         }
                         
-                        if (GameData.tileAdjacent[decorationType - 1] !== 0) {
+                        if (GameData.tileAdjacent[overlayIndex - 1] !== 0) {
                             const adjacency = this.objectAdjacency.get(lx, ly);
                             this.objectAdjacency.set(lx, ly, adjacency | 0x40);
                         }
 
-                        if (GameData.tileType[decorationType - 1] === 2) {
+                        if (GameData.overlays[overlayIndex - 1] === 2) {
                             const adjacency = this.objectAdjacency.get(lx, ly);
                             this.objectAdjacency.set(lx, ly, adjacency | 0x80);
                         }
@@ -1073,8 +1086,8 @@ class World {
 
             for (let k4 = 1; k4 < 95; k4++) {
                 for (let i6 = 1; i6 < 95; i6++) {
-                    if (this.getTileDecoration(k4, i6, plane) > 0 && GameData.tileType[this.getTileDecoration(k4, i6, plane) - 1] === 4) {
-                        let l7 = GameData.tileDecoration[this.getTileDecoration(k4, i6, plane) - 1];
+                    if (this.getOverlayID(k4, i6, plane) > 0 && GameData.overlays[this.getOverlayID(k4, i6, plane) - 1] === 4) {
+                        let l7 = GameData.tileDecoration[this.getOverlayID(k4, i6, plane) - 1];
                         let j10 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                         let l12 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                         let i15 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -1085,9 +1098,9 @@ class World {
                         this.localY[i20] = i6;
                         gameModel.faceTag[i20] = 0x30d40 + i20;
                         this.method402(k4, i6, 0, l7, l7);
-                    } else if (this.getTileDecoration(k4, i6, plane) === 0 || GameData.tileType[this.getTileDecoration(k4, i6, plane) - 1] !== 3) {
-                        if (this.getTileDecoration(k4, i6 + 1, plane) > 0 && GameData.tileType[this.getTileDecoration(k4, i6 + 1, plane) - 1] === 4) {
-                            let i8 = GameData.tileDecoration[this.getTileDecoration(k4, i6 + 1, plane) - 1];
+                    } else if (this.getOverlayID(k4, i6, plane) === 0 || GameData.overlays[this.getOverlayID(k4, i6, plane) - 1] !== 3) {
+                        if (this.getOverlayID(k4, i6 + 1, plane) > 0 && GameData.overlays[this.getOverlayID(k4, i6 + 1, plane) - 1] === 4) {
+                            let i8 = GameData.tileDecoration[this.getOverlayID(k4, i6 + 1, plane) - 1];
                             let k10 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                             let i13 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                             let j15 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -1100,8 +1113,8 @@ class World {
                             this.method402(k4, i6, 0, i8, i8);
                         }
 
-                        if (this.getTileDecoration(k4, i6 - 1, plane) > 0 && GameData.tileType[this.getTileDecoration(k4, i6 - 1, plane) - 1] === 4) {
-                            let j8 = GameData.tileDecoration[this.getTileDecoration(k4, i6 - 1, plane) - 1];
+                        if (this.getOverlayID(k4, i6 - 1, plane) > 0 && GameData.overlays[this.getOverlayID(k4, i6 - 1, plane) - 1] === 4) {
+                            let j8 = GameData.tileDecoration[this.getOverlayID(k4, i6 - 1, plane) - 1];
                             let l10 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                             let j13 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                             let k15 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -1114,8 +1127,8 @@ class World {
                             this.method402(k4, i6, 0, j8, j8);
                         }
 
-                        if (this.getTileDecoration(k4 + 1, i6, plane) > 0 && GameData.tileType[this.getTileDecoration(k4 + 1, i6, plane) - 1] === 4) {
-                            let k8 = GameData.tileDecoration[this.getTileDecoration(k4 + 1, i6, plane) - 1];
+                        if (this.getOverlayID(k4 + 1, i6, plane) > 0 && GameData.overlays[this.getOverlayID(k4 + 1, i6, plane) - 1] === 4) {
+                            let k8 = GameData.tileDecoration[this.getOverlayID(k4 + 1, i6, plane) - 1];
                             let i11 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                             let k13 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                             let l15 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -1128,8 +1141,8 @@ class World {
                             this.method402(k4, i6, 0, k8, k8);
                         }
 
-                        if (this.getTileDecoration(k4 - 1, i6, plane) > 0 && GameData.tileType[this.getTileDecoration(k4 - 1, i6, plane) - 1] === 4) {
-                            let l8 = GameData.tileDecoration[this.getTileDecoration(k4 - 1, i6, plane) - 1];
+                        if (this.getOverlayID(k4 - 1, i6, plane) > 0 && GameData.overlays[this.getOverlayID(k4 - 1, i6, plane) - 1] === 4) {
+                            let l8 = GameData.tileDecoration[this.getOverlayID(k4 - 1, i6, plane) - 1];
                             let j11 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                             let l13 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                             let i16 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -1145,7 +1158,7 @@ class World {
                 }
             }
 
-            gameModel._setLight_from6(true, 40, 48, -50, -10, -50);
+            gameModel.createGouraudLightSource(true, 40, 48, -50, -10, -50);
             this.terrainModels = this.parentModel.split(0, 0, 1536, 1536, 8, 64, 233, false);
 
             for (let j6 = 0; j6 < 64; j6++) {
@@ -1240,7 +1253,7 @@ class World {
             this.surface.drawSpriteMinimap(this.baseMediaSprite - 1, 0, 0, 285, 285);
         }
 
-        this.parentModel._setLight_from6(false, 60, 24, -50, -10, -50);
+        this.parentModel.createGouraudLightSource(false, 60, 24, -50, -10, -50);
 
         this.wallModels[plane] = this.parentModel.split(0, 0, 1536, 1536, 8, 64, 338, true);
 
@@ -1586,7 +1599,7 @@ class World {
             }
         }
 
-        this.parentModel._setLight_from6(true, 50, 50, -50, -10, -50);
+        this.parentModel.createGouraudLightSource(true, 50, 50, -50, -10, -50);
         this.roofModels[plane] = this.parentModel.split(0, 0, 1536, 1536, 8, 64, 169, true);
 
         for (let l9 = 0; l9 < 64; l9++) {
@@ -1613,65 +1626,64 @@ class World {
     }
 
     getTileType(i, j, k) {
-        let l = this.getTileDecoration(i, j, k);
+        let l = this.getOverlayID(i, j, k);
 
         if (l === 0) {
             return -1;
         }
 
-        let i1 = GameData.tileType[l - 1];
+        let i1 = GameData.overlays[l - 1];
 
         return i1 !== 2 ? 0 : 1;
     }
 
     addModels(models) {
-        for (let i = 0; i < 94; i++) {
-            for (let j = 0; j < 94; j++) {
-                if (this.getWallDiagonal(i, j) > 48000 && this.getWallDiagonal(i, j) < 60000) {
-                    let k = this.getWallDiagonal(i, j) - 48001;
-                    let l = this.getTileDirection(i, j);
-                    let i1 = 0;
-                    let j1 = 0;
-
-                    if (l === 0 || l === 4) {
-                        i1 = GameData.objectWidth[k];
-                        j1 = GameData.objectHeight[k];
-                    } else {
-                        j1 = GameData.objectWidth[k];
-                        i1 = GameData.objectHeight[k];
+        for (let x = 0; x < 94; x++) {
+            for (let y = 0; y < 94; y++) {
+                let diagVal = this.getWallDiagonal(x, y);
+                if (diagVal > OBJECT_MAPS_START && diagVal < OBJECT_MAPS_START+12000) {
+                    let objectID = diagVal - OBJECT_MAPS_START - 1;
+                    let height = GameData.objectWidth[objectID];
+                    let width = GameData.objectHeight[objectID];
+    
+                    // dir goes counter-clockwise, 0 = North, 4 = south
+                    let objectDir = this.getTileDirection(x, y);
+                    if (objectDir === 0 || objectDir === 4) {
+                        height = GameData.objectWidth[objectID];
+                        width = GameData.objectHeight[objectID];
                     }
 
-                    this.removeObject2(i, j, k);
+                    this.removeObject2(x, y, objectID);
 
-                    let gameModel = models[GameData.objectModelIndex[k]].copy(false, true, false, false);
-                    let k1 = (((i + i + i1) * this.tileSize) / 2) | 0;
-                    let i2 = (((j + j + j1) * this.tileSize) / 2) | 0;
+                    let gameModel = models[GameData.objectModelIndex[objectID]].copy(false, true, false, false);
+                    let k1 = (((x + x + height) * this.tileSize) / 2) | 0;
+                    let i2 = (((y + y + width) * this.tileSize) / 2) | 0;
                     gameModel.translate(k1, -this.getElevation(k1, i2), i2);
-                    gameModel.orient(0, this.getTileDirection(i, j) * 32, 0);
+                    gameModel.orient(0, this.getTileDirection(x, y) * 32, 0);
                     this.scene.addModel(gameModel);
-                    gameModel._setLight_from5(48, 48, -50, -10, -50);
+                    gameModel.offsetLightSourceCoords(48, 48, -50, -10, -50);
 
-                    if (i1 > 1 || j1 > 1) {
-                        for (let k2 = i; k2 < i + i1; k2++) {
-                            for (let l2 = j; l2 < j + j1; l2++) {
-                                if ((k2 > i || l2 > j) && this.getWallDiagonal(k2, l2) - 48001 === k) {
-                                    let l1 = k2;
-                                    let j2 = l2;
-                                    let byte0 = 0;
+                    if (height > 1 || width > 1) {
+                        for (let xOff = x; xOff < x + height; xOff++) {
+                            for (let yOff = y; yOff < y + width; yOff++) {
+                                if ((xOff > x || yOff > y) && this.getWallDiagonal(xOff, yOff) - (OBJECT_MAPS_START+1) === objectID) {
+                                    let regionX = xOff;
+                                    let regionY = yOff;
+                                    let plane = 0;
 
-                                    if (l1 >= 48 && j2 < 48) {
-                                        byte0 = 1;
-                                        l1 -= 48;
-                                    } else if (l1 < 48 && j2 >= 48) {
-                                        byte0 = 2;
-                                        j2 -= 48;
-                                    } else if (l1 >= 48 && j2 >= 48) {
-                                        byte0 = 3;
-                                        l1 -= 48;
-                                        j2 -= 48;
+                                    if (regionX >= 48 && regionY < 48) {
+                                        plane = 1;
+                                        regionX -= 48;
+                                    } else if (regionX < 48 && regionY >= 48) {
+                                        plane = 2;
+                                        regionY -= 48;
+                                    } else if (regionX >= 48 && regionY >= 48) {
+                                        plane = 3;
+                                        regionX -= 48;
+                                        regionY -= 48;
                                     }
 
-                                    this.wallsDiagonal.set(byte0, l1 * 48 + j2,  0);
+                                    this.wallsDiagonal.set(plane, regionX * 48 + regionY,  0);
                                 }
                             }
                         }
@@ -1734,15 +1746,15 @@ class World {
         let l = ((x + 24) / 48) | 0;
         let i1 = ((y + 24) / 48) | 0;
 
-        this._loadSection_from4(x, y, plane, true);
+        this.loadRegionThenMakeModel(x, y, plane, true);
 
         if (plane === 0) {
-            this._loadSection_from4(x, y, 1, false);
-            this._loadSection_from4(x, y, 2, false);
-            this._loadSection_from4I(l - 1, i1 - 1, plane, 0);
-            this._loadSection_from4I(l, i1 - 1, plane, 1);
-            this._loadSection_from4I(l - 1, i1, plane, 2);
-            this._loadSection_from4I(l, i1, plane, 3);
+            this.loadRegionThenMakeModel(x, y, 1, false);
+            this.loadRegionThenMakeModel(x, y, 2, false);
+            this.decodeSector(l - 1, i1 - 1, plane, 0);
+            this.decodeSector(l, i1 - 1, plane, 1);
+            this.decodeSector(l - 1, i1, plane, 2);
+            this.decodeSector(l, i1, plane, 3);
             this.fillEmptySectorsAndBorder();
         }
     }

@@ -30,7 +30,7 @@ if (typeof window === 'undefined') {
     await mc.startApplication(512, 346, 'RSCTurmoil - RSCGo by ZlackCode LLC', false);
 })();
 
-},{"./src/mudclient":26,"canvas":3}],2:[function(require,module,exports){
+},{"./src/mudclient":29,"canvas":3}],2:[function(require,module,exports){
 (function(d,e){"object"===typeof exports&&"undefined"!==typeof module?e(exports):"function"===typeof define&&define.amd?define(["exports"],e):(d=d||self,e(d.alawmulaw={}))})(this,function(d){function e(a){a=-32768==a?-32767:a;var c=~a>>8&128;c||(a*=-1);32635<a&&(a=32635);if(256<=a){var b=k[a>>8&127];a=b<<4|a>>b+3&15}else a>>=4;return a^c^85}function f(a){var c=0;a^=85;a&128&&(a&=-129,c=-1);var b=((a&240)>>4)+4;a=4!=b?1<<b|(a&15)<<b-4|1<<b-5:a<<1|1;return-8*(0===c?a:-a)}function g(a){var c=a>>8&128;
 0!=c&&(a=-a);a+=132;32635<a&&(a=32635);var b=l[a>>7&255];return~(c|b<<4|a>>b+3&15)}function h(a){a=~a;var c=a>>4&7;c=m[c]+((a&15)<<c+3);0!=(a&128)&&(c=-c);return c}var k=[1,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],n=Object.freeze({__proto__:null,encodeSample:e,decodeSample:f,encode:function(a){for(var c=
 new Uint8Array(a.length),b=0;b<a.length;b++)c[b]=e(a[b]);return c},decode:function(a){for(var c=new Int16Array(a.length),b=0;b<a.length;b++)c[b]=f(a[b]);return c}}),l=[0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
@@ -1915,7 +1915,7 @@ function init2DInt32Array(x, y) {
 
 class BZState {
     constructor() {
-        this.tt = null; // Int32Array
+        this.tt = null; // Int8Array
         this.input = null; // Int8Array
         this.nextIn = 0;
         this.availIn = 0;
@@ -2558,6 +2558,7 @@ class BZLib {
 }
 
 module.exports = BZLib;
+
 },{}],11:[function(require,module,exports){
 // const charMap = new TextEncoder('utf8').encode(' etaoihnsrdlumwcyfgpbvkxjqz0123456789 !?.,:;()-&*\\\'@#+=£$%"[]');
 const encoder = new TextEncoder('utf-8');
@@ -2724,9 +2725,8 @@ class ClientStream extends Packet {
 
 module.exports = ClientStream;
 
-},{"./packet":29}],13:[function(require,module,exports){
+},{"./packet":32}],13:[function(require,module,exports){
 class GameBuffer {
-    // buffer is an Int8Array
     constructor(buffer) {
         this.buffer = buffer;
         this.offset = 0;
@@ -2777,11 +2777,14 @@ class GameBuffer {
             ((this.buffer[this.offset - 2] & 0xff) << 8) + 
             (this.buffer[this.offset - 1] & 0xff);
     }
-
-    getBytes(dest, destPos, len) {
-        for (let i = destPos; i < len; i++) {
-            dest[destPos + i] = this.buffer[this.offset++];
-        }
+    
+    getString(len = 0) {
+        if (len < 0)
+            return '';
+        this.offset += len;
+        if (this.offset > this.buffer.length)
+            this.offset = this.buffer.length;
+        return new TextDecoder().decode(this.buffer.slice(this.offset-len, this.offset));
     }
 }
 
@@ -2827,11 +2830,17 @@ class GameCharacter {
         this.equippedItem = new Int32Array(12);
         this.level = -1;
     }
+    
+    isFighting() {
+        return this.animationCurrent === 8 || this.animationCurrent === 9;
+    }
 }
 
 module.exports = GameCharacter;
+
 },{"long":7}],15:[function(require,module,exports){
 const C_OPCODES = require('./opcodes/client');
+const VERSION = require('./version.json');
 const {decodeString} = require('./chat-message');
 const ClientStream = require('./client-stream');
 const Color = require('./lib/graphics/color');
@@ -2839,35 +2848,15 @@ const Font = require('./lib/graphics/font');
 const GameShell = require('./game-shell');
 const Long = require('long');
 
+const {FontStyle} = require('./lib/graphics/fontStyle')
+
 const S_OPCODES = require('./opcodes/server');
 const {Utility} = require('./utility');
-const WordFilter = require('./word-filter');
+const {WordFilter, filter} = require('./word-filter');
 const sleep = require('sleep-promise');
 
 function fromCharArray(a) {
 	return Array.from(a).map(c => String.fromCharCode(c)).join('');
-}
-
-const getCookie = cname => {
-	const name = cname + '=';
-	const decodedCookie = decodeURIComponent(document.cookie);
-	const ca = decodedCookie.split(';');
-	for (let i = 0; i < ca.length; i++) {
-		let c = ca[i];
-		while (c.charAt(0) === ' ') {
-			c = c.substring(1);
-		}
-		if (c.indexOf(name) === 0) {
-			return c.substring(name.length, c.length);
-		}
-	}
-	return "";
-};
-
-function setCookie(cname, cvalue, exdays) {
-	let d = new Date();
-	d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
-	document.cookie = cname + "=" + cvalue + ";expires = " + d.toUTCString() + ";path=/";
 }
 
 class GameConnection extends GameShell {
@@ -2887,7 +2876,7 @@ class GameConnection extends GameShell {
 		this.nextPrivateMessage = 0;
 		
 		this.server = '127.0.0.1';
-		this.port = 43594;
+		this.port = 43595;
 		this.username = '';
 		this.password = '';
 		this.incomingPacket = new Int8Array(5000);
@@ -2907,35 +2896,31 @@ class GameConnection extends GameShell {
 	
 	
 	async registerAccount(user, pass) {
-		if (this.worldFullTimeout > 0) {
-			this.showLoginScreenStatus('Please wait...', 'Connecting to server');
-			await sleep(2000);
-			this.showLoginScreenStatus('Sorry! The server is currently full.', 'Please try again later');
-			return;
-		}
-		
 		try {
-			user = Utility.formatAuthString(user, 20);
+			user = Utility.formatAuthString(user, 12);
 			pass = Utility.formatAuthString(pass, 20);
 			
-			this.showLoginScreenStatus('Please wait...', 'Connecting to server');
+			if (this.clientStream !== null) {
+				this.clientStream.closeStream();
+			}
 			
+			this.showLoginScreenStatus('Please wait...', 'creating new account...');
 			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port), this);
-			this.clientStream.maxReadTries = GameConnection.maxReadTries;
+			this.clientStream.readTicksMax = 1000;
 			
 			this.clientStream.newPacket(C_OPCODES.REGISTER);
-			this.clientStream.putShort(GameConnection.clientVersion);
-			this.clientStream.putString(user);
+			this.clientStream.putShort(VERSION.CLIENT);
+			this.clientStream.putLong(Utility.usernameToHash(user));
 			this.clientStream.putString(pass);
 			this.clientStream.flushPacket();
-			
 			let response = await this.clientStream.readStream();
 			
-			console.log('Newplayer response: ' + response);
-			this.clientStream.close()
+			console.log('registration response: ' + response);
+			this.clientStream.closeStream();
 			switch(response) {
 			case 2: // success
 				this.resetLoginVars();
+				await this.login(user, pass, false)
 				return;
 			case 13: // username taken
 			case 3:
@@ -2969,10 +2954,8 @@ class GameConnection extends GameShell {
 			case 16: // switch to members server
 				this.showLoginScreenStatus('Please login to a members server', 'to access member-only features');
 				return;
-			default:
-				this.showLoginScreenStatus('Error unable to create user.', 'Unrecognised response code');
-				return;
 			}
+			this.showLoginScreenStatus('Error unable to create user.', 'Unrecognised response code');
 		} catch(e) {
 			console.error(e);
 			this.showLoginScreenStatus('Error unable to create user.', 'Unrecognised response code');
@@ -2997,30 +2980,33 @@ class GameConnection extends GameShell {
 			this.showLoginScreenStatus('Sorry! The server is currently full.', 'Please try again later');
 			return;
 		}
-		setCookie('savePass', save ? 'true' : '', 30);
-		
+
 		try {
 			this.username = u;
-			u = Utility.formatAuthString(u, 20);
+			u = Utility.formatAuthString(u, 12);
 			
 			this.password = p;
 			p = Utility.formatAuthString(p, 20);
-			
+
 			if (u.trim().length === 0) {
 				this.showLoginScreenStatus('You must enter both a username', 'and a password - Please try again');
 				return;
 			}
-			
+
 			if (reconnecting) {
 				this.drawTextBox('Connection lost! Please wait...', 'Attempting to re-establish');
 			} else {
 				this.showLoginScreenStatus('Please wait...', 'Connecting to server');
 			}
-			
-			
+
+
+			if (this.clientStream !== null) {
+				this.clientStream.closeStream();
+			}
+
 			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port), this);
-			this.clientStream.maxReadTries = GameConnection.maxReadTries;
-			
+			this.clientStream.readTicksMax = 1000;
+
 			// let l = Utility.usernameToHash(u);
 			//
 			// this.clientStream.newPacket(C_OPCODES.SESSION);
@@ -3036,9 +3022,6 @@ class GameConnection extends GameShell {
 			// }
 			//
 			// console.log('Verb: Session id: ' + sessId);
-
-			this.clientStream.newPacket(C_OPCODES.LOGIN);
-			
 			// let rand = new Uint32Array(4); crypto.getRandomValues(rand);
 			// this.clientStream.putByte(0); // limit30
 			//
@@ -3048,29 +3031,23 @@ class GameConnection extends GameShell {
 			// this.clientStream.putInt(randArr[2]);
 			// this.clientStream.putInt(randArr[3]);
 			// this.clientStream.putInt(0); // uuid
+
+			this.clientStream.newPacket(C_OPCODES.LOGIN);
 			this.clientStream.putBool(reconnecting);
-			this.clientStream.putShort(GameConnection.clientVersion);
+			this.clientStream.putShort(VERSION.CLIENT);
 			this.clientStream.putLong(Utility.usernameToHash(u));
 			this.clientStream.putString(p);
-			
 			this.clientStream.flushPacket();
+
 			let resp = await this.clientStream.readStream();
 			console.log('login response:' + resp);
-			if (resp === 25) {
-				if (save) {
-					setCookie('username', this.loginUser, 30);
-				}
-				
+			if (resp === 25 || resp === 24) {
 				this.moderatorLevel = 1;
 				this.autoLoginTimeout = 0;
 				this.resetGame();
 				return;
 			}
 			if (resp === 0) {
-				if (save) {
-					setCookie('username', this.loginUser, 30);
-				}
-				
 				this.moderatorLevel = 0;
 				this.autoLoginTimeout = 0;
 				this.resetGame();
@@ -3086,6 +3063,7 @@ class GameConnection extends GameShell {
 				this.resetLoginVars();
 				return;
 			}
+			this.clientStream.closeStream();
 			if (resp === -1) {
 				this.showLoginScreenStatus('Error unable to login.', 'Server timed out');
 				return;
@@ -3191,6 +3169,7 @@ class GameConnection extends GameShell {
 			} catch (e) {
 				console.error(e);
 			}
+			this.clientStream.closeStream();
 		}
 		
 		// this.username = '';
@@ -3213,15 +3192,18 @@ class GameConnection extends GameShell {
 	
 	drawTextBox(s, s1) {
 		let g = this.getGraphics();
-		let font = new Font('Helvetica', 1, 15);
-		let w = 512;
-		let h = 344;
+		let font = Font.HELVETICA.withConfig(FontStyle.BOLD, 15);
+		let w = this.width;
+		let h = this.height;
 		g.setColor(Color.black);
-		g.fillRect(((w / 2) | 0) - 140, ((h / 2) | 0) - 25, 280, 50);
+		g.fillRect((this.width >> 1 | 0) - 140, (this.height >> 1 | 0) - 25, 280, 50);
+		
 		g.setColor(Color.white);
-		g.drawRect(((w / 2) | 0) - 140, ((h / 2) | 0) - 25, 280, 50);
-		this.drawString(g, s, font, (w / 2) | 0, ((h / 2) | 0) - 10);
-		this.drawString(g, s1, font, (w / 2) | 0, ((h / 2) | 0) + 10);
+		g.drawRect((this.width >> 1 | 0) - 140, (this.height >> 1 | 0) - 25, 280, 50);
+		
+		this.drawString(g, s, font, this.width >> 1 | 0, ((h / 2) | 0) - 10);
+		
+		this.drawString(g, s1, font, this.width >> 1 | 0, ((h / 2) | 0) + 10);
 	}
 	
 	async checkConnection() {
@@ -3254,7 +3236,6 @@ class GameConnection extends GameShell {
 	
 	handlePacket(opcode, psize) {
 		// console.log('opcode:' + opcode + ' psize:' + psize);
-		
 		if (opcode === S_OPCODES.MESSAGE) {
 			let s = fromCharArray(this.incomingPacket.slice(1, psize));
 			this.showServerMessage(s);
@@ -3285,7 +3266,7 @@ class GameConnection extends GameShell {
 		
 		if (opcode === S_OPCODES.FRIEND_STATUS_CHANGE) {
 			let hash = Utility.getUnsignedLong(this.incomingPacket, 1);
-			let online = this.incomingPacket[9] & 0xff;
+			let online = this.incomingPacket[9] & 0xFF;
 			
 			for (let i2 = 0; i2 < this.friendListCount; i2++) {
 				if (this.friendListHashes[i2].equals(hash)) {
@@ -3298,7 +3279,7 @@ class GameConnection extends GameShell {
 					}
 					
 					this.friendListOnline[i2] = online;
-					psize = 0; // not sure what this is for
+//					psize = 0; // not sure what this is for
 					this.sortFriendsList();
 					return;
 				}
@@ -3341,7 +3322,7 @@ class GameConnection extends GameShell {
 			
 			this.privateMessageIds[this.nextPrivateMessage] = id;
 			this.nextPrivateMessage = (this.nextPrivateMessage + 1) % GameConnection.maxSocialListSize;
-			let msg = WordFilter.filter(decodeString(this.incomingPacket.slice(13, psize - 13)));
+			let msg = filter(decodeString(this.incomingPacket.slice(13, psize)));
 			this.showServerMessage('@pri@' + Utility.hashToUsername(from) + ': tells you ' + msg);
 			return;
 		}
@@ -3487,13 +3468,12 @@ class GameConnection extends GameShell {
 	}
 }
 
-GameConnection.clientVersion = 1;
 GameConnection.maxReadTries = 0;
 GameConnection.maxSocialListSize = 100;
 
 module.exports = GameConnection;
 
-},{"./chat-message":11,"./client-stream":12,"./game-shell":18,"./lib/graphics/color":19,"./lib/graphics/font":20,"./opcodes/client":27,"./opcodes/server":28,"./utility":37,"./word-filter":39,"long":7,"sleep-promise":9}],16:[function(require,module,exports){
+},{"./chat-message":11,"./client-stream":12,"./game-shell":18,"./lib/graphics/color":21,"./lib/graphics/font":22,"./lib/graphics/fontStyle":23,"./opcodes/client":30,"./opcodes/server":31,"./utility":40,"./version.json":41,"./word-filter":42,"long":7,"sleep-promise":9}],16:[function(require,module,exports){
 const {Utility} = require('./utility');
 const ndarray = require('ndarray');
 
@@ -3547,7 +3527,7 @@ class GameData {
         return s;
     }
 
-    static loadData(buffer, isMembers) {
+    static loadDefinitions(buffer, isMembers) {
         GameData.dataString = Utility.loadData('string.dat', 0, buffer);
         GameData.stringOffset = 0;
         GameData.dataInteger = Utility.loadData('integer.dat', 0, buffer);
@@ -3878,7 +3858,7 @@ class GameData {
 
         GameData.tileCount = GameData.getUnsignedShort(); // and these
         GameData.tileDecoration = new Int32Array(GameData.tileCount);
-        GameData.tileType = new Int32Array(GameData.tileCount);
+        GameData.overlays = new Int32Array(GameData.tileCount);
         GameData.tileAdjacent = new Int32Array(GameData.tileCount);
 
         for (i = 0; i < GameData.tileCount; i++) {
@@ -3886,7 +3866,7 @@ class GameData {
         }
 
         for (i = 0; i < GameData.tileCount; i++) {
-            GameData.tileType[i] = GameData.getUnsignedByte();
+            GameData.overlays[i] = GameData.getUnsignedByte();
         }
 
         for (i = 0; i < GameData.tileCount; i++) {
@@ -4013,7 +3993,7 @@ GameData.wallObjectCount = 0;
 GameData.prayerLevel = null;
 GameData.prayerDrain = null;
 GameData.tileDecoration = null;
-GameData.tileType = null;
+GameData.overlays = null;
 GameData.tileAdjacent = null;
 GameData.modelCount = 0;
 GameData.roofHeight = null;
@@ -4062,7 +4042,7 @@ GameData.offset = 0;
 
 module.exports = GameData;
 
-},{"./utility":37,"ndarray":8}],17:[function(require,module,exports){
+},{"./utility":40,"ndarray":8}],17:[function(require,module,exports){
 const {Utility} = require('./utility');
 const Scene = require('./scene');
 
@@ -4663,11 +4643,11 @@ class GameModel {
         model.normalScale[outF] = this.normalScale[inF];
         model.normalMagnitude[outF] = this.normalMagnitude[inF];
     }
-
-    _setLight_from5(ambience, diffuse, x, y, z) {
+    
+    offsetLightSourceCoords(ambience, diffuse, x, y, z) {
         this.lightAmbience = 256 - ambience * 4;
         this.lightDiffuse = (64 - diffuse) * 16 + 128;
-
+        
         if (!this.unlit) {
             this.lightDirectionX = x;
             this.lightDirectionY = y;
@@ -4676,8 +4656,8 @@ class GameModel {
             this.light();
         }
     }
-
-    _setLight_from6(gouraud, ambient, diffuse, x, y, z) {
+    
+    createGouraudLightSource(gouraud, ambient, diffuse, x, y, z) {
         this.lightAmbience = 256 - ambient * 4;
         this.lightDiffuse = (64 - diffuse) * 16 + 128;
 
@@ -4697,11 +4677,10 @@ class GameModel {
         this.lightDirectionY = y;
         this.lightDirectionZ = z;
         this.lightDirectionMagnitude = Math.sqrt(x * x + y * y + z * z) | 0;
-
         this.light();
     }
 
-    _setLight_from3(x, y, z) {
+    setLightCoords(x, y, z) {
         if (!this.unlit) {
             this.lightDirectionX = x;
             this.lightDirectionY = y;
@@ -4714,11 +4693,11 @@ class GameModel {
     setLight(...args) {
         switch (args.length) {
         case 6:
-            return this._setLight_from6(...args);
+            return this.createGouraudLightSource(...args);
         case 5:
-            return this._setLight_from5(...args);
+            return this.offsetLightSourceCoords(...args);
         case 3:
-            return this._setLight_from3(...args);
+            return this.setLightCoords(...args);
         }
     }
 
@@ -5232,93 +5211,98 @@ GameModel.base64Alphabet[36] = 63;
 
 module.exports = GameModel;
 
-},{"./scene":33,"./utility":37}],18:[function(require,module,exports){
+},{"./scene":36,"./utility":40}],18:[function(require,module,exports){
 const BZLib = require('./bzlib');
 const Color = require('./lib/graphics/color');
 const Font = require('./lib/graphics/font');
 const Graphics = require('./lib/graphics/graphics');
 const Socket = require('./lib/net/socket');
 const Surface = require('./surface');
-const {Utility} = require('./utility');
+const {Utility, WelcomeState, GameState, GamePanel} = require('./utility');
 const VERSION = require('./version');
 const zzz = require('sleep-promise');
 const { TGA } = require('./lib/tga');
+const {FontStyle} = require('./lib/graphics/fontStyle')
+const {Enum} = require('./lib/enum');
 
-const InitState = {
-    IDLE: 0,
-    LAUNCH_ENGINE: 1,
-    FETCH_ASSETS: 2,
-};
+class EngineState extends Enum {}
+EngineState.LAUNCH = new EngineState("Launching game engine")
+EngineState.INITIALIZE_DATA = new EngineState("Downloading and setting up all the game assets")
+EngineState.RUNNING = new EngineState("Engine clock is ticking")
+EngineState.SHUTDOWN = new EngineState("Emgine is shutting down")
 
 class GameShell {
-    constructor(canvas) {
-        this._canvas = canvas;
-        this._graphics = new Graphics(this._canvas);
-
-        this.options = {
-            middleClickCamera: false,
-            mouseWheel: false,
-            resetCompass: false,
-            zoomCamera: false,
-            showRoofs: true
-        };
-
-        this.middleButtonDown = false;
-        this.mouseScrollDelta = 0;
-
-        this.mouseActionTimeout = 0;
-        this.initState = InitState.IDLE;
-        // this.logoHeaderText = null;
-        this.mouseX = 0;
-        this.mouseY = 0;
-        this.mouseButtonDown = 0;
-        this.lastMouseButtonDown = 0;
-        this.renderTimestamps = [];
-        this.resetRenderTimers();
-        this.stopTimeout = 0;
-        this.interlaceTimer = 0;
-        this.loadingProgressPercent = 0;
-        this.imageLogo = null;
-        this.appletWidth = 512;
-        this.appletHeight = 346;
-        this.targetFps = 20;
-        this.maxDrawTime = 1000;
-        this.hasRefererLogoNotUsed = false;
-        this.loadingProgessText = 'Loading';
-        this.fontTimesRoman15 = new Font('TimesRoman', 0, 15);
-        this.fontHelvetica13b = new Font('Helvetica', Font.BOLD, 13);
-        this.fontHelvetica12 = new Font('Helvetica', 0, 12);
-        this.keyLeft = false;
-        this.keyRight = false;
-        this.keyUp = false;
-        this.keyDown = false;
-        this.keySpace = false;
-        this.keyHome = false;
-        this.keyPgUp = false;
-        this.keyPgDown = false;
-        this.threadSleep = 1;
-        this.interlace = false;
-        this.inputTextCurrent = '';
-        this.inputTextFinal = '';
-        this.inputPmCurrent = '';
-        this.inputPmFinal = '';
-    }
-
-    // eslint-disable-next-line no-unused-vars
-    async startApplication(width, height, title, resizeable) {
-        // window.document.title = title;
-        this._canvas.width = width;
-        this._canvas.height = height;
-
-        console.log('Started application');
-        this.appletWidth = width;
-        this.appletHeight = height;
-
-        GameShell.gameFrame = this._canvas.getContext('2d', {
-            'alpha': false,
-            'desynchronized': true,
-        });
-
+	constructor(canvas) {
+		this._canvas = canvas;
+		this._graphics = new Graphics(this._canvas);
+		
+		this.options = {
+			middleClickCamera: false,
+			mouseWheel: false,
+			resetCompass: false,
+			zoomCamera: false,
+			showRoofs: false
+		};
+		this.middleButtonDown = false;
+		this.mouseScrollDelta = 0;
+		this.mouseActionTimeout = 0;
+		this.panelLogin = {};
+		this.panelGame = {};
+		this.engineState = EngineState.IDLE;
+		this.gameState = GameState.LOGIN;
+		this.welcomeState = WelcomeState.WELCOME;
+		// this.logoHeaderText = null;
+		this.mouseX = 0;
+		this.mouseY = 0;
+		this.mouseButtonDown = 0;
+		this.lastMouseButtonDown = 0;
+		this.clockTimings = [];
+		this.unsetFrameTimes();
+		this.shutdownCounter = 0;
+		this.powerThrottle = 0;
+		this.loadingProgressPercent = 0;
+		this.imageLogo = null;
+		this.appletWidth = 512;
+		this.appletHeight = 346;
+		this.targetFps = 20;
+		this.inputClockRate = 1000;
+		this.hasRefererLogoNotUsed = false;
+		this.loadingProgessText = 'Loading';
+		this.keyLeft = false;
+		this.keyRight = false;
+		this.keyUp = false;
+		this.keyDown = false;
+		this.keySpace = false;
+		this.keyHome = false;
+		this.keyPgUp = false;
+		this.keyPgDown = false;
+		this.maxTickTimeout = 1;
+		this.interlace = false;
+		this.inputTextCurrent = '';
+		this.inputTextFinal = '';
+		this.inputPmCurrent = '';
+		this.inputPmFinal = '';
+	}
+	
+	// eslint-disable-next-line no-unused-vars
+	async startApplication(width, height, title, resizeable) {
+		this.engineState = EngineState.IDLE;
+		
+		// window.document.title = title;
+		this._canvas.width = width;
+		this._canvas.height = height;
+		
+		console.log('Started application');
+		this.appletWidth = width;
+		this.appletHeight = height;
+		
+		GameShell.gameFrame = this._canvas.getContext('2d', {
+			alpha: false,
+			desynchronized: true,
+			depth:true,
+			antialias:true,
+		});
+		
 		this._canvas.addEventListener('mousedown', this.mousePressed.bind(this));
 		this._canvas.addEventListener('contextmenu', this.eventBlocker.bind(this));
 		this._canvas.addEventListener('mousemove', this.mouseMoved.bind(this));
@@ -5327,502 +5311,543 @@ class GameShell {
 		this._canvas.addEventListener('wheel', this.mouseWheel.bind(this));
 		window.addEventListener('keydown', this.keyPressed.bind(this));
 		window.addEventListener('keyup', this.keyReleased.bind(this));
-
-        this.graphics = this.getGraphics();
-        this.initState = InitState.LAUNCH_ENGINE;
-        await this.run();
-    }
-
-    eventBlocker(e) {
-        e.preventDefault();
-    }
-
-    setTargetFps(i) {
-        this.targetFps = 1000 / i;
-    }
-
-    resetRenderTimers() {
-        for (let i = 0; i < 10; i++) this.renderTimestamps[i] = 0;
-    }
-
-    initRenderTimers() {
-        for (let i = 0; i < 10; i++) this.renderTimestamps[i] = Date.now();
-    }
-
-    keyPressed(e) {
-        e.preventDefault();
-
-        let code = e.code;
-        let chr = e.key.length === 1 ? e.key.charCodeAt(0) : 65535;
-
-        // if (!/^Key.$/.test(e.code)) {
-        //     console.log(e.code,e.key,e.keyCode);
-        //     chr = e.keyCode;
-        // }
-
-        this.handleKeyPress(code, chr);
-
-        if (code === 'ArrowLeft') {
-            this.keyLeft = true;
-        } else if (code === 'ArrowRight') {
-            this.keyRight = true;
-        } else if (code === 'ArrowUp') {
-            this.keyUp = true;
-        } else if (code === 'ArrowDown') {
-            this.keyDown = true;
-        } else if (code === 'Space') {
-            this.keySpace = true;
-        } else if (code === 'F1') {
-            this.interlace = !this.interlace;
-        } else if (code === 'F2') {
-            this.options.showRoofs = !this.options.showRoofs;
-        } else if (code === 'Home') {
-            this.keyHome = true;
-        } else if (code === 'PageUp') {
-            this.keyPgUp = true;
-        } else if (code === 'PageDown') {
-            this.keyPgDown = true;
-        }
-    
-        let foundText = false;
-
-        for (let i = 0; i < GameShell.charMap.length; i++) {
-            if (GameShell.charMap.charCodeAt(i) === chr) {
-                foundText = true;
-                break;
-            }
-        }
-
-        if (foundText) {
-            if (this.inputTextCurrent.length < 20) {
-                this.inputTextCurrent += String.fromCharCode(chr);
-            }
-
-            if (this.inputPmCurrent.length < 80) {
-                this.inputPmCurrent += String.fromCharCode(chr);
-            }
-        }
-
-        if (code === 'Enter') {
-            this.inputTextFinal = this.inputTextCurrent;
-            this.inputPmFinal = this.inputPmCurrent;
-        }
-
-        if (code === 'Backspace') {
-            if (this.inputTextCurrent.length > 0) {
-                this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
-            }
-
-            if (this.inputPmCurrent.length > 0) {
-                this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
-            }
-        }
-
-        return false;
-    }
-
-    keyReleased(e) {
-        e.preventDefault();
-
-        let code = e.code;
-
-        if (code === 'ArrowLeft') {
-            this.keyLeft = false;
-        } else if (code === 'ArrowRight') {
-            this.keyRight = false;
-        } else if (code === 'ArrowUp') {
-            this.keyUp = false;
-        } else if (code === 'ArrowDown') {
-            this.keyDown = false;
-        } else if (code === 'Space') {
-            this.keySpace = false;
-        } else if (code === 'Home') {
-            this.keyHome = false;
-        } else if (code === 'PageUp') {
-            this.keyPgUp = false;
-        } else if (code === 'PageDown') {
-            this.keyPgDown = false;
-        }
-
-        return false;
-    }
-
-    mouseMoved(e) {
-        e.preventDefault();
-        this.mouseX = e.offsetX;
-        this.mouseY = e.offsetY;
-        this.mouseActionTimeout = 0;
-    }
-
-    mouseReleased(e) {
-        e.preventDefault();
-        this.mouseX = e.offsetX;
-        this.mouseY = e.offsetY;
-        this.mouseButtonDown = 0;
-
-        if (e.button === 1) {
-            this.middleButtonDown = false;
-        }
-    }
-
-    mouseOut(e) {
-        e.preventDefault();
-        this.mouseX = e.offsetX;
-        this.mouseY = e.offsetY;
-        this.mouseButtonDown = 0;
-        this.middleButtonDown = false;
-    }
-
-    mousePressed(e) {
-        e.preventDefault();
-
-        let x = e.offsetX;
-        let y = e.offsetY;
-
-        this.mouseX = x;
-        this.mouseY = y;
-
-        if (this.options.middleClickCamera && e.button === 1) {
-            this.middleButtonDown = true;
-            this.originRotation = this.cameraRotation;
-            this.originMouseX = this.mouseX;
-            return false;
-        }
-
-        if(e.button === 0) {
-            this.mouseButtonDown = 1;
-        } else if(e.button === 2) {
-            this.mouseButtonDown = 2;
-        } else {
-            return false;
-        }
-        
-        this.lastMouseButtonDown = this.mouseButtonDown;
-        this.mouseActionTimeout = 0;
-        this.handleMouseDown(this.mouseButtonDown, x, y);
-
-        return false;
-    }
-
-    mouseWheel(e) {
-        e.preventDefault();
-        if (!this.options.mouseWheel) {
-            return;
-        }
-
-        if (e.deltaMode === 0) {
-            // deltaMode === 0 means deltaY/deltaY is given in pixels (chrome)
-            this.mouseScrollDelta = Math.floor(e.deltaY / 14);
-        } else if (e.deltaMode === 1) {
-            // deltaMode === 1 means deltaY/deltaY is given in lines (firefox)
-            this.mouseScrollDelta = Math.floor(e.deltaY);
-        }
-
-        return false;
-    }
-
-    start() {
-        if (this.stopTimeout >= 0) {
-            this.stopTimeout = 0;
-        }
-    }
-
-    stop() {
-        if (this.stopTimeout >= 0) {
-            this.stopTimeout = 4000 / this.targetFps;
-        }
-    }
-    
-    async run() {
-        if (this.initState === InitState.LAUNCH_ENGINE) {
-            this.initState = InitState.FETCH_ASSETS;
-            await this.loadFonts()
-            this.drawLoadingScreen(0, 'Loading...');
-            this.imageLogo = await this.fetchLogo()
-            this.initState = InitState.LAUNCH_ENGINE;
-            await this.startGame();
-        }
-
-        let i = 0;
-        let j = 256;
-        let sleep = 1;
-        let i1 = 0;
-
-        this.initRenderTimers()
-
-        while (this.stopTimeout >= 0) {
-            if (this.stopTimeout > 0) {
-                this.stopTimeout--;
-
-                if (this.stopTimeout === 0) {
-                    this.onClosing();
-                    return;
-                }
-            }
-
-            let k1 = j;
-            let lastSleep = sleep;
-
-            j = 300;
-            sleep = 1;
-
-            let time = Date.now();
-
-            if (this.renderTimestamps[i] === 0) {
-                j = k1;
-                sleep = lastSleep;
-            } else if (time > this.renderTimestamps[i]) {
-                j = ((2560 * this.targetFps) / (time - this.renderTimestamps[i])) | 0;
-            }
-
-            if (j < 25) {
-                j = 25;
-            }
-
-            if (j > 256) {
-                j = 256;
-                sleep = (this.targetFps - (time - this.renderTimestamps[i]) / 10) | 0;
-
-                if (sleep < this.threadSleep) {
-                    sleep = this.threadSleep;
-                }
-            }
-
-            await zzz(sleep);
-
-            this.renderTimestamps[i] = time;
-            i = (i + 1) % 10;
-
-            if (sleep > 1) {
-                for (let j2 = 0; j2 < 10; j2++) {
-                    if (this.renderTimestamps[j2] !== 0) {
-                        this.renderTimestamps[j2] += sleep;
-                    }
-                }
-            }
-
-            let k2 = 0;
-
-            while (i1 < 256) {
-                await this.handleInputs();
-                i1 += j;
-
-                if (++k2 > this.maxDrawTime) {
-                    i1 = 0;
-                    this.interlaceTimer += 6;
-
-                    if (this.interlaceTimer > 25) {
-                        this.interlaceTimer = 0;
-                        this.interlace = true;
-                    }
-
-                    break;
-                }
-            }
-
-            this.interlaceTimer--;
-            i1 &= 0xff;
-            this.draw();
-
-            this.mouseScrollDelta = 0;
-        }
-    }
-
-    update(g) {
-        this.paint(g);
-    }
-
-    // eslint-disable-next-line no-unused-vars
-    paint(g) {
-        if (this.initState >= InitState.FETCH_ASSETS) {
-            if (this.imageLogo !== null) {
-                this.drawLoadingScreen(this.loadingProgressPercent, this.loadingProgessText);
-            }
-        }
-    }
-    
-    async fetchLogo() {
-        let buff = await this.readDataFile('jagex.jag', 'ZlackCode library', 0);
-        if (buff === null) {
-            return null;
-        }
-        
-        return Utility.loadData('logo.tga', 0, buff);
-    }
-    
-    async loadFonts() {
-        let buff = await this.readDataFile(`fonts${VERSION.FONTS}.jag`, 'Game fonts', 5);
-    
-        if (buff === null) {
-            return;
-        }
-        Surface.createFont(Utility.loadData('h11p.jf', 0, buff), 0);
-        Surface.createFont(Utility.loadData('h12b.jf', 0, buff), 1);
-        Surface.createFont(Utility.loadData('h12p.jf', 0, buff), 2);
-        Surface.createFont(Utility.loadData('h13b.jf', 0, buff), 3);
-        Surface.createFont(Utility.loadData('h14b.jf', 0, buff), 4);
-        Surface.createFont(Utility.loadData('h16b.jf', 0, buff), 5);
-        Surface.createFont(Utility.loadData('h20b.jf', 0, buff), 6);
-        Surface.createFont(Utility.loadData('h24b.jf', 0, buff), 7);
-    }
-
-    drawLoadingScreen(percent, text) {
-        let midX = ((this.appletWidth - 281) / 2) | 0;
-        let midY = ((this.appletHeight - 148) / 2) | 0;
-
-        this.graphics.setColor(Color.black);
-        this.graphics.fillRect(0, 0, this.appletWidth, this.appletHeight);
-
-        if (!this.hasRefererLogoNotUsed) {
-        	if (this.imageLogo !== null) {
-	            this.graphics.drawImage(this.imageLogo, midX, midY);
-	        }
-            this.graphics.setColor(new Color(132, 132, 132));
-        } else {
-    
-            this.graphics.setColor(new Color(220, 0, 0));
-        }
-        midX += 2;
-        midY += 90;
-        this.loadingProgessText = text;
-        this.loadingProgressPercent = percent;
-        this.graphics.drawRect(midX - 2, midY - 2, 280, 23);
-        this.graphics.fillRect(midX, midY, ((277 * percent) / 100) | 0, 20);
-
-        if (!this.hasRefererLogoNotUsed) {
-            this.graphics.setColor(new Color(198, 198, 198));
-        } else {
-            this.graphics.setColor(new Color(255, 255, 255));
-        }
-        this.drawString(this.graphics, this.loadingProgessText, this.fontHelvetica12, midX + 138, midY + 10);
-
-        if (!this.hasRefererLogoNotUsed) {
-            this.drawString(this.graphics, 'Created by JAGeX - visit www.jagex.com', this.fontHelvetica13b, midX + 138, midY + 30);
-            this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', this.fontHelvetica13b, midX + 138, midY + 44);
-        } else {
-            this.graphics.setColor(new Color(132, 132, 152));
-            this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', this.fontHelvetica12, midX + 138, this.appletHeight - 20);
-        }
-        // not sure where this would have been used. maybe to indicate a special client?
-        // if (this.logoHeaderText !== null) {
-        //     this.graphics.setColor(Color.white);
-        //     this.drawString(this.graphics, this.logoHeaderText, this.fontHelvetica13b, midX + 138, midY - 120);
-        // }
-    }
-
-    showLoadingProgress(i, s) {
-        let j = ((this.appletWidth - 281) / 2) | 0;
-        let k = ((this.appletHeight - 148) / 2) | 0;
-        j += 2;
-        k += 90;
-
-        this.loadingProgressPercent = i;
-        this.loadingProgessText = s;
-
-        let l = ((277 * i) / 100) | 0;
-        this.graphics.setColor(new Color(132, 132, 132));
-
-        if (this.hasRefererLogoNotUsed) {
-            this.graphics.setColor(new Color(220, 0, 0));
-        }
-
-        this.graphics.fillRect(j, k, l, 20);
-        this.graphics.setColor(Color.black);
-        this.graphics.fillRect(j + l, k, 277 - l, 20);
-        this.graphics.setColor(new Color(198, 198, 198));
-
-        if (this.hasRefererLogoNotUsed) {
-            this.graphics.setColor(new Color(255, 255, 255));
-        }
-
-        this.drawString(this.graphics, s, this.fontTimesRoman15, j + 138, k + 10);
-    }
-
-    drawString(g, s, font, i, j) {
-        g.setFont(font);
-        const { width, height } = g.ctx.measureText(s);
-        g.drawString(s, i - ((width / 2) | 0), j + ((height / 4) | 0));
-    }
-
-    createImage(buff) {
-        const tgaImage = new TGA();
-
-        tgaImage.load(buff.buffer);
-
-        const canvas = tgaImage.getCanvas();
-        const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-        return imageData;
-    }
-
-    async readDataFile(file, description, percent) {
-        file = './data204/' + file;
-
-        let archiveSize = 0;
-        let archiveSizeCompressed = 0;
-
-        this.showLoadingProgress(percent, 'Loading ' + description + ' - 0%');
-
-        let fileDownloadStream = Utility.openFile(file);
-        let header = new Int8Array(6);
-
-        await fileDownloadStream.readFully(header, 0, 6);
-
-        archiveSize = ((header[0] & 0xff) << 16) + ((header[1] & 0xff) << 8) + (header[2] & 0xff);
-        archiveSizeCompressed = ((header[3] & 0xff) << 16) + ((header[4] & 0xff) << 8) + (header[5] & 0xff);
-
-        this.showLoadingProgress(percent, 'Loading ' + description + ' - 5%');
-
-        let read = 0;
-        let archiveData = new Int8Array(archiveSizeCompressed);
-
-        while (read < archiveSizeCompressed) {
-            let length = archiveSizeCompressed - read;
-
-            // read in 4KiB data at once
-            if (length > 1000) {
-                length = 1000;
-            }
-
-            await fileDownloadStream.readFully(archiveData, read, length);
-            read += length;
-            this.showLoadingProgress(percent, 'Loading ' + description + ' - ' + ((5 + (read * 95) / archiveSizeCompressed) | 0) + '%');
-        }
-    
-    
-        this.showLoadingProgress(percent, 'Unpacking ' + description);
-        if (archiveSizeCompressed !== archiveSize) {
-            // archive was bzip-compressed as a whole, like a jagball or something
-            let decompressed = new Int8Array(archiveSize);
-            BZLib.decompress(decompressed, archiveSize, archiveData, archiveSizeCompressed, 0);
-            return decompressed;
-        } else {
-            // Each entry has its own compression, or there is no compression involved here.
-            return archiveData;
-        }
-    }
-
-    getGraphics() {
-        //return new Graphics(this.canvas);
-        return this._graphics;
-    }
-
-    async createSocket(s, i) {
-        let socket = new Socket(s, i);
-        await socket.connect();
-        return socket;
-    }
+		
+		this.graphics = this.getGraphics();
+
+		this.engineState = EngineState.INITIALIZE_DATA;
+		this.drawLoadingScreen(0, 'Loading...');
+		await this.loadFonts();
+		this.imageLogo = await this.fetchLogo();
+		
+		await this.startGame();
+		await this.run();
+	}
+	
+	eventBlocker(e) {
+		e.preventDefault();
+	}
+	
+	setTargetFps(i) {
+		this.targetFps = 1000 / i;
+	}
+	
+	unsetFrameTimes() {
+		for (let i = 0; i < 10; i++) this.clockTimings[i] = 0;
+	}
+	
+	setFrameTimes() {
+		for (let i = 0; i < 10; i++) this.clockTimings[i] = Date.now();
+	}
+	
+	keyPressed(e) {
+		if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
+			this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
+			e.preventDefault();
+			return;
+		}
+
+		if (this.gameState === GameState.WORLD) {
+			if (this.showAppearanceChange && this.panelGame[GamePanel.APPEARANCE] !== null) {
+				this.panelGame[GamePanel.APPEARANCE].keyPress(e.which, e.key);
+				return;
+			}
+
+			if (this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
+				this.panelGame[GamePanel.CHAT].keyPress(e.which, e.key);
+			}
+		}
+		switch (e.which) {
+		case 37:
+			this.keyLeft = true;
+			e.preventDefault();
+			break;
+		case 38:
+			this.keyUp = true;
+			e.preventDefault();
+			break;
+		case 39:
+			this.keyRight = true;
+			e.preventDefault();
+			break;
+		case 40:
+			this.keyDown = true;
+			e.preventDefault();
+			break;
+		case 32:
+			this.keySpace = true;
+			e.preventDefault();
+			break;
+		case 36:
+			this.keyHome = true;
+			e.preventDefault();
+			break;
+		case 33:
+			this.keyPgUp = true;
+			e.preventDefault();
+			break;
+		case 34:
+			this.keyPgDown = true;
+			e.preventDefault();
+			break;
+		case 112:
+			this.interlace = !this.interlace;
+			e.preventDefault();
+			break;
+		case 113:
+			this.options.showRoofs = !this.options.showRoofs;
+			e.preventDefault();
+			break;
+		case 13:
+			this.inputTextFinal = this.inputTextCurrent;
+			this.inputPmFinal = this.inputPmCurrent;
+			e.preventDefault();
+			break;
+		case 8:
+			if (this.inputTextCurrent.length > 0) {
+				this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
+			}
+			
+			if (this.inputPmCurrent.length > 0) {
+				this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
+			}
+			e.preventDefault();
+			break;
+		default:
+			if (this.inputTextCurrent.length < 20) {
+				this.inputTextCurrent += e.key;
+			}
+			
+			if (this.inputPmCurrent.length < 80) {
+				this.inputPmCurrent += e.key;
+			}
+			e.preventDefault();
+			break;
+		}
+		return false;
+	}
+	
+	keyReleased(e) {
+		e.preventDefault();
+		
+		switch (e.which) {
+		case 37:
+			this.keyLeft = false;
+			break;
+		case 38:
+			this.keyUp = false;
+			break;
+		case 39:
+			this.keyRight = false;
+			break;
+		case 40:
+			this.keyDown = false;
+			break;
+		case 32:
+			this.keySpace = false;
+			break;
+		case 36:
+			this.keyHome = false;
+			break;
+		case 33:
+			this.keyPgUp = false;
+			break;
+		case 34:
+			this.keyPgDown = false;
+			break;
+		}
+		
+		return false;
+	}
+	
+	mouseMoved(e) {
+		e.preventDefault();
+		this.mouseX = e.offsetX;
+		this.mouseY = e.offsetY;
+		this.mouseActionTimeout = 0;
+	}
+	
+	mouseReleased(e) {
+		e.preventDefault();
+		this.mouseX = e.offsetX;
+		this.mouseY = e.offsetY;
+		this.mouseButtonDown = 0;
+		
+		if (e.button === 1) {
+			this.middleButtonDown = false;
+		}
+	}
+	
+	mouseOut(e) {
+		e.preventDefault();
+		this.mouseX = e.offsetX;
+		this.mouseY = e.offsetY;
+		this.mouseButtonDown = 0;
+		this.middleButtonDown = false;
+	}
+	
+	mousePressed(e) {
+		e.preventDefault();
+		
+		let x = e.offsetX;
+		let y = e.offsetY;
+		
+		this.mouseX = x;
+		this.mouseY = y;
+		
+		if (this.options.middleClickCamera && e.button === 1) {
+			this.middleButtonDown = true;
+			this.originRotation = this.cameraRotation;
+			this.originMouseX = this.mouseX;
+			return false;
+		}
+		
+		if(e.button === 0) {
+			this.mouseButtonDown = 1;
+		} else if(e.button === 2) {
+			this.mouseButtonDown = 2;
+		} else {
+			return false;
+		}
+		
+		this.lastMouseButtonDown = this.mouseButtonDown;
+		this.mouseActionTimeout = 0;
+		this.handleMouseDown(this.mouseButtonDown, x, y);
+		
+		return false;
+	}
+	
+	mouseWheel(e) {
+		e.preventDefault();
+		if (!this.options.mouseWheel) {
+			return;
+		}
+		
+		if (e.deltaMode === 0) {
+			// deltaMode === 0 means deltaY/deltaY is given in pixels (chrome)
+			this.mouseScrollDelta = Math.floor(e.deltaY / 14);
+		} else if (e.deltaMode === 1) {
+			// deltaMode === 1 means deltaY/deltaY is given in lines (firefox)
+			this.mouseScrollDelta = Math.floor(e.deltaY);
+		}
+		
+		return false;
+	}
+	
+	start() {
+		if (this.shutdownCounter >= 0) {
+			this.shutdownCounter = 0;
+		}
+	}
+	
+	stop() {
+		if (this.shutdownCounter >= 0) {
+			this.shutdownCounter = 4000 / this.targetFps;
+		}
+	}
+	
+	async run() {
+		// if (this.engineState.toNumber() < EngineState.INITIALIZE_DATA.toNumber()) {
+		// 	this.engineState = EngineState.INITIALIZE_DATA;
+		// 	this.drawLoadingScreen(0, 'Loading...');
+		// 	await this.loadFonts()
+		// 	this.imageLogo = await this.fetchLogo()
+		// 	await this.startGame();
+		// }
+		this.engineState = EngineState.RUNNING;
+		
+		let clockTick = 0;
+		let lastInputTimeslice = 256;
+		let lastTickTimeout = 1;
+		let inputTiming = 0;
+		
+		this.setFrameTimes()
+		
+		while (this.shutdownCounter >= 0) {
+			if (this.shutdownCounter > 0) {
+				this.shutdownCounter--;
+				
+				if (this.shutdownCounter === 0) {
+					this.clearResources();
+					return;
+				}
+			}
+			
+			let inputTimeslice = 300;
+			let tickTimeout = 1;
+			
+			let time = Date.now();
+			
+			if (this.clockTimings[clockTick] === 0) {
+				inputTimeslice = Math.max(25, lastInputTimeslice);
+				tickTimeout = lastTickTimeout;
+			} else if (time > this.clockTimings[clockTick]) {
+				inputTimeslice = Math.max(25, (2560 * this.targetFps) / (time - this.clockTimings[clockTick]) | 0);
+			}
+			
+			if (inputTimeslice > 256) {
+				inputTimeslice = 256;
+				tickTimeout = Math.max(1, this.targetFps - (time - this.clockTimings[clockTick]) / 10 | 0);
+			}
+			lastInputTimeslice = inputTimeslice;
+			
+			await zzz(tickTimeout);
+			
+			this.clockTimings[clockTick] = time;
+			clockTick = (clockTick + 1) % 10;
+			
+			if (tickTimeout > 1) {
+				for (let tick = 0; tick < 10; tick++)
+					if (this.clockTimings[tick] !== 0)
+						this.clockTimings[tick] += tickTimeout;
+			}
+			lastTickTimeout = tickTimeout;
+
+			let inputCounter = 0;
+			while (inputTiming < 256) {
+				await this.handleInputs();
+				inputTiming += inputTimeslice;
+				
+				// if our input processing is using up too much of the engine cycle, possibly render every other line
+				// as compensation.  Less time during the render phase may make up for the loss during input
+				if (++inputCounter > this.inputClockRate) {
+					inputTiming = 0;
+					this.powerThrottle += 6;
+					
+					if (this.powerThrottle > 25) {
+						this.powerThrottle = 0;
+						this.interlace = true;
+					}
+					break;
+				}
+			}
+			
+			lastInputTimeslice = inputTimeslice;
+			this.powerThrottle--;
+			
+			// faster than equivalent: i1 = Math.min(255, i1);
+			inputTiming &= 0xFF;
+			
+			this.draw();
+			
+			this.mouseScrollDelta = 0;
+		}
+	}
+	
+	update(g) {
+		this.paint(g);
+	}
+	
+	// eslint-disable-next-line no-unused-vars
+	paint(g) {
+		if (this.engineState.toNumber() < EngineState.RUNNING.toNumber()) {
+			if (this.imageLogo !== null) {
+				this.drawLoadingScreen(this.loadingProgressPercent, this.loadingProgessText);
+			}
+		}
+	}
+	
+	async fetchLogo() {
+		let buff = await this.readDataFile('jagex.jag', 'ZlackCode library', 0);
+		if (buff === null) {
+			return null;
+		}
+		
+		return this.createImage(Utility.loadData('logo.tga', 0, buff))
+	}
+	
+	async loadFonts() {
+		let buff = await this.readDataFile(`fonts${VERSION.FONTS}.jag`, 'Game fonts', 5);
+		
+		if (buff === null) {
+			return;
+		}
+		Surface.createFont(Utility.loadData('h11p.jf', 0, buff), 0);
+		Surface.createFont(Utility.loadData('h12b.jf', 0, buff), 1);
+		Surface.createFont(Utility.loadData('h12p.jf', 0, buff), 2);
+		Surface.createFont(Utility.loadData('h13b.jf', 0, buff), 3);
+		Surface.createFont(Utility.loadData('h14b.jf', 0, buff), 4);
+		Surface.createFont(Utility.loadData('h16b.jf', 0, buff), 5);
+		Surface.createFont(Utility.loadData('h20b.jf', 0, buff), 6);
+		Surface.createFont(Utility.loadData('h24b.jf', 0, buff), 7);
+	}
+	
+	drawLoadingScreen(percent, text) {
+		let midX = ((this.appletWidth - 281) / 2) | 0;
+		let midY = ((this.appletHeight - 148) / 2) | 0;
+		
+		this.graphics.setColor(Color.black);
+		this.graphics.fillRect(0, 0, this.appletWidth, this.appletHeight);
+		
+		if (!this.hasRefererLogoNotUsed) {
+			if (this.imageLogo !== null) {
+				this.graphics.drawImage(this.imageLogo, midX, midY);
+			}
+			this.graphics.setColor(new Color(132, 132, 132));
+		} else {
+			
+			this.graphics.setColor(new Color(220, 0, 0));
+		}
+		midX += 2;
+		midY += 90;
+		this.loadingProgessText = text;
+		this.loadingProgressPercent = percent;
+		this.graphics.drawRect(midX - 2, midY - 2, 280, 23);
+		this.graphics.fillRect(midX, midY, (277 * percent) / 100 | 0, 20);
+		
+		if (!this.hasRefererLogoNotUsed) {
+			this.graphics.setColor(new Color(198, 198, 198));
+		} else {
+			this.graphics.setColor(new Color(255, 255, 255));
+		}
+		this.drawString(this.graphics, this.loadingProgessText, Font.HELVETICA.withConfig(FontStyle.NORMAL, 12), midX + 138, midY + 12);
+		
+		if (!this.hasRefererLogoNotUsed) {
+			this.drawString(this.graphics, 'Powered by RSCGo, a free and open source software project', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 35);
+			this.drawString(this.graphics, '\u00a92019-2020 Zach Knight, and the 2003scape team', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 49);
+			// this.drawString(this.graphics, 'Created by JAGeX - visit www.jagex.com', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 35); // midY + 30
+			// this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 49); // midY + 44
+		} else {
+			this.graphics.setColor(new Color(132, 132, 152));
+			this.drawString(this.graphics, '\u00a92019-2020 Zach Knight, and the 2003scape team', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY - 20);
+			// this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', Font.HELVETICA.withConfig(FontStyle.NORMAL, 12), midX + 138, this.appletHeight - 20);
+		}
+		// not sure where this would have been used. maybe to indicate a special client?
+		// if (this.logoHeaderText !== null) {
+		//     this.graphics.setColor(Color.white);
+		//     this.drawString(this.graphics, this.logoHeaderText, this.fontHelvetica13b, midX + 138, midY - 120);
+		// }
+	}
+	
+	updateLoadingStatus(curPercent, statusText) {
+		this.loadingProgressPercent = curPercent;
+		this.loadingProgessText = statusText;
+		let j = ((this.appletWidth - 281) / 2) | 0;
+		let k = ((this.appletHeight - 148) / 2) | 0;
+		j += 2;
+		k += 90;
+		
+		this.graphics.setColor(new Color(132, 132, 132));
+		if (this.hasRefererLogoNotUsed) {
+			this.graphics.setColor(new Color(220, 0, 0));
+		}
+		let l = ((277 * curPercent) / 100) | 0;
+		this.graphics.fillRect(j, k, l, 20);
+		this.graphics.setColor(Color.black);
+		this.graphics.fillRect(j + l, k, 277 - l, 20);
+		
+		this.graphics.setColor(new Color(198, 198, 198));
+		if (this.hasRefererLogoNotUsed) {
+			this.graphics.setColor(new Color(255, 255, 255));
+		}
+		
+		this.drawString(this.graphics, statusText, Font.TIMES_ROMAN.withConfig(FontStyle.BOLD, 15), j + 138, k + 12);
+	}
+	
+	drawString(g, s, font, i, j) {
+		g.setFont(font);
+		const { width, height } = g.ctx.measureText(s);
+		g.drawString(s, i - ((width / 2) | 0), j + ((height / 4) | 0));
+	}
+	
+	createImage(buff) {
+		let tgaImage = new TGA(buff.buffer);;
+		
+		const canvas = tgaImage.getCanvas();
+		const ctx = canvas.getContext('2d');
+		const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+		
+		return imageData;
+	}
+	
+	async readDataFile(file, description, percent) {
+		file = './data204/' + file;
+		
+		
+		this.updateLoadingStatus(percent, 'Loading ' + description + ' - 0%');
+		
+		let fileDownloadStream = Utility.openFile(file);
+		let header = new Int8Array(6);
+		
+		await fileDownloadStream.readFully(header, 0, 6);
+		
+		let archiveSize = ((header[0] & 0xFF) << 16) + ((header[1] & 0xFF) << 8) + (header[2] & 0xFF);
+		let archiveSizeCompressed = ((header[3] & 0xFF) << 16) + ((header[4] & 0xFF) << 8) + (header[5] & 0xFF);
+		
+		this.updateLoadingStatus(percent, 'Loading ' + description + ' - 5%');
+		
+		let read = 0;
+		let archiveData = new Int8Array(archiveSizeCompressed);
+		
+		while (read < archiveSizeCompressed) {
+			let length = Math.min(archiveSizeCompressed - read, 8192);
+			await fileDownloadStream.readFully(archiveData, read, length);
+			read += length;
+
+			this.updateLoadingStatus(percent, 'Loading ' + description + ' - ' + (5 + (read * 95) / archiveSizeCompressed | 0) + '%');
+		}
+		
+		
+		this.updateLoadingStatus(percent, 'Unpacking ' + description);
+		if (archiveSizeCompressed !== archiveSize) {
+			// archive was bzip-compressed as a whole, like a jagball or something
+			let decompressed = new Int8Array(archiveSize);
+			BZLib.decompress(decompressed, archiveSize, archiveData, archiveSizeCompressed, 0);
+			return decompressed;
+		} else {
+			// Each entry has its own compression, or there is no compression involved here.
+			return archiveData;
+		}
+	}
+	
+	getGraphics() {
+		//return new Graphics(this.canvas);
+		return this._graphics;
+	}
+	
+	async createSocket(s, i) {
+		let socket = new Socket(s, i);
+		await socket.connect();
+		return socket;
+	}
 }
 
 GameShell.gameFrame = null;
-GameShell.charMap = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!"\243$%^&*()-_=+[{]};:\'@#~,<.>/?\\| ';
 
 module.exports = GameShell;
 
-},{"./bzlib":10,"./lib/graphics/color":19,"./lib/graphics/font":20,"./lib/graphics/graphics":21,"./lib/net/socket":23,"./lib/tga":25,"./surface":36,"./utility":37,"./version":38,"sleep-promise":9}],19:[function(require,module,exports){
+},{"./bzlib":10,"./lib/enum":19,"./lib/graphics/color":21,"./lib/graphics/font":22,"./lib/graphics/fontStyle":23,"./lib/graphics/graphics":24,"./lib/net/socket":26,"./lib/tga":28,"./surface":39,"./utility":40,"./version":41,"sleep-promise":9}],19:[function(require,module,exports){
+let count = 0;
+
+class Enum {
+	constructor(name) {
+		this.name = name;
+		this.ordinal = count++;
+	}
+	
+	toNumber() {
+		return this.ordinal;
+	}
+	
+	toString() {
+		return this.name;
+	}
+}
+
+module.exports = {Enum};
+
+},{}],20:[function(require,module,exports){
+class GameException extends Error {
+	constructor(message, isFatal = false) {
+		super(message);
+		console.error(message);
+	}
+}
+
+module.exports.GameException = GameException
+
+},{}],21:[function(require,module,exports){
 class Color {
-    constructor(r, g, b, a = 255) {
+    constructor(r, g, b, a = 0xFF) {
         this.r = r;
         this.g = g;
         this.b = b;
@@ -5874,31 +5899,55 @@ Color.blue = new Color(0, 0, 255);
 Color.BLUE = Color.blue;
 
 module.exports = Color;
-},{}],20:[function(require,module,exports){
+
+},{}],22:[function(require,module,exports){
+const {FontStyle} = require('./fontStyle');
+
 class Font {
-    constructor(name, type, size) {
+    constructor(name, type = FontStyle.NORMAL, size = 15) {
         this.name = name;
         this.type = type;
         this.size = size;
     }
 
-    toCanvasFont() {
-        return `${this.getType()} ${this.size}px ${this.name}`;
+    getType() {
+        return String(this.type);
     }
 
-    getType(){
-        if (this.type === 1) {
-            return 'bold';
-        } else if (this.type === 2) {
-            return 'italic';
-        }
+    withStyle(s) {
+        return new Font(this.name, s,  this.size)
+    }
 
-        return 'normal';
+    withSize(s) {
+        return new Font(this.name, s,  this.size)
+    }
+
+    withConfig(style, size = this.size) {
+        return new Font(this.name, style,  size)
+    }
+
+    toString() {
+        return `${this.getType()} ${this.size}px ${this.name}`;
     }
 }
 
+Font.HELVETICA = new Font('Helvetica')
+Font.TIMES_ROMAN = new Font('TimesRoman')
+
 module.exports = Font;
-},{}],21:[function(require,module,exports){
+
+},{"./fontStyle":23}],23:[function(require,module,exports){
+const {Enum} = require('../enum');
+
+class FontStyle extends Enum {  }
+
+FontStyle.NORMAL = new FontStyle('normal');
+FontStyle.BOLD = new FontStyle('bold');
+FontStyle.ITALIC = new FontStyle('italic');
+
+module.exports = {FontStyle}
+
+},{"../enum":19}],24:[function(require,module,exports){
 const Font = require('./font');
 const Color = require('./color');
 
@@ -5922,7 +5971,7 @@ class Graphics {
     }
 
     setFont(font) {
-        this.ctx.font = font.toCanvasFont();
+        this.ctx.font = String(font);
     }
 
     drawString(s, x, y) {
@@ -5943,7 +5992,8 @@ class Graphics {
 }
 
 module.exports = Graphics;
-},{"./color":19,"./font":20}],22:[function(require,module,exports){
+
+},{"./color":21,"./font":22}],25:[function(require,module,exports){
 const sleep = require('sleep-promise');
 
 class FileDownloadStream {
@@ -5992,7 +6042,7 @@ class FileDownloadStream {
 
 module.exports = FileDownloadStream;
 
-},{"sleep-promise":9}],23:[function(require,module,exports){
+},{"sleep-promise":9}],26:[function(require,module,exports){
 class Socket {
     // newReader(asFunc) {
     //     return new Promise((resolve, reject) => {
@@ -6206,10 +6256,10 @@ class Socket {
 
 module.exports = Socket;
 
-},{}],24:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 function PCMPlayer(t){this.init(t)}PCMPlayer.prototype.init=function(t){this.option=Object.assign({},{encoding:"16bitInt",channels:1,sampleRate:8e3,flushingTime:1e3},t),this.samples=new Float32Array,this.flush=this.flush.bind(this),this.interval=setInterval(this.flush,this.option.flushingTime),this.maxValue=this.getMaxValue(),this.typedArray=this.getTypedArray(),this.createContext()},PCMPlayer.prototype.getMaxValue=function(){var t={"8bitInt":128,"16bitInt":32768,"32bitInt":2147483648,"32bitFloat":1};return t[this.option.encoding]?t[this.option.encoding]:t["16bitInt"]},PCMPlayer.prototype.getTypedArray=function(){var t={"8bitInt":Int8Array,"16bitInt":Int16Array,"32bitInt":Int32Array,"32bitFloat":Float32Array};return t[this.option.encoding]?t[this.option.encoding]:t["16bitInt"]},PCMPlayer.prototype.createContext=function(){this.audioCtx=new(window.AudioContext||window.webkitAudioContext),this.gainNode=this.audioCtx.createGain(),this.gainNode.gain.value=1,this.gainNode.connect(this.audioCtx.destination),this.startTime=this.audioCtx.currentTime},PCMPlayer.prototype.isTypedArray=function(t){return t.byteLength&&t.buffer&&t.buffer.constructor==ArrayBuffer},PCMPlayer.prototype.feed=function(t){if(this.isTypedArray(t)){t=this.getFormatedValue(t);var e=new Float32Array(this.samples.length+t.length);e.set(this.samples,0),e.set(t,this.samples.length),this.samples=e}},PCMPlayer.prototype.getFormatedValue=function(t){t=new this.typedArray(t.buffer);var e,i=new Float32Array(t.length);for(e=0;e<t.length;e++)i[e]=t[e]/this.maxValue;return i},PCMPlayer.prototype.volume=function(t){this.gainNode.gain.value=t},PCMPlayer.prototype.destroy=function(){this.interval&&clearInterval(this.interval),this.samples=null,this.audioCtx.close(),this.audioCtx=null},PCMPlayer.prototype.flush=function(){if(this.samples.length){var t,e,i,n,a,s=this.audioCtx.createBufferSource(),r=this.samples.length/this.option.channels,o=this.audioCtx.createBuffer(this.option.channels,r,this.option.sampleRate);for(e=0;e<this.option.channels;e++)for(t=o.getChannelData(e),i=e,a=50,n=0;n<r;n++)t[n]=this.samples[i],n<50&&(t[n]=t[n]*n/50),r-51<=n&&(t[n]=t[n]*a--/50),i+=this.option.channels;this.startTime<this.audioCtx.currentTime&&(this.startTime=this.audioCtx.currentTime),console.log("start vs current "+this.startTime+" vs "+this.audioCtx.currentTime+" duration: "+o.duration),s.buffer=o,s.connect(this.gainNode),s.start(this.startTime),this.startTime+=o.duration,this.samples=new Float32Array}};
 module.exports = PCMPlayer;
-},{}],25:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 /**
  * @file tgajs - Javascript decoder & (experimental) encoder for TGA files
  * @desc tgajs is a fork from https://github.com/vthibault/jsTGALoader
@@ -6283,13 +6333,14 @@ module.exports = PCMPlayer;
    * @constructor
    */
   function Targa() {
-    if (arguments.length == 1) {
-      var h = arguments[0];
-
-      this.header = createHeader(h);
-      setHeaderBooleans(this.header);
-      checkHeader(this.header);
-    }
+      this.load(arguments[0])
+    // if (arguments.length == 1) {
+    //   var h = arguments[0];
+    //
+    //   this.header = createHeader(h);
+    //   setHeaderBooleans(this.header);
+    //   checkHeader(this.header);
+    // }
   }
 
   /**
@@ -6937,7 +6988,7 @@ module.exports = PCMPlayer;
     // Create an imageData
     if (!imageData) {
       if (document) {
-        imageData = document.createElement('canvas').getContext('2d').createImageData(width, height);
+        imageData = document.createElement('canvas').getContext('2d', {alpha:true,desynchronized:true,depth:true,antialias:true}).createImageData(width, height);
       }
       // In Thread context ?
       else {
@@ -7148,7 +7199,7 @@ module.exports = PCMPlayer;
 
 })(this);
 
-},{}],26:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 const C_OPCODES = require('./opcodes/client');
 const Color = require('./lib/graphics/color');
 const Font = require('./lib/graphics/font');
@@ -7156,6 +7207,7 @@ const {decodeString, encodeString} = require('./chat-message');
 const GameBuffer = require('./game-buffer');
 const GameCharacter = require('./game-character');
 const GameConnection = require('./game-connection');
+const GameException = require('./lib/game-exception');
 const GameData = require('./game-data');
 const GameModel = require('./game-model');
 const Long = require('long');
@@ -7165,16 +7217,26 @@ const Scene = require('./scene');
 const StreamAudioPlayer = require('./stream-audio-player');
 const Surface = require('./surface');
 const SurfaceSprite = require('./surface-sprite');
-const {Utility, GameState} = require('./utility');
+const {Utility, GameState, GamePanel, WelcomeState} = require('./utility');
 
 const VERSION = require('./version');
-const WordFilter = require('./word-filter');
+const {
+    filter, readFilteredTLDs,
+    readFilteredHosts, readFilteredWords,
+    readFilteredHashFragments
+} = require('./word-filter');
 const World = require('./world');
 
 const ZOOM_MIN = 450;
 const ZOOM_MAX = 1250;
 const ZOOM_INDOORS = 550;
 const ZOOM_OUTDOORS = 750;
+
+function setCookie(cname, cvalue) {
+	let d = new Date();
+	d.setTime(d.getTime() + (30 * 24 * 60 * 60 * 1000));
+	document.cookie = cname + "=" + cvalue + ";expires = " + d.toUTCString() + ";path=/";
+};
 
 const getCookie = cname => {
     const name = cname + '=';
@@ -7196,10 +7258,10 @@ function fromCharArray(a) {
     return Array.from(a).map(c => String.fromCharCode(c)).join('');
 }
 
+
 class mudclient extends GameConnection {
     constructor(canvas) {
         super(canvas);
-
         this.menuMaxSize = 250;
         this.pathStepsMax = 8000;
         this.playersMax = 500;
@@ -7236,7 +7298,6 @@ class mudclient extends GameConnection {
         this.anInt660 = 0;
         this.cameraRotationX = 0;
         this.scene = null;
-        this.loginScreen = 0;
         this.showDialogReportAbuseStep = 0;
         this.tradeConfirmAccepted = false;
         this.audioPlayer = null;
@@ -7261,9 +7322,9 @@ class mudclient extends GameConnection {
         this.controlButtonAppearanceBottom1 = 0;
         this.controlButtonAppearanceBottom2 = 0;
         this.controlButtonAppearanceAccept = 0;
-        this.logoutTimeout = 0;
+        this.logoutBoxFrames = 0;
         this.tradeRecipientConfirmHash = new Long(0);
-        this.loginTimer = 0;
+        this.frameCounter = 0;
         this.npcCombatModelArray2 = new Int32Array([0, 0, 0, 0, 0, 1, 2, 1]);
         this.systemUpdate = 0;
         this.graphics = null;
@@ -7309,7 +7370,6 @@ class mudclient extends GameConnection {
         this.objectAnimationNumberFireLightningSpell = 0;
         this.objectAnimationNumberTorch = 0;
         this.objectAnimationNumberClaw = 0;
-        this.gameState = GameState.LOGIN;
         this.npcCount = 0;
         this.npcCacheCount = 0;
         this.objectAnimationCount = 0;
@@ -7485,7 +7545,7 @@ class mudclient extends GameConnection {
         this.menuTargetIndex = new Int32Array(this.menuMaxSize);
         this.wallObjectAlreadyInMenu = new Int8Array(this.wallObjectsMax);
         this.tileSize = 128;
-        this.errorLoadingMemory = false;
+        this.runtimeException = false;
         this.fogOfWar = false;
         this.gameWidth = 512;
         this.gameHeight = 334; 
@@ -7556,8 +7616,6 @@ class mudclient extends GameConnection {
         this.duelSettingsPrayer = false;
         this.duelSettingsWeapons = false;
         this.showDialogBank = false;
-        this.loginUserDesc = '';
-        this.loginUserDisp = '';
         this.optionMouseButtonOne = false;
         this.inventoryItemId = new Int32Array(35);
         this.inventoryItemStackCount = new Int32Array(35);
@@ -8035,15 +8093,15 @@ class mudclient extends GameConnection {
     }
 
     createMessageTabPanel() {
-        this.panelMessageTabs = new Panel(this.surface, 10);
-        this.controlTextListChat = this.panelMessageTabs.addTextList(5, 269, 502, 56, 1, 20, true);
-        this.controlTextListAll = this.panelMessageTabs.addTextListInput(7, 324, 498, 14, 1, 80, false, true);
-        this.controlTextListQuest = this.panelMessageTabs.addTextList(5, 269, 502, 56, 1, 20, true);
-        this.controlTextListPrivate = this.panelMessageTabs.addTextList(5, 269, 502, 56, 1, 20, true);
-        this.panelMessageTabs.setFocus(this.controlTextListAll);
+        this.panelGame[GamePanel.CHAT] = new Panel(this.surface, 10);
+        this.controlTextListAll = this.panelGame[GamePanel.CHAT].addTextListInput(7, 324, 498, 14, 1, 80, false, true);
+        this.controlTextListChat = this.panelGame[GamePanel.CHAT].addTextList(5, 269, 502, 56, 1, 20, true);
+        this.controlTextListQuest = this.panelGame[GamePanel.CHAT].addTextList(5, 269, 502, 56, 1, 20, true);
+        this.controlTextListPrivate = this.panelGame[GamePanel.CHAT].addTextList(5, 269, 502, 56, 1, 20, true);
+        this.panelGame[GamePanel.CHAT].setFocus(this.controlTextListAll);
     }
 
-    disposeAndCollect() {
+    freeCacheMemory() {
         if (this.surface !== null) {
             this.surface.clear();
             this.surface.pixels = null;
@@ -8062,7 +8120,7 @@ class mudclient extends GameConnection {
         this.players = null;
         this.npcsServer = null;
         this.npcs = null;
-        this.localPlayer = null;
+        this.localPlayer = new GameCharacter();
 
         if (this.world !== null) {
             this.world.terrainModels = null;
@@ -8074,7 +8132,7 @@ class mudclient extends GameConnection {
     }
 
     drawUi() {
-        if (this.logoutTimeout !== 0) {
+        if (this.logoutBoxFrames !== 0) {
             this.drawDialogLogout();
         } else if (this.showDialogWelcome) {
             this.drawDialogWelcome();
@@ -8105,52 +8163,52 @@ class mudclient extends GameConnection {
                 this.drawOptionMenu();
             }
 
-            if (this.localPlayer.animationCurrent === 8 || this.localPlayer.animationCurrent === 9) {
+            if (this.localPlayer.isFighting()) {
                 this.drawDialogCombatStyle();
             }
 
             this.setActiveUiTab();
 
-            let nomenus = !this.showOptionMenu && !this.showRightClickMenu;
+            let nothingOpen = !this.showOptionMenu && !this.showRightClickMenu;
 
-            if (nomenus) {
+            if (nothingOpen) {
                 this.menuItemsCount = 0;
-            }
-
-            if (this.showUiTab === 0 && nomenus) {
-                this.createRightClickMenu();
+                
+                if (this.showUiTab === 0) {
+                    this.createRightClickMenu();
+                }
             }
 
             if (this.showUiTab === 1) {
-                this.drawUiTabInventory(nomenus);
+                this.drawUiTabInventory(nothingOpen);
             }
 
             if (this.showUiTab === 2) {
-                this.drawUiTabMinimap(nomenus);
+                this.drawUiTabMinimap(nothingOpen);
             }
 
             if (this.showUiTab === 3) {
-                this.drawUiTabPlayerInfo(nomenus);
+                this.drawUiTabPlayerInfo(nothingOpen);
             }
 
             if (this.showUiTab === 4) {
-                this.drawUiTabMagic(nomenus);
+                this.drawUiTabMagic(nothingOpen);
             }
 
             if (this.showUiTab === 5) {
-                this.drawUiTabSocial(nomenus);
+                this.drawUiTabSocial(nothingOpen);
             }
 
             if (this.showUiTab === 6) {
-                this.drawUiTabOptions(nomenus);
+                this.drawUiTabOptions(nothingOpen);
             }
-
-            if (!this.showRightClickMenu && !this.showOptionMenu) {
-                this.createTopMouseMenu();
-            }
-
-            if (this.showRightClickMenu && !this.showOptionMenu) {
-                this.drawRightClickMenu();
+    
+            if (!this.showOptionMenu) {
+                if (this.showRightClickMenu) {
+                    this.drawRightClickMenu();
+                } else {
+                    this.refreshRightClickMenu();
+                }
             }
         }
 
@@ -8331,10 +8389,10 @@ class mudclient extends GameConnection {
         this.surface.drawString('Your Inventory', dialogX + 216, dialogY + 27, 4, 0xffffff);
 
         if (!this.tradeAccepted) {
-            this.surface._drawSprite_from3(dialogX + 217, dialogY + 238, this.spriteMedia + 25);
+            this.surface.drawSpriteID(dialogX + 217, dialogY + 238, this.spriteMedia + 25);
         }
 
-        this.surface._drawSprite_from3(dialogX + 394, dialogY + 238, this.spriteMedia + 26);
+        this.surface.drawSpriteID(dialogX + 394, dialogY + 238, this.spriteMedia + 26);
 
         if (this.tradeRecipientAccepted) {
             this.surface.drawStringCenter('Other player', dialogX + 341, dialogY + 246, 1, 0xffffff);
@@ -8389,11 +8447,12 @@ class mudclient extends GameConnection {
     }
 
     resetGame() {
-        this.systemUpdate = 0;
-        this.combatStyle = 0;
-        this.logoutTimeout = 0;
-        this.loginScreen = 0;
+        // this.systemUpdate = 0;
+        // this.logoutTimeout = 0;
+        // this.welcomeState = WelcomeState.WELCOME;
+        this.resetLoginVars()
         this.gameState = GameState.WORLD;
+        this.combatStyle = 0;
 
         this.resetPMText();
         this.surface.blackScreen();
@@ -8449,7 +8508,7 @@ class mudclient extends GameConnection {
         let uiX = this.surface.width2 - 199;
         let uiY = 36;
 
-        this.surface._drawSprite_from3(uiX - 49, 3, this.spriteMedia + 5);
+        this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 5);
 
         let uiWidth = 196;
         let uiHeight = 182;
@@ -8496,7 +8555,7 @@ class mudclient extends GameConnection {
             }
         }
 
-        this.panelSocialList.drawPanel();
+        this.panelSocialList.render();
 
         if (this.uiTabSocialSubTab === 0) {
             let k1 = this.panelSocialList.getListEntryIndex(this.controlListSocialPlayers);
@@ -8610,36 +8669,9 @@ class mudclient extends GameConnection {
             this.mouseButtonClick = 0;
         }
     }
-
-    handleKeyPress(code, i) {
-        if (this.gameState === GameState.LOGIN) {
-            if (this.loginScreen === 0 && this.panelLoginWelcome !== undefined) {
-                this.panelLoginWelcome.keyPress(code, i);
-            }
-
-            if (this.loginScreen === 1 && this.panelLoginNewuser !== undefined) {
-                this.panelLoginNewuser.keyPress(code, i);
-            }
-
-            if (this.loginScreen === 2 && this.panelLoginExistinguser !== undefined) {
-                this.panelLoginExistinguser.keyPress(code, i);
-            }
-        }
-
-        if (this.gameState === GameState.WORLD) {
-            if (this.showAppearanceChange && this.panelAppearance !== undefined) {
-                this.panelAppearance.keyPress(code, i);
-                return;
-            }
-
-            if (this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelMessageTabs !== undefined) {
-                this.panelMessageTabs.keyPress(code, i);
-            }
-        }
-    }
-
+    
     sendLogout() {
-        if (this.gameState === GameState.LOGIN) {
+        if (this.gameState !== GameState.WORLD) {
             return;
         }
 
@@ -8654,7 +8686,7 @@ class mudclient extends GameConnection {
         
         this.clientStream.newPacket(C_OPCODES.LOGOUT);
         this.clientStream.sendPacket();
-        this.logoutTimeout = 1000;
+        this.logoutBoxFrames = 1000;
     }
 
     createPlayer(serverIndex, x, y, anim) {
@@ -8764,7 +8796,7 @@ class mudclient extends GameConnection {
                 let msg = encodeString(s1);
                 this.sendPrivateMessage(this.privateMessageTarget, msg, msg.length);
                 s1 = decodeString(msg);
-                s1 = WordFilter.filter(s1);
+                s1 = filter(s1);
 
                 this.showServerMessage('@pri@You tell ' + Utility.hashToUsername(this.privateMessageTarget) + ': ' + s1);
             }
@@ -8801,8 +8833,8 @@ class mudclient extends GameConnection {
     }
 
     createAppearancePanel() {
-        this.panelAppearance = new Panel(this.surface, 100);
-        this.panelAppearance.addText(256, 10, 'Please design Your Character', 4, true);
+        this.panelGame[GamePanel.APPEARANCE] = new Panel(this.surface, 100);
+        this.panelGame[GamePanel.APPEARANCE].addText(256, 10, 'Please design Your Character', 4, true);
 
         let x = 140;
         let y = 34;
@@ -8810,62 +8842,62 @@ class mudclient extends GameConnection {
         x += 116;
         y -= 10;
 
-        this.panelAppearance.addText(x - 55, y + 110, 'Front', 3, true);
-        this.panelAppearance.addText(x, y + 110, 'Side', 3, true);
-        this.panelAppearance.addText(x + 55, y + 110, 'Back', 3, true);
+        this.panelGame[GamePanel.APPEARANCE].addText(x - 55, y + 110, 'Front', 3, true);
+        this.panelGame[GamePanel.APPEARANCE].addText(x, y + 110, 'Side', 3, true);
+        this.panelGame[GamePanel.APPEARANCE].addText(x + 55, y + 110, 'Back', 3, true);
 
         let xOff = 54;
 
         y += 145;
 
-        this.panelAppearance.addBoxRounded(x - xOff, y, 53, 41);
-        this.panelAppearance.addText(x - xOff, y - 8, 'Head', 1, true);
-        this.panelAppearance.addText(x - xOff, y + 8, 'Type', 1, true);
-        this.panelAppearance.addSprite(x - xOff - 40, y, Panel.baseSpriteStart + 7);
-        this.controlButtonAppearanceHead1 = this.panelAppearance.addButton(x - xOff - 40, y, 20, 20);
-        this.panelAppearance.addSprite((x - xOff) + 40, y, Panel.baseSpriteStart + 6);
-        this.controlButtonAppearanceHead2 = this.panelAppearance.addButton((x - xOff) + 40, y, 20, 20);
-        this.panelAppearance.addBoxRounded(x + xOff, y, 53, 41);
-        this.panelAppearance.addText(x + xOff, y - 8, 'Hair', 1, true);
-        this.panelAppearance.addText(x + xOff, y + 8, 'Color', 1, true);
-        this.panelAppearance.addSprite((x + xOff) - 40, y, Panel.baseSpriteStart + 7);
-        this.controlButtonAppearanceHair1 = this.panelAppearance.addButton((x + xOff) - 40, y, 20, 20);
-        this.panelAppearance.addSprite(x + xOff + 40, y, Panel.baseSpriteStart + 6);
-        this.controlButtonAppearanceHair2 = this.panelAppearance.addButton(x + xOff + 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addBoxRounded(x - xOff, y, 53, 41);
+        this.panelGame[GamePanel.APPEARANCE].addText(x - xOff, y - 8, 'Head', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addText(x - xOff, y + 8, 'Type', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addSprite(x - xOff - 40, y, Panel.baseSpriteStart + 7);
+        this.controlButtonAppearanceHead1 = this.panelGame[GamePanel.APPEARANCE].addButton(x - xOff - 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addSprite((x - xOff) + 40, y, Panel.baseSpriteStart + 6);
+        this.controlButtonAppearanceHead2 = this.panelGame[GamePanel.APPEARANCE].addButton((x - xOff) + 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addBoxRounded(x + xOff, y, 53, 41);
+        this.panelGame[GamePanel.APPEARANCE].addText(x + xOff, y - 8, 'Hair', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addText(x + xOff, y + 8, 'Color', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addSprite((x + xOff) - 40, y, Panel.baseSpriteStart + 7);
+        this.controlButtonAppearanceHair1 = this.panelGame[GamePanel.APPEARANCE].addButton((x + xOff) - 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addSprite(x + xOff + 40, y, Panel.baseSpriteStart + 6);
+        this.controlButtonAppearanceHair2 = this.panelGame[GamePanel.APPEARANCE].addButton(x + xOff + 40, y, 20, 20);
         y += 50;
-        this.panelAppearance.addBoxRounded(x - xOff, y, 53, 41);
-        this.panelAppearance.addText(x - xOff, y, 'Gender', 1, true);
-        this.panelAppearance.addSprite(x - xOff - 40, y, Panel.baseSpriteStart + 7);
-        this.controlButtonAppearanceGender1 = this.panelAppearance.addButton(x - xOff - 40, y, 20, 20);
-        this.panelAppearance.addSprite((x - xOff) + 40, y, Panel.baseSpriteStart + 6);
-        this.controlButtonAppearanceGender2 = this.panelAppearance.addButton((x - xOff) + 40, y, 20, 20);
-        this.panelAppearance.addBoxRounded(x + xOff, y, 53, 41);
-        this.panelAppearance.addText(x + xOff, y - 8, 'Top', 1, true);
-        this.panelAppearance.addText(x + xOff, y + 8, 'Color', 1, true);
-        this.panelAppearance.addSprite((x + xOff) - 40, y, Panel.baseSpriteStart + 7);
-        this.controlButtonAppearanceTop1 = this.panelAppearance.addButton((x + xOff) - 40, y, 20, 20);
-        this.panelAppearance.addSprite(x + xOff + 40, y, Panel.baseSpriteStart + 6);
-        this.controlButtonAppearanceTop2 = this.panelAppearance.addButton(x + xOff + 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addBoxRounded(x - xOff, y, 53, 41);
+        this.panelGame[GamePanel.APPEARANCE].addText(x - xOff, y, 'Gender', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addSprite(x - xOff - 40, y, Panel.baseSpriteStart + 7);
+        this.controlButtonAppearanceGender1 = this.panelGame[GamePanel.APPEARANCE].addButton(x - xOff - 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addSprite((x - xOff) + 40, y, Panel.baseSpriteStart + 6);
+        this.controlButtonAppearanceGender2 = this.panelGame[GamePanel.APPEARANCE].addButton((x - xOff) + 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addBoxRounded(x + xOff, y, 53, 41);
+        this.panelGame[GamePanel.APPEARANCE].addText(x + xOff, y - 8, 'Top', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addText(x + xOff, y + 8, 'Color', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addSprite((x + xOff) - 40, y, Panel.baseSpriteStart + 7);
+        this.controlButtonAppearanceTop1 = this.panelGame[GamePanel.APPEARANCE].addButton((x + xOff) - 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addSprite(x + xOff + 40, y, Panel.baseSpriteStart + 6);
+        this.controlButtonAppearanceTop2 = this.panelGame[GamePanel.APPEARANCE].addButton(x + xOff + 40, y, 20, 20);
         y += 50;
-        this.panelAppearance.addBoxRounded(x - xOff, y, 53, 41);
-        this.panelAppearance.addText(x - xOff, y - 8, 'Skin', 1, true);
-        this.panelAppearance.addText(x - xOff, y + 8, 'Color', 1, true);
-        this.panelAppearance.addSprite(x - xOff - 40, y, Panel.baseSpriteStart + 7);
-        this.controlButtonAppearanceSkin1 = this.panelAppearance.addButton(x - xOff - 40, y, 20, 20);
-        this.panelAppearance.addSprite((x - xOff) + 40, y, Panel.baseSpriteStart + 6);
-        this.controlButtonAppearanceSkin2 = this.panelAppearance.addButton((x - xOff) + 40, y, 20, 20);
-        this.panelAppearance.addBoxRounded(x + xOff, y, 53, 41);
-        this.panelAppearance.addText(x + xOff, y - 8, 'Bottom', 1, true);
-        this.panelAppearance.addText(x + xOff, y + 8, 'Color', 1, true);
-        this.panelAppearance.addSprite((x + xOff) - 40, y, Panel.baseSpriteStart + 7);
-        this.controlButtonAppearanceBottom1 = this.panelAppearance.addButton((x + xOff) - 40, y, 20, 20);
-        this.panelAppearance.addSprite(x + xOff + 40, y, Panel.baseSpriteStart + 6);
-        this.controlButtonAppearanceBottom2 = this.panelAppearance.addButton(x + xOff + 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addBoxRounded(x - xOff, y, 53, 41);
+        this.panelGame[GamePanel.APPEARANCE].addText(x - xOff, y - 8, 'Skin', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addText(x - xOff, y + 8, 'Color', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addSprite(x - xOff - 40, y, Panel.baseSpriteStart + 7);
+        this.controlButtonAppearanceSkin1 = this.panelGame[GamePanel.APPEARANCE].addButton(x - xOff - 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addSprite((x - xOff) + 40, y, Panel.baseSpriteStart + 6);
+        this.controlButtonAppearanceSkin2 = this.panelGame[GamePanel.APPEARANCE].addButton((x - xOff) + 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addBoxRounded(x + xOff, y, 53, 41);
+        this.panelGame[GamePanel.APPEARANCE].addText(x + xOff, y - 8, 'Bottom', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addText(x + xOff, y + 8, 'Color', 1, true);
+        this.panelGame[GamePanel.APPEARANCE].addSprite((x + xOff) - 40, y, Panel.baseSpriteStart + 7);
+        this.controlButtonAppearanceBottom1 = this.panelGame[GamePanel.APPEARANCE].addButton((x + xOff) - 40, y, 20, 20);
+        this.panelGame[GamePanel.APPEARANCE].addSprite(x + xOff + 40, y, Panel.baseSpriteStart + 6);
+        this.controlButtonAppearanceBottom2 = this.panelGame[GamePanel.APPEARANCE].addButton(x + xOff + 40, y, 20, 20);
         y += 82;
         y -= 35;
-        this.panelAppearance.addButtonBackground(x, y, 200, 30);
-        this.panelAppearance.addText(x, y, 'Accept', 4, false);
-        this.controlButtonAppearanceAccept = this.panelAppearance.addButton(x, y, 200, 30);
+        this.panelGame[GamePanel.APPEARANCE].addButtonBackground(x, y, 200, 30);
+        this.panelGame[GamePanel.APPEARANCE].addText(x, y, 'Accept', 4, false);
+        this.controlButtonAppearanceAccept = this.panelGame[GamePanel.APPEARANCE].addButton(x, y, 200, 30);
     }
 
     resetPMText() {
@@ -8937,37 +8969,31 @@ class mudclient extends GameConnection {
             y += 15;
         }
 
-        // this is an odd way of storing recovery day settings
-        if (this.welcomeRecoverySetDays !== 201) {
-            // and this
-            if (this.welcomeRecoverySetDays === 200) {
-                this.surface.drawStringCenter('You have not yet set any password recovery questions.', 256, y, 1, 0xff8000);
-                y += 15;
-                this.surface.drawStringCenter('We strongly recommend you do so now to secure your account.', 256, y, 1, 0xff8000);
-                y += 15;
-                this.surface.drawStringCenter('Do this from the \'account management\' area on our front webpage', 256, y, 1, 0xff8000);
-                y += 15;
-            } else {
-                let s1 = null;
+        if (this.welcomeRecoverySetDays === 0) {
+            this.surface.drawStringCenter('You have not yet set any password recovery questions.', 256, y, 1, 0xff8000);
+            y += 15;
+            this.surface.drawStringCenter('We strongly recommend you do so now to secure your account.', 256, y, 1, 0xff8000);
+            y += 15;
+            this.surface.drawStringCenter('Do this from the \'account management\' area on our front webpage', 256, y, 1, 0xff8000);
+            y += 15;
+        } else {
+            this.welcomeRecoverySetDays--;
+            let s1 = this.welcomeRecoverySetDays + ' days ago';
 
-                if (this.welcomeRecoverySetDays === 0) {
-                    s1 = 'Earlier today';
-                } else if (this.welcomeRecoverySetDays === 1) {
-                    s1 = 'Yesterday';
-                } else {
-                    s1 = this.welcomeRecoverySetDays + ' days ago';
-                }
-
-                this.surface.drawStringCenter(s1 + ' you changed your recovery questions', 256, y, 1, 0xff8000);
-                y += 15;
-                this.surface.drawStringCenter('If you do not remember making this change then cancel it immediately', 256, y, 1, 0xff8000);
-                y += 15;
-                this.surface.drawStringCenter('Do this from the \'account management\' area on our front webpage', 256, y, 1, 0xff8000);
-                y += 15;
+            if (this.welcomeRecoverySetDays === 0) {
+                s1 = 'Earlier today';
+            } else if (this.welcomeRecoverySetDays === 1) {
+                s1 = 'Yesterday';
             }
 
+            this.surface.drawStringCenter(s1 + ' you changed your recovery questions', 0xFF, y, 1, 0xff8000);
+            y += 15;
+            this.surface.drawStringCenter('If you do not remember making this change then cancel it immediately', 0xFF, y, 1, 0xff8000);
+            y += 15;
+            this.surface.drawStringCenter('Do this from the \'account management\' area on our front webpage', 0xFF, y, 1, 0xff8000);
             y += 15;
         }
+        y += 15;
 
         let l = 0xffffff;
 
@@ -8993,7 +9019,7 @@ class mudclient extends GameConnection {
     drawAppearancePanelCharacterSprites() {
         this.surface.interlace = false;
         this.surface.blackScreen();
-        this.panelAppearance.drawPanel();
+        this.panelGame[GamePanel.APPEARANCE].render();
         let i = 140;
         let j = 50;
         i += 116;
@@ -9007,7 +9033,7 @@ class mudclient extends GameConnection {
         this.surface._spriteClipping_from6((i - 32) + 55, j, 64, 102, GameData.animationNumber[this.appearance2Colour] + 12, this.characterTopBottomColours[this.appearanceBottomColour]);
         this.surface._spriteClipping_from9((i - 32) + 55, j, 64, 102, GameData.animationNumber[this.appearanceBodyGender] + 12, this.characterTopBottomColours[this.appearanceTopColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
         this.surface._spriteClipping_from9((i - 32) + 55, j, 64, 102, GameData.animationNumber[this.appearanceHeadType] + 12, this.characterHairColours[this.appearanceHairColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
-        this.surface._drawSprite_from3(0, this.gameHeight, this.spriteMedia + 22);
+        this.surface.drawSpriteID(0, this.gameHeight, this.spriteMedia + 22);
         this.surface.draw(this.graphics, 0, 0);
     }
 
@@ -9022,10 +9048,31 @@ class mudclient extends GameConnection {
             this.systemUpdate--;
         }
 
-        await this.checkConnection(); 
+    	if (this.cookiesUpdate > 300) {
+    		this.cookiesUpdate = 0;
+    		// 6secs
+    		let savePass = this.panelLogin[WelcomeState.EXISTING_USER].isActivated(this.controlLoginSavePass)
+    		if (this.savePass !== savePass) {
+    			this.savePass = savePass
+				setCookie('savePass', this.savePass ? 'true' : '', 30);
+    		}
+    		if (this.savePass) {
+    			let currCookie = getCookie("username");
+	    		if (this.loginUser !== currCookie) {
+					setCookie('username', this.loginUser, 30);
+				}
+			} else {
+    			let currCookie = getCookie("username");
+    			setCookie("username", '')
+			}
+		} else {
+			this.cookiesUpdate += 1;
+		}
 
-        if (this.logoutTimeout > 0) {
-            this.logoutTimeout--;
+        await this.checkConnection();
+
+        if (this.logoutBoxFrames > 0) {
+            this.logoutBoxFrames--;
         }
 
         // if (this.mouseActionTimeout > 4500 && this.combatTimeout === 0 && this.logoutTimeout === 0) {
@@ -9332,7 +9379,7 @@ class mudclient extends GameConnection {
             if (this.inputTextFinal.length > 0) {
                 if (/^::lostcon$/i.test(this.inputTextFinal)) {
                     this.clientStream.closeStream();
-                } else if (/^::closecon$/.test(this.inputTextFinal)) { 
+                } else if (/^::closecon$/.test(this.inputTextFinal)) {
                     this.closeConnection();
                 } else {
                     this.clientStream.newPacket(C_OPCODES.SLEEP_WORD);
@@ -9376,17 +9423,17 @@ class mudclient extends GameConnection {
 
             if (this.mouseX > 110 && this.mouseX < 194 && this.lastMouseButtonDown === 1) {
                 this.messageTabSelected = 1;
-                this.panelMessageTabs.controlFlashText[this.controlTextListChat] = 999999;
+                this.panelGame[GamePanel.CHAT].controlFlashText[this.controlTextListChat] = 999999;
             }
 
             if (this.mouseX > 215 && this.mouseX < 295 && this.lastMouseButtonDown === 1) {
                 this.messageTabSelected = 2;
-                this.panelMessageTabs.controlFlashText[this.controlTextListQuest] = 999999;
+                this.panelGame[GamePanel.CHAT].controlFlashText[this.controlTextListQuest] = 999999;
             }
 
             if (this.mouseX > 315 && this.mouseX < 395 && this.lastMouseButtonDown === 1) {
                 this.messageTabSelected = 3;
-                this.panelMessageTabs.controlFlashText[this.controlTextListPrivate] = 999999;
+                this.panelGame[GamePanel.CHAT].controlFlashText[this.controlTextListPrivate] = 999999;
             }
 
             if (this.mouseX > 417 && this.mouseX < 497 && this.lastMouseButtonDown === 1) {
@@ -9400,15 +9447,15 @@ class mudclient extends GameConnection {
             this.mouseButtonDown = 0;
         }
 
-        this.panelMessageTabs.handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown, this.mouseScrollDelta);
+        this.panelGame[GamePanel.CHAT].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown, this.mouseScrollDelta);
 
         if (this.messageTabSelected > 0 && this.mouseX >= 494 && this.mouseY >= this.gameHeight - 66) {
             this.lastMouseButtonDown = 0;
         }
 
-        if (this.panelMessageTabs.isClicked(this.controlTextListAll)) {
-            let s = this.panelMessageTabs.getText(this.controlTextListAll);
-            this.panelMessageTabs.updateText(this.controlTextListAll, '');
+        if (this.panelGame[GamePanel.CHAT].isClicked(this.controlTextListAll)) {
+            let s = this.panelGame[GamePanel.CHAT].getText(this.controlTextListAll);
+            this.panelGame[GamePanel.CHAT].updateText(this.controlTextListAll, '');
 
             if (/^::/.test(s)) {
                 if (/^::closecon$/i.test(s)) {
@@ -9424,7 +9471,7 @@ class mudclient extends GameConnection {
                 let msg = encodeString(s);
                 this.sendChatMessage(msg, msg.length);
                 s = decodeString(msg);
-                s = WordFilter.filter(s);
+                s = filter(s);
                 this.localPlayer.messageTimeout = 150;
                 this.localPlayer.message = s;
                 this.showMessage(this.localPlayer.name + ': ' + s, 2);
@@ -9638,11 +9685,11 @@ class mudclient extends GameConnection {
         this.surface.drawBox(0, 194, 512, 20, 0);
 
         for (let k = 6; k >= 1; k--) {
-            this.surface.drawLineAlpha(0, k, 0, 194 - k, this.gameWidth, 8); 
+            this.surface.drawLineAlpha(0, k, 0, 194 - k, this.gameWidth, 8);
         }
 
         // runescape logo
-        this.surface._drawSprite_from3(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10); 
+        this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10);
         this.surface._drawSprite_from5(this.spriteLogo, 0, 0, this.gameWidth, 200);
         this.surface.drawWorld(this.spriteLogo);
 
@@ -9659,7 +9706,7 @@ class mudclient extends GameConnection {
         this.surface.blackScreen();
         this.scene.setCamera(x, -this.world.getElevation(x, y), y, 912, rotation, 0, zoom * 2);
         this.scene.render();
-        this.surface.fadeToBlack();
+        // this.surface.fadeToBlack();
         this.surface.fadeToBlack();
         this.surface.drawBox(0, 0, this.gameWidth, 6, 0);
 
@@ -9673,8 +9720,8 @@ class mudclient extends GameConnection {
             this.surface.drawLineAlpha(0, i1, 0, 194 - i1, this.gameWidth, 8);
         }
 
-        this.surface._drawSprite_from3(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10);
-        this.surface._drawSprite_from5(this.spriteLogo + 1, 0, 0, this.gameWidth, 200); 
+        this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10);
+        this.surface._drawSprite_from5(this.spriteLogo + 1, 0, 0, this.gameWidth, 200);
         this.surface.drawWorld(this.spriteLogo + 1);
 
         for (let j1 = 0; j1 < 64; j1++) {
@@ -9708,91 +9755,94 @@ class mudclient extends GameConnection {
         this.surface.drawBox(0, 194, this.gameWidth, 20, 0);
 
         for (let l1 = 6; l1 >= 1; l1--) {
-            this.surface.drawLineAlpha(0, l1, 0, 194, this.gameWidth, 8); 
+            this.surface.drawLineAlpha(0, l1, 0, 194, this.gameWidth, 8);
         }
 
-        this.surface._drawSprite_from3(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10);
+        this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10);
         this.surface._drawSprite_from5(this.spriteMedia + 10, 0, 0, this.gameWidth, 200);
         this.surface.drawWorld(this.spriteMedia + 10);
     }
 
     createLoginPanels() {
-        this.panelLoginWelcome = new Panel(this.surface, 50);
-        this.panelLoginNewuser = new Panel(this.surface, 50);
+    	this.cookiesUpdate = 0;
+		this.savePass = getCookie("savePass");
+		this.loginUser = getCookie("username");
 
+        this.panelLogin[WelcomeState.WELCOME] = new Panel(this.surface, 50);
+        this.panelLogin[WelcomeState.NEW_USER] = new Panel(this.surface, 50);
+        this.panelLogin[WelcomeState.EXISTING_USER] = new Panel(this.surface, 50);
+    
         let y = 40;
         let x = (this.gameWidth / 2) | 0;
 
-        this.panelLoginWelcome.addText(x, 200 + y, 'Click on an option', 5, true);
-        this.panelLoginWelcome.addButtonBackground(x - 100, 240 + y, 120, 35);
-        this.panelLoginWelcome.addButtonBackground(x + 100, 240 + y, 120, 35);
-        this.panelLoginWelcome.addText(x - 100, 240 + y, 'New User', 5, false);
-        this.panelLoginWelcome.addText(x + 100, 240 + y, 'Existing User', 5, false);
-        this.controlWelcomeNewuser = this.panelLoginWelcome.addButton(x - 100, 240 + y, 120, 35);
-        this.controlWelcomeExistinguser = this.panelLoginWelcome.addButton(x + 100, 240 + y, 120, 35);
+        this.panelLogin[WelcomeState.WELCOME].addText(x, 200 + y, 'Click on an option', 5, true);
+        this.panelLogin[WelcomeState.WELCOME].addButtonBackground(x - 100, 240 + y, 120, 35);
+        this.panelLogin[WelcomeState.WELCOME].addButtonBackground(x + 100, 240 + y, 120, 35);
+        this.panelLogin[WelcomeState.WELCOME].addText(x - 100, 240 + y, 'New User', 5, false);
+        this.panelLogin[WelcomeState.WELCOME].addText(x + 100, 240 + y, 'Existing User', 5, false);
+        this.controlWelcomeNewuser = this.panelLogin[WelcomeState.WELCOME].addButton(x - 100, 240 + y, 120, 35);
+        this.controlWelcomeExistinguser = this.panelLogin[WelcomeState.WELCOME].addButton(x + 100, 240 + y, 120, 35);
 
         y = 70;
 
-        this.controlRegisterStatus = this.panelLoginNewuser.addText(x, y + 8, 'To create an account please enter all the requested details', 4, true);
+        this.controlRegisterStatus = this.panelLogin[WelcomeState.NEW_USER].addText(x, y + 8, 'To create an account please enter all the requested details', 4, true);
         let relY = y + 25;
-        this.panelLoginNewuser.addButtonBackground(x, relY + 17, 250, 34);
-        this.panelLoginNewuser.addText(x, relY + 8, 'Choose a Username', 4, false);
-        this.controlRegisterUser = this.panelLoginNewuser.addTextInput(x, relY + 25, 200, 40, 4, 12, false, false);
-        this.panelLoginNewuser.setFocus(this.controlRegisterUser);
+        this.panelLogin[WelcomeState.NEW_USER].addButtonBackground(x, relY + 17, 250, 34);
+        this.panelLogin[WelcomeState.NEW_USER].addText(x, relY + 8, 'Choose a Username', 4, false);
+        this.controlRegisterUser = this.panelLogin[WelcomeState.NEW_USER].addTextInput(x, relY + 25, 200, 40, 4, 12, false, false);
+        this.panelLogin[WelcomeState.NEW_USER].setFocus(this.controlRegisterUser);
         relY += 40;
-        this.panelLoginNewuser.addButtonBackground(x - 115, relY + 17, 220, 34);
-        this.panelLoginNewuser.addText(x - 115, relY + 8, 'Choose a Password', 4, false);
-        this.controlRegisterPassword = this.panelLoginNewuser.addTextInput(x - 115, relY + 25, 220, 40, 4, 20, true, false);
-        this.panelLoginNewuser.addButtonBackground(x + 115, relY + 17, 220, 34);
-        this.panelLoginNewuser.addText(x + 115, relY + 8, 'Confirm Password', 4, false);
-        this.controlRegisterConfirmPassword = this.panelLoginNewuser.addTextInput(x + 115, relY + 25, 220, 40, 4, 20, true, false);
+        this.panelLogin[WelcomeState.NEW_USER].addButtonBackground(x - 115, relY + 17, 220, 34);
+        this.panelLogin[WelcomeState.NEW_USER].addText(x - 115, relY + 8, 'Choose a Password', 4, false);
+        this.controlRegisterPassword = this.panelLogin[WelcomeState.NEW_USER].addTextInput(x - 115, relY + 25, 220, 40, 4, 20, true, false);
+        this.panelLogin[WelcomeState.NEW_USER].addButtonBackground(x + 115, relY + 17, 220, 34);
+        this.panelLogin[WelcomeState.NEW_USER].addText(x + 115, relY + 8, 'Confirm Password', 4, false);
+        this.controlRegisterConfirmPassword = this.panelLogin[WelcomeState.NEW_USER].addTextInput(x + 115, relY + 25, 220, 40, 4, 20, true, false);
         relY += 60;
-        this.controlRegisterCheckbox = this.panelLoginNewuser.addCheckbox(x - 196 - 7, relY - 7, 14, 14);
-        this.panelLoginNewuser.addString(x - 181, relY, 'I have read and agree to the terms and conditions', 4, true);
+        this.controlRegisterCheckbox = this.panelLogin[WelcomeState.NEW_USER].addCheckbox(x - 196 - 7, relY - 7, 14, 14);
+        this.panelLogin[WelcomeState.NEW_USER].addString(x - 181, relY, 'I have read and agree to the terms and conditions', 4, true);
         relY += 15;
-        this.panelLoginNewuser.addText(x, relY, '(to view these click the relevant link below this game window)', 4, true);
+        this.panelLogin[WelcomeState.NEW_USER].addText(x, relY, '(to view these click the relevant link below this game window)', 4, true);
         relY += 20;
-        this.panelLoginNewuser.addButtonBackground(x - 100, relY + 17, 150, 34);
-        this.panelLoginNewuser.addText(x - 100, relY + 17, 'Submit', 5, false);
-        this.controlRegisterSubmit = this.panelLoginNewuser.addButton(x - 100, relY + 17, 150, 34);
-        this.panelLoginNewuser.addButtonBackground(x + 100, relY + 17, 150, 34);
-        this.panelLoginNewuser.addText(x + 100, relY + 17, 'Cancel', 5, false);
-        this.controlRegisterCancel = this.panelLoginNewuser.addButton(x + 100, relY + 17, 150, 34);
-
-
-        this.panelLoginExistinguser = new Panel(this.surface, 50);
+        this.panelLogin[WelcomeState.NEW_USER].addButtonBackground(x - 100, relY + 17, 150, 34);
+        this.panelLogin[WelcomeState.NEW_USER].addText(x - 100, relY + 17, 'Submit', 5, false);
+        this.controlRegisterSubmit = this.panelLogin[WelcomeState.NEW_USER].addButton(x - 100, relY + 17, 150, 34);
+        this.panelLogin[WelcomeState.NEW_USER].addButtonBackground(x + 100, relY + 17, 150, 34);
+        this.panelLogin[WelcomeState.NEW_USER].addText(x + 100, relY + 17, 'Cancel', 5, false);
+        this.controlRegisterCancel = this.panelLogin[WelcomeState.NEW_USER].addButton(x + 100, relY + 17, 150, 34);
+        
         y = 230;
-        this.controlLoginStatus = this.panelLoginExistinguser.addText(x, y - 10, 'Please enter your username and password', 4, true);
+        this.controlLoginStatus = this.panelLogin[WelcomeState.EXISTING_USER].addText(x, y - 10, 'Please enter your username and password', 4, true);
         y += 28;
-        this.panelLoginExistinguser.addButtonBackground(x - 116, y, 200, 40);
-        this.panelLoginExistinguser.addText(x - 116, y - 10, 'Username:', 4, false);
-        this.panelLoginExistinguser.addText(x-55, y - 5, "Save?", 2, false);
-        this.controlLoginSavePass = this.panelLoginExistinguser.addCheckbox(x-55+22, y - 10, 10, 10);
-        this.controlLoginUser = this.panelLoginExistinguser.addTextInput(x - 116, y + 10, 200, 40, 4, 12, false, false);
+        this.panelLogin[WelcomeState.EXISTING_USER].addButtonBackground(x - 116, y, 200, 40);
+        this.panelLogin[WelcomeState.EXISTING_USER].addText(x - 116, y - 10, 'Username:', 4, false);
+        this.panelLogin[WelcomeState.EXISTING_USER].addText(x-55, y - 5, "Save?", 2, false);
+        this.controlLoginSavePass = this.panelLogin[WelcomeState.EXISTING_USER].addCheckbox(x-60, y + 5, 10, 10);
+        this.controlLoginUser = this.panelLogin[WelcomeState.EXISTING_USER].addTextInput(x - 116, y + 10, 200, 40, 4, 12, false, false);
         y += 47;
-        this.panelLoginExistinguser.addButtonBackground(x - 66, y, 200, 40);
-        this.panelLoginExistinguser.addText(x - 66, y - 10, 'Password:', 4, false);
+        this.panelLogin[WelcomeState.EXISTING_USER].addButtonBackground(x - 66, y, 200, 40);
+        this.panelLogin[WelcomeState.EXISTING_USER].addText(x - 66, y - 10, 'Password:', 4, false);
         //
-        // this.panelLoginExistinguser.addText(x - 5, y - 5, "Save?", 2, false);
-        // this.controlLoginSavePass = this.panelLoginExistinguser.addCheckbox(x - 5 + 22, y - 10, 10, 10);
+        // this.panelLogin[WelcomeState.EXISTING_USER].addText(x - 5, y - 5, "Save?", 2, false);
+        // this.controlLoginSavePass = this.panelLogin[WelcomeState.EXISTING_USER].addCheckbox(x - 5 + 22, y - 10, 10, 10);
         //
-        this.controlLoginPass = this.panelLoginExistinguser.addTextInput(x - 66, y + 10, 200, 40, 4, 20, true, false);
+        this.controlLoginPass = this.panelLogin[WelcomeState.EXISTING_USER].addTextInput(x - 66, y + 10, 200, 40, 4, 20, true, false);
         y -= 55;
-        this.panelLoginExistinguser.addButtonBackground(x + 154, y, 120, 25);
-        this.panelLoginExistinguser.addText(x + 154, y, 'Ok', 4, false);
-        this.controlLoginOk = this.panelLoginExistinguser.addButton(x + 154, y, 120, 25);
+        this.panelLogin[WelcomeState.EXISTING_USER].addButtonBackground(x + 154, y, 120, 25);
+        this.panelLogin[WelcomeState.EXISTING_USER].addText(x + 154, y, 'Ok', 4, false);
+        this.controlLoginOk = this.panelLogin[WelcomeState.EXISTING_USER].addButton(x + 154, y, 120, 25);
         y += 30;
-        this.panelLoginExistinguser.addButtonBackground(x + 154, y, 120, 25);
-        this.panelLoginExistinguser.addText(x + 154, y, 'Cancel', 4, false);
-        this.controlLoginCancel = this.panelLoginExistinguser.addButton(x + 154, y, 120, 25);
+        this.panelLogin[WelcomeState.EXISTING_USER].addButtonBackground(x + 154, y, 120, 25);
+        this.panelLogin[WelcomeState.EXISTING_USER].addText(x + 154, y, 'Cancel', 4, false);
+        this.controlLoginCancel = this.panelLogin[WelcomeState.EXISTING_USER].addButton(x + 154, y, 120, 25);
         y += 30;
-        this.panelLoginExistinguser.setFocus(this.controlLoginUser);
+        this.panelLogin[WelcomeState.EXISTING_USER].setFocus(this.controlLoginUser);
     }
 
     drawUiTabInventory(nomenus) {
         let uiX = this.surface.width2 - 248;
 
-        this.surface._drawSprite_from3(uiX, 3, this.spriteMedia + 1);
+        this.surface.drawSpriteID(uiX, 3, this.spriteMedia + 1);
 
         for (let itemIndex = 0; itemIndex < this.inventoryMaxItemCount; itemIndex++) {
             let slotX = uiX + (itemIndex % 5) * 49;
@@ -9986,7 +10036,7 @@ class mudclient extends GameConnection {
         let uiWidth = 156;
         let uiHeight = 152;
 
-        this.surface._drawSprite_from3(uiX - 49, 3, this.spriteMedia + 2);
+        this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 2);
         uiX += 40;
         this.surface.drawBox(uiX, 36, uiWidth, uiHeight, 0);
         this.surface.setBounds(uiX, 36, uiX + uiWidth, 36 + uiHeight);
@@ -10154,8 +10204,8 @@ class mudclient extends GameConnection {
         this.surface.drawStringCenter('Remember that not all players are trustworthy', dialogX + 234, dialogY + 230, 1, 0xffffff);
 
         if (!this.tradeConfirmAccepted) {
-            this.surface._drawSprite_from3((dialogX + 118) - 35, dialogY + 238, this.spriteMedia + 25);
-            this.surface._drawSprite_from3((dialogX + 352) - 35, dialogY + 238, this.spriteMedia + 26);
+            this.surface.drawSpriteID((dialogX + 118) - 35, dialogY + 238, this.spriteMedia + 25);
+            this.surface.drawSpriteID((dialogX + 352) - 35, dialogY + 238, this.spriteMedia + 26);
         } else {
             this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, 0xffff00);
         }
@@ -10306,13 +10356,13 @@ class mudclient extends GameConnection {
             l1 = 2;
             flag = false;
             x -= ((GameData.npcCombatAnimation[character.npcId] * ty) / 100) | 0;
-            j2 = i2 * 3 + this.npcCombatModelArray1[(((this.loginTimer / (GameData.npcCombatModel[character.npcId]) | 0) - 1)) % 8];
+            j2 = i2 * 3 + this.npcCombatModelArray1[(((this.frameCounter / (GameData.npcCombatModel[character.npcId]) | 0) - 1)) % 8];
         } else if (character.animationCurrent === 9) {
             i2 = 5;
             l1 = 2;
             flag = true;
             x += ((GameData.npcCombatAnimation[character.npcId] * ty) / 100) | 0;
-            j2 = i2 * 3 + this.npcCombatModelArray2[((this.loginTimer / GameData.npcCombatModel[character.npcId]) | 0) % 8];
+            j2 = i2 * 3 + this.npcCombatModelArray2[((this.frameCounter / GameData.npcCombatModel[character.npcId]) | 0) % 8];
         }
 
         for (let k2 = 0; k2 < 12; k2++) {
@@ -10396,7 +10446,7 @@ class mudclient extends GameConnection {
                     j3 += ((10 * ty) / 100) | 0;
                 }
 
-                this.surface._drawSprite_from3((j3 + ((w / 2) | 0)) - 12, (y + ((h / 2) | 0)) - 12, this.spriteMedia + 12);
+                this.surface.drawSpriteID((j3 + ((w / 2) | 0)) - 12, (y + ((h / 2) | 0)) - 12, this.spriteMedia + 12);
                 this.surface.drawStringCenter(character.damageTaken.toString(), (j3 + ((w / 2) | 0)) - 1, y + ((h / 2) | 0) + 5, 3, 0xffffff);
             }
         }
@@ -10415,30 +10465,27 @@ class mudclient extends GameConnection {
         this._walkToActionSource_from8(this.localRegionX, this.localRegionY, i, j, i, j, true, true);
     }
 
-    async loadGameConfig() {
-        let buff = await this.readDataFile('config' + VERSION.CONFIG + '.jag', 'Configuration', 10);
-
+    async fetchDefinitions() {
+        let buff = await this.readDataFile('config' + VERSION.CONFIG + '.jag', 'Entity Information', 10);
         if (buff === null) {
-            this.errorLoadingData = true;
+            this.exception = new GameException('Fatal issue occurred in a subroutine during asset fetch (game data):\n' + e.toString(), true);
             return;
         }
 
-        GameData.loadData(buff, this.members);
-
-        let abyte1 = await this.readDataFile('filter' + VERSION.FILTER + '.jag', 'Chat system', 15);
-
-        if (abyte1 === null) {
-            this.errorLoadingData = true;
-            
-        } else {
-            let buffragments = Utility.loadData('fragmentsenc.txt', 0, abyte1);
-            let buffbandenc = Utility.loadData('badenc.txt', 0, abyte1);
-            let buffhostenc = Utility.loadData('hostenc.txt', 0, abyte1);
-            let bufftldlist = Utility.loadData('tldlist.txt', 0, abyte1);
-
-            WordFilter.loadFilters(new GameBuffer(buffragments), new GameBuffer(buffbandenc), new GameBuffer(buffhostenc), new GameBuffer(bufftldlist));
-            
+        GameData.loadDefinitions(buff, this.members);
+    }
+    
+    async fetchChatFilters() {
+        let buff = await this.readDataFile('filter' + VERSION.FILTER + '.jag', 'Chat filters', 15);
+        if (buff === null) {
+            this.exception = new GameException('Fatal issue occurred in a subroutine during asset fetch (chat filters):\n' + e.toString(), true);
+            return
         }
+    
+        readFilteredWords(new GameBuffer(Utility.loadData('badenc.txt', 0, buff)));
+        readFilteredHosts(new GameBuffer(Utility.loadData('hostenc.txt', 0, buff)));
+        readFilteredHashFragments(new GameBuffer(Utility.loadData('fragmentsenc.txt', 0, buff)));
+        readFilteredTLDs(new GameBuffer(Utility.loadData('tldlist.txt', 0, buff)));
     }
 
     addNpc(serverIndex, x, y, sprite, type) {
@@ -10485,10 +10532,10 @@ class mudclient extends GameConnection {
     }
 
     resetLoginVars() {
-        this.systemUpdate = 0;
-        this.loginScreen = 0;
+        this.welcomeState = WelcomeState.WELCOME;
         this.gameState = GameState.LOGIN;
-        this.logoutTimeout = 0;
+        this.logoutBoxFrames = 0;
+        this.systemUpdate = 0;
     }
 
     drawDialogBank() {
@@ -11152,10 +11199,10 @@ class mudclient extends GameConnection {
         }
 
         if (!this.duelOfferAccepted) {
-            this.surface._drawSprite_from3(dialogX + 217, dialogY + 238, this.spriteMedia + 25);
+            this.surface.drawSpriteID(dialogX + 217, dialogY + 238, this.spriteMedia + 25);
         }
 
-        this.surface._drawSprite_from3(dialogX + 394, dialogY + 238, this.spriteMedia + 26);
+        this.surface.drawSpriteID(dialogX + 394, dialogY + 238, this.spriteMedia + 26);
 
         if (this.duelOfferOpponentAccepted) {
             this.surface.drawStringCenter('Other player', dialogX + 341, dialogY + 246, 1, 0xffffff);
@@ -11300,7 +11347,7 @@ class mudclient extends GameConnection {
 
             try {
                 this.world._setObjectAdjacency_from4(i3, l3, i5, j4);
-                let gameModel_1 = this.createModel(i3, l3, i5, j4, k2);
+                let gameModel_1 = this.createBoundaryModel(i3, l3, i5, j4, k2);
                 this.wallObjectModel[k2] = gameModel_1;
             } catch (e) {
                 console.log('Bound Error: ' + e.message);
@@ -11373,13 +11420,13 @@ class mudclient extends GameConnection {
             l1 = 2;
             flag = false;
             x -= ((5 * ty) / 100) | 0;
-            j2 = i2 * 3 + this.npcCombatModelArray1[((this.loginTimer / 5) | 0) % 8];
+            j2 = i2 * 3 + this.npcCombatModelArray1[((this.frameCounter / 5) | 0) % 8];
         } else if (character.animationCurrent === 9) {
             i2 = 5;
             l1 = 2;
             flag = true;
             x += ((5 * ty) / 100) | 0;
-            j2 = i2 * 3 + this.npcCombatModelArray2[((this.loginTimer / 6) | 0) % 8];
+            j2 = i2 * 3 + this.npcCombatModelArray2[((this.frameCounter / 6) | 0) % 8];
         }
 
         for (let k2 = 0; k2 < 12; k2++) {
@@ -11493,7 +11540,7 @@ class mudclient extends GameConnection {
                     j3 += ((10 * ty) / 100) | 0;
                 }
 
-                this.surface._drawSprite_from3((j3 + ((w / 2) | 0)) - 12, (y + ((h / 2) | 0)) - 12, this.spriteMedia + 11);
+                this.surface.drawSpriteID((j3 + ((w / 2) | 0)) - 12, (y + ((h / 2) | 0)) - 12, this.spriteMedia + 11);
                 this.surface.drawStringCenter(character.damageTaken.toString(), (j3 + ((w / 2) | 0)) - 1, y + ((h / 2) | 0) + 5, 3, 0xffffff);
             }
         }
@@ -11569,7 +11616,7 @@ class mudclient extends GameConnection {
     }
 
     drawChatMessageTabs() {
-        this.surface._drawSprite_from3(0, this.gameHeight - 4, this.spriteMedia + 23);
+        this.surface.drawSpriteID(0, this.gameHeight - 4, this.spriteMedia + 23);
 
         let col = Surface.rgbToLong(200, 200, 255);
 
@@ -11620,7 +11667,7 @@ class mudclient extends GameConnection {
 
     async startGame() {
         let totalExp = 0;
-
+        
         for (let level = 0; level < 99; level++) {
             let level_1 = level + 1;
             let exp = level_1 + 300 * Math.pow(2, level_1 / 7) | 0;
@@ -11629,10 +11676,9 @@ class mudclient extends GameConnection {
         }
 
         this.port = this.port || 43595;
-        this.maxReadTries = 1000;
-        GameConnection.clientVersion = VERSION.CLIENT;
 
-        await this.loadGameConfig();
+        await this.fetchDefinitions();
+        await this.fetchChatFilters();
 
         if (this.errorLoadingData) {
             return;
@@ -11690,7 +11736,7 @@ class mudclient extends GameConnection {
         this.scene.clipFar2d = 2400;
         this.scene.fogZFalloff = 1;
         this.scene.fogZDistance = 2300;
-        this.scene._setLight_from3(-50, -10, -50);
+        this.scene.setLightSourceCoords(-50, -10, -50);
         this.world = new World(this.scene, this.surface);
         this.world.baseMediaSprite = this.spriteMedia;
 
@@ -11717,11 +11763,11 @@ class mudclient extends GameConnection {
         }
 
         if (!this.errorLoadingData) {
-            this.showLoadingProgress(100, 'Starting game...');
+            this.updateLoadingStatus(100, 'Starting game...');
             this.createMessageTabPanel();
             this.createLoginPanels();
             this.createAppearancePanel();
-            this.resetLoginScreenVariables();
+            this.resetGameState();
             this.renderLoginScreenViewports();
         }
     }
@@ -11729,7 +11775,7 @@ class mudclient extends GameConnection {
     drawUiTabMagic(nomenus) {
         let uiX = this.surface.width2 - 199;
         let uiY = 36;
-        this.surface._drawSprite_from3(uiX - 49, 3, this.spriteMedia + 4);
+        this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 4);
         let uiWidth = 196;
         let uiHeight = 182;
         let l = 0;
@@ -11779,7 +11825,7 @@ class mudclient extends GameConnection {
                 this.panelMagic.addListEntry(this.controlListMagic, i1++, s + 'Level ' + GameData.spellLevel[spell] + ': ' + GameData.spellName[spell]);
             }
 
-            this.panelMagic.drawPanel();
+            this.panelMagic.render();
 
             let i3 = this.panelMagic.getListEntryIndex(this.controlListMagic);
 
@@ -11789,7 +11835,7 @@ class mudclient extends GameConnection {
 
                 for (let i4 = 0; i4 < GameData.spellRunesRequired[i3]; i4++) {
                     let i5 = GameData.spellRunesId[i3][i4];
-                    this.surface._drawSprite_from3(uiX + 2 + i4 * 44, uiY + 150, this.spriteItem + GameData.itemPicture[i5]);
+                    this.surface.drawSpriteID(uiX + 2 + i4 * 44, uiY + 150, this.spriteItem + GameData.itemPicture[i5]);
                     let j5 = this.getInventoryCount(i5);
                     let k5 = GameData.spellRunesCount[i3][i4];
                     let s2 = '@red@';
@@ -11824,7 +11870,7 @@ class mudclient extends GameConnection {
                 this.panelMagic.addListEntry(this.controlListMagic, j1++, s1 + 'Level ' + GameData.prayerLevel[j2] + ': ' + GameData.prayerName[j2]);
             }
 
-            this.panelMagic.drawPanel();
+            this.panelMagic.render();
 
             let j3 = this.panelMagic.getListEntryIndex(this.controlListMagic);
 
@@ -12111,7 +12157,7 @@ class mudclient extends GameConnection {
     }
 
     cantLogout() {
-        this.logoutTimeout = 0;
+        this.logoutBoxFrames = 0;
         this.showMessage('@cya@Sorry, you can\'t logout at the moment', 3);
     }
 
@@ -12121,7 +12167,6 @@ class mudclient extends GameConnection {
             this.surface.drawStringCenter('Oh dear! You are dead...', (this.gameWidth / 2) | 0, (this.gameHeight / 2) | 0, 7, 0xff0000);
             this.drawChatMessageTabs();
             this.surface.draw(this.graphics, 0, 0);
-
             return;
         }
 
@@ -12149,7 +12194,7 @@ class mudclient extends GameConnection {
             this.surface.drawStringCenter(this.inputTextCurrent + '*', (this.gameWidth / 2) | 0, 180, 5, 65535);
 
             if (this.sleepingStatusText === null) {
-                this.surface._drawSprite_from3(((this.gameWidth / 2) | 0) - 127, 230, this.spriteTexture + 1);
+                this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - 127, 230, this.spriteTexture + 1);
             } else {
                 this.surface.drawStringCenter(this.sleepingStatusText, (this.gameWidth / 2) | 0, 260, 5, 0xff0000);
             }
@@ -12350,10 +12395,13 @@ class mudclient extends GameConnection {
         this.surface.interlace = this.interlace;
 
         if (this.lastHeightOffset === 3) {
-            let i5 = 40 + ((Math.random() * 3) | 0);
-            let k7 = 40 + ((Math.random() * 7) | 0);
+            // let ambienceOffset = rand(40, 43)
+            let ambienceOffset = 40 + ((Math.random() * 3) | 0);
+            // let diffusionOffset = rand(40, 47)
+            let diffusionOffset = 40 + ((Math.random() * 7) | 0);
 
-            this.scene._setLight_from5(i5, k7, -50, -10, -50);
+            // basement plane flicker effect?
+            this.scene.createLightSource(ambienceOffset, diffusionOffset, -50, -10, -50);
         }
 
         this.itemsAboveHeadCount = 0;
@@ -12415,11 +12463,11 @@ class mudclient extends GameConnection {
         this.drawAboveHeadStuff();
 
         if (this.mouseClickXStep > 0) {
-            this.surface._drawSprite_from3(this.mouseClickXX - 8, this.mouseClickXY - 8, this.spriteMedia + 14 + (((24 - this.mouseClickXStep) / 6) | 0));
+            this.surface.drawSpriteID(this.mouseClickXX - 8, this.mouseClickXY - 8, this.spriteMedia + 14 + (((24 - this.mouseClickXStep) / 6) | 0));
         }
 
         if (this.mouseClickXStep < 0) {
-            this.surface._drawSprite_from3(this.mouseClickXX - 8, this.mouseClickXY - 8, this.spriteMedia + 18 + (((24 + this.mouseClickXStep) / 6) | 0));
+            this.surface.drawSpriteID(this.mouseClickXX - 8, this.mouseClickXY - 8, this.spriteMedia + 18 + (((24 + this.mouseClickXStep) / 6) | 0));
         }
 
         if (this.systemUpdate !== 0) {
@@ -12445,7 +12493,7 @@ class mudclient extends GameConnection {
             if (j6 > 0) {
                 let wildlvl = 1 + ((j6 / 6) | 0);
 
-                this.surface._drawSprite_from3(453, this.gameHeight - 56, this.spriteMedia + 13);
+                this.surface.drawSpriteID(453, this.gameHeight - 56, this.spriteMedia + 13);
                 this.surface.drawStringCenter('Wilderness', 465, this.gameHeight - 20, 1, 0xffff00);
                 this.surface.drawStringCenter('Level: ' + wildlvl, 465, this.gameHeight - 7, 1, 0xffff00);
 
@@ -12468,22 +12516,22 @@ class mudclient extends GameConnection {
             }
         }
 
-        this.panelMessageTabs.hide(this.controlTextListChat);
-        this.panelMessageTabs.hide(this.controlTextListQuest);
-        this.panelMessageTabs.hide(this.controlTextListPrivate);
+        this.panelGame[GamePanel.CHAT].hide(this.controlTextListChat);
+        this.panelGame[GamePanel.CHAT].hide(this.controlTextListQuest);
+        this.panelGame[GamePanel.CHAT].hide(this.controlTextListPrivate);
 
         if (this.messageTabSelected === 1) {
-            this.panelMessageTabs.show(this.controlTextListChat);
+            this.panelGame[GamePanel.CHAT].show(this.controlTextListChat);
         } else if (this.messageTabSelected === 2) {
-            this.panelMessageTabs.show(this.controlTextListQuest);
+            this.panelGame[GamePanel.CHAT].show(this.controlTextListQuest);
         } else if (this.messageTabSelected === 3) {
-            this.panelMessageTabs.show(this.controlTextListPrivate);
+            this.panelGame[GamePanel.CHAT].show(this.controlTextListPrivate);
         }
 
         Panel.textListEntryHeightMod = 2;
-        this.panelMessageTabs.drawPanel();
+        this.panelGame[GamePanel.CHAT].render();
         Panel.textListEntryHeightMod = 0;
-        this.surface._drawSpriteAlpha_from4(this.surface.width2 - 3 - 197, 3, this.spriteMedia, 128);
+        this.surface.fadeThenDrawSpriteID(this.surface.width2 - 3 - 197, 3, this.spriteMedia, 128);
         this.drawUi();
         this.surface.loggedIn = false;
         this.drawChatMessageTabs();
@@ -12609,58 +12657,58 @@ class mudclient extends GameConnection {
     }
 
     handleAppearancePanelControls() {
-        this.panelAppearance.handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
+        this.panelGame[GamePanel.APPEARANCE].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceHead1)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceHead1)) {
             do {
                 this.appearanceHeadType = ((this.appearanceHeadType - 1) + GameData.animationCount) % GameData.animationCount;
             } while ((GameData.animationSomething[this.appearanceHeadType] & 3) !== 1 || (GameData.animationSomething[this.appearanceHeadType] & 4 * this.appearanceHeadGender) === 0);
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceHead2)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceHead2)) {
             do {
                 this.appearanceHeadType = (this.appearanceHeadType + 1) % GameData.animationCount;
             } while ((GameData.animationSomething[this.appearanceHeadType] & 3) !== 1 || (GameData.animationSomething[this.appearanceHeadType] & 4 * this.appearanceHeadGender) === 0);
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceHair1)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceHair1)) {
             this.appearanceHairColour = ((this.appearanceHairColour - 1) + this.characterHairColours.length) % this.characterHairColours.length;
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceHair2)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceHair2)) {
             this.appearanceHairColour = (this.appearanceHairColour + 1) % this.characterHairColours.length;
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceGender1) || this.panelAppearance.isClicked(this.controlButtonAppearanceGender2)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceGender1) || this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceGender2)) {
             for (this.appearanceHeadGender = 3 - this.appearanceHeadGender; (GameData.animationSomething[this.appearanceHeadType] & 3) !== 1 || (GameData.animationSomething[this.appearanceHeadType] & 4 * this.appearanceHeadGender) === 0; this.appearanceHeadType = (this.appearanceHeadType + 1) % GameData.animationCount);
             for (; (GameData.animationSomething[this.appearanceBodyGender] & 3) !== 2 || (GameData.animationSomething[this.appearanceBodyGender] & 4 * this.appearanceHeadGender) === 0; this.appearanceBodyGender = (this.appearanceBodyGender + 1) % GameData.animationCount);
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceTop1)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceTop1)) {
             this.appearanceTopColour = ((this.appearanceTopColour - 1) + this.characterTopBottomColours.length) % this.characterTopBottomColours.length;
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceTop2)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceTop2)) {
             this.appearanceTopColour = (this.appearanceTopColour + 1) % this.characterTopBottomColours.length;
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceSkin1)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceSkin1)) {
             this.appearanceSkinColour = ((this.appearanceSkinColour - 1) + this.characterSkinColours.length) % this.characterSkinColours.length;
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceSkin2)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceSkin2)) {
             this.appearanceSkinColour = (this.appearanceSkinColour + 1) % this.characterSkinColours.length;
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceBottom1)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceBottom1)) {
             this.appearanceBottomColour = ((this.appearanceBottomColour - 1) + this.characterTopBottomColours.length) % this.characterTopBottomColours.length;
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceBottom2)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceBottom2)) {
             this.appearanceBottomColour = (this.appearanceBottomColour + 1) % this.characterTopBottomColours.length;
         }
 
-        if (this.panelAppearance.isClicked(this.controlButtonAppearanceAccept)) {
+        if (this.panelGame[GamePanel.APPEARANCE].isClicked(this.controlButtonAppearanceAccept)) {
             this.clientStream.newPacket(C_OPCODES.APPEARANCE);
             this.clientStream.putByte(this.appearanceHeadGender);
             this.clientStream.putByte(this.appearanceHeadType);
@@ -12681,31 +12729,23 @@ class mudclient extends GameConnection {
             let g = this.getGraphics();
 
             g.setColor(Color.black);
-            g.fillRect(0, 0, 512, 356);
-            g.setFont(new Font('Helvetica', 1, 16));
+            g.fillRect(0, 0, this.gameWidth, this.gameHeight);
+    
+            g.setFont(Font.HELVETICA.withConfig(FontStyle.BOLD, 16));
             g.setColor(Color.yellow);
-
-            let i = 35;
-
-            g.drawString('Sorry, an error has occured whilst loading RuneScape', 30, i);
-            i += 50;
+            g.drawString('Sorry, an error has occurred whilst loading RSCGo', 30, 35);
+    
             g.setColor(Color.white);
-            g.drawString('To fix this try the following (in order):', 30, i);
-            i += 50;
-            g.setColor(Color.white);
-            g.setFont(new Font('Helvetica', 1, 12));
-            g.drawString('1: Try closing ALL open web-browser windows, and reloading', 30, i);
-            i += 30;
-            g.drawString('2: Try clearing your web-browsers cache from tools->internet options', 30, i);
-            i += 30;
-            g.drawString('3: Try using a different game-world', 30, i);
-            i += 30;
-            g.drawString('4: Try rebooting your computer', 30, i);
-            i += 30;
-            g.drawString('5: Try selecting a different version of Java from the play-game menu', 30, i);
-
+            g.drawString('To fix this try the following (in order):', 30, 85);
+            
+            g.setFont(Font.HELVETICA.withConfig(FontStyle.BOLD, 12))
+            g.drawString('1: Try closing ALL open web-browser windows, and reloading', 30, 135);
+            g.drawString('2: Try clearing your web-browsers cache from tools->internet options', 30, 165);
+            g.drawString('3: Try using a different game-world', 30, 195);
+            g.drawString('4: Try rebooting your computer', 30, 225);
+            g.drawString('5: Try selecting a different version of Java from the play-game menu', 30, 255);
+            
             this.setTargetFps(1);
-
             return;
         }
 
@@ -12713,31 +12753,32 @@ class mudclient extends GameConnection {
             let g1 = this.getGraphics();
 
             g1.setColor(Color.black);
-            g1.fillRect(0, 0, 512, 356);
-            g1.setFont(new Font('Helvetica', 1, 20));
+            g1.fillRect(0, 0, this.gameWidth, this.gameHeight);
+            
+            g1.setFont(Font.HELVETICA.withConfig(FontStyle.BOLD, 20));
             g1.setColor(Color.white);
             g1.drawString('Error - unable to load game!', 50, 50);
             g1.drawString('To play RuneScape make sure you play from', 50, 100);
-            g1.drawString('http://www.runescape.com', 50, 150);
+            g1.drawString('http://rscgo.com', 50, 150);
 
             this.setTargetFps(1);
-
             return;
         }
 
-        if (this.errorLoadingMemory) {
+        if (this.runtimeException) {
             let g2 = this.getGraphics();
-
+            
             g2.setColor(Color.black);
-            g2.fillRect(0, 0, 512, 356);
-            g2.setFont(new Font('Helvetica', 1, 20));
+            g1.fillRect(0, 0, this.gameWidth, this.gameHeight);
+            
+            g2.setFont(Font.HELVETICA.withConfig(FontStyle.BOLD, 20));
             g2.setColor(Color.white);
             g2.drawString('Error - out of memory!', 50, 50);
             g2.drawString('Close ALL unnecessary programs', 50, 100);
             g2.drawString('and windows before loading the game', 50, 150);
             g2.drawString('RuneScape needs about 48meg of spare RAM', 50, 200);
+            
             this.setTargetFps(1);
-
             return;
         }
 
@@ -12753,14 +12794,15 @@ class mudclient extends GameConnection {
             }
         } catch (e) {
             console.error(e);
-            this.disposeAndCollect();
-            this.errorLoadingMemory = true;
+            this.clearResources()
+            this.runtimeException = true;
         }
     }
 
-    onClosing() {
+    clearResources() {
         this.closeConnection();
-        this.disposeAndCollect();
+        this.freeCacheMemory();
+        
 
         if (this.audioPlayer !== null) {
             this.audioPlayer.stopPlayer();
@@ -12833,8 +12875,8 @@ class mudclient extends GameConnection {
         this.surface.drawStringCenter('If you are sure click \'Accept\' to begin the duel', dialogX + 234, dialogY + 230, 1, 0xffffff);
 
         if (!this.duelAccepted) {
-            this.surface._drawSprite_from3((dialogX + 118) - 35, dialogY + 238, this.spriteMedia + 25);
-            this.surface._drawSprite_from3((dialogX + 352) - 35, dialogY + 238, this.spriteMedia + 26);
+            this.surface.drawSpriteID((dialogX + 118) - 35, dialogY + 238, this.spriteMedia + 25);
+            this.surface.drawSpriteID((dialogX + 352) - 35, dialogY + 238, this.spriteMedia + 26);
         } else {
             this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, 0xffff00);
         }
@@ -13079,28 +13121,28 @@ class mudclient extends GameConnection {
         this.messageHistoryTimeout[0] = 300;
 
         if (type === 2) {
-            if (this.panelMessageTabs.controlFlashText[this.controlTextListChat] === this.panelMessageTabs.controlListEntryCount[this.controlTextListChat] - 4) {
-                this.panelMessageTabs.removeListEntry(this.controlTextListChat, message, true);
+            if (this.panelGame[GamePanel.CHAT].controlFlashText[this.controlTextListChat] === this.panelGame[GamePanel.CHAT].controlListEntryCount[this.controlTextListChat] - 4) {
+                this.panelGame[GamePanel.CHAT].removeListEntry(this.controlTextListChat, message, true);
             } else {
-                this.panelMessageTabs.removeListEntry(this.controlTextListChat, message, false);
+                this.panelGame[GamePanel.CHAT].removeListEntry(this.controlTextListChat, message, false);
             }
         }
 
         if (type === 5) {
-            if (this.panelMessageTabs.controlFlashText[this.controlTextListQuest] === this.panelMessageTabs.controlListEntryCount[this.controlTextListQuest] - 4) {
-                this.panelMessageTabs.removeListEntry(this.controlTextListQuest, message, true);
+            if (this.panelGame[GamePanel.CHAT].controlFlashText[this.controlTextListQuest] === this.panelGame[GamePanel.CHAT].controlListEntryCount[this.controlTextListQuest] - 4) {
+                this.panelGame[GamePanel.CHAT].removeListEntry(this.controlTextListQuest, message, true);
             } else {
-                this.panelMessageTabs.removeListEntry(this.controlTextListQuest, message, false);
+                this.panelGame[GamePanel.CHAT].removeListEntry(this.controlTextListQuest, message, false);
             }
         }
 
         if (type === 6) {
-            if (this.panelMessageTabs.controlFlashText[this.controlTextListPrivate] === this.panelMessageTabs.controlListEntryCount[this.controlTextListPrivate] - 4) {
-                this.panelMessageTabs.removeListEntry(this.controlTextListPrivate, message, true);
+            if (this.panelGame[GamePanel.CHAT].controlFlashText[this.controlTextListPrivate] === this.panelGame[GamePanel.CHAT].controlListEntryCount[this.controlTextListPrivate] - 4) {
+                this.panelGame[GamePanel.CHAT].removeListEntry(this.controlTextListPrivate, message, true);
                 return;
             }
 
-            this.panelMessageTabs.removeListEntry(this.controlTextListPrivate, message, false);
+            this.panelGame[GamePanel.CHAT].removeListEntry(this.controlTextListPrivate, message, false);
         }
     }
 
@@ -13165,44 +13207,43 @@ class mudclient extends GameConnection {
 
         this.surface.blackScreen();
 
-        if (this.loginScreen === 2 || this.loginScreen === 0) {
-            let i = (this.loginTimer * 2) % 3072;
+        if (this.welcomeState !== WelcomeState.NEW_USER) {
+            let layerAlpha = (this.frameCounter * 2) % 3072;
+            if (layerAlpha < 1024) {
+                this.surface.drawSpriteID(0, 10, this.spriteLogo);
 
-            if (i < 1024) {
-                this.surface._drawSprite_from3(0, 10, this.spriteLogo);
-
-                if (i > 768) {
-                    this.surface._drawSpriteAlpha_from4(0, 10, this.spriteLogo + 1, i - 768);
+                if (layerAlpha > 768) {
+                    this.surface.fadeThenDrawSpriteID(0, 10, this.spriteLogo + 1, layerAlpha - 768);
                 }
-            } else if (i < 2048) {
-                this.surface._drawSprite_from3(0, 10, this.spriteLogo + 1);
+            } else if (layerAlpha < 2048) {
+                this.surface.drawSpriteID(0, 10, this.spriteLogo + 1);
 
-                if (i > 1792) {
-                    this.surface._drawSpriteAlpha_from4(0, 10, this.spriteMedia + 10, i - 1792);
+                if (layerAlpha > 1792) {
+                    this.surface.fadeThenDrawSpriteID(0, 10, this.spriteMedia + 10, layerAlpha - 1792);
                 }
             } else {
-                this.surface._drawSprite_from3(0, 10, this.spriteMedia + 10);
+                this.surface.drawSpriteID(0, 10, this.spriteMedia + 10);
 
-                if (i > 2816) {
-                    this.surface._drawSpriteAlpha_from4(0, 10, this.spriteLogo, i - 2816);
+                if (layerAlpha > 2816) {
+                    this.surface.fadeThenDrawSpriteID(0, 10, this.spriteLogo, layerAlpha - 2816);
                 }
             }
         }
 
-        if (this.loginScreen === 0) {
-            this.panelLoginWelcome.drawPanel();
+        if (this.welcomeState === WelcomeState.WELCOME) {
+            this.panelLogin[WelcomeState.WELCOME].render();
         }
 
-        if (this.loginScreen === 1) {
-            this.panelLoginNewuser.drawPanel();
+        if (this.welcomeState === WelcomeState.NEW_USER) {
+            this.panelLogin[WelcomeState.NEW_USER].render();
         }
 
-        if (this.loginScreen === 2) {
-            this.panelLoginExistinguser.drawPanel();
+        if (this.welcomeState === WelcomeState.EXISTING_USER) {
+            this.panelLogin[WelcomeState.EXISTING_USER].render();
         }
 
         // blue bar
-        this.surface._drawSprite_from3(0, this.gameHeight - 4, this.spriteMedia + 22); 
+        this.surface.drawSpriteID(0, this.gameHeight - 4, this.spriteMedia + 22);
         this.surface.draw(this.graphics, 0, 0);
     }
 
@@ -13210,7 +13251,7 @@ class mudclient extends GameConnection {
         let uiX = this.surface.width2 - 199;
         let uiY = 36;
 
-        this.surface._drawSprite_from3(uiX - 49, 3, this.spriteMedia + 6);
+        this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 6);
 
         let uiWidth = 196;
 
@@ -13428,7 +13469,7 @@ class mudclient extends GameConnection {
 
             this.surface.parseSprite(this.spriteTexture, buff1, buffIndex, 1);
             this.surface.drawBox(0, 0, 128, 128, 0xff00ff);
-            this.surface._drawSprite_from3(0, 0, this.spriteTexture);
+            this.surface.drawSpriteID(0, 0, this.spriteTexture);
 
             let wh = this.surface.spriteWidthFull[this.spriteTexture];
             let nameSub = GameData.textureSubtypeName[i];
@@ -13437,7 +13478,7 @@ class mudclient extends GameConnection {
                 let buff2 = Utility.loadData(nameSub + '.dat', 0, buffTextures);
 
                 this.surface.parseSprite(this.spriteTexture, buff2, buffIndex, 1);
-                this.surface._drawSprite_from3(0, 0, this.spriteTexture);
+                this.surface.drawSpriteID(0, 0, this.spriteTexture);
             }
 
             this.surface._drawSprite_from5(this.spriteTextureWorld + i, 0, 0, wh, wh);
@@ -13478,7 +13519,7 @@ class mudclient extends GameConnection {
                         break;
                     }
 
-                    if (j1 === l - 1 && flag && this.combatTimeout === 0 && this.logoutTimeout === 0) {
+                    if (j1 === l - 1 && flag && this.combatTimeout === 0 && this.logoutBoxFrames === 0) {
                         this.sendLogout();
                         return;
                     }
@@ -13522,7 +13563,7 @@ class mudclient extends GameConnection {
     }
 
     // looks like it just updates objects like torches etc to flip between the different models and appear "animated"
-    updateObjectAnimation(i, s) { 
+    updateObjectAnimation(i, s) {
         let j = this.objectX[i];
         let k = this.objectY[i];
         let l = j - ((this.localPlayer.currentX / 128) | 0);
@@ -13536,14 +13577,14 @@ class mudclient extends GameConnection {
             let gameModel = this.gameModels[j1].copy();
 
             this.scene.addModel(gameModel);
-            gameModel._setLight_from6(true, 48, 48, -50, -10, -50);
+            gameModel.createGouraudLightSource(true, 48, 48, -50, -10, -50);
             gameModel.copyPosition(this.objectModel[i]);
             gameModel.key = i;
             this.objectModel[i] = gameModel;
         }
     }
 
-    createTopMouseMenu() {
+    refreshRightClickMenu() {
         if (this.selectedSpell >= 0 || this.selectedItemInventoryIndex >= 0) {
             this.menuItemText1[this.menuItemsCount] = 'Cancel';
             this.menuItemText2[this.menuItemsCount] = '';
@@ -13623,7 +13664,7 @@ class mudclient extends GameConnection {
                     let l1 = this.surface.textWidth(this.menuItemText2[k1] + ' ' + this.menuItemText1[k1], 1) + 5;
 
                     if (l1 > this.menuWidth) {
-                        this.menuWidth = l1; 
+                        this.menuWidth = l1;
                     }
                 }
 
@@ -14020,25 +14061,23 @@ class mudclient extends GameConnection {
     }
 
     showLoginScreenStatus(s, s1) {
-        if (this.loginScreen === 1) {
-            this.panelLoginNewuser.updateText(this.controlRegisterStatus, s + ' ' + s1);
+        if (this.welcomeState === WelcomeState.NEW_USER) {
+            this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterStatus, s + ' ' + s1);
         }
 
-        if (this.loginScreen === 2) {
-            this.panelLoginExistinguser.updateText(this.controlLoginStatus, s + ' ' + s1);
+        if (this.welcomeState === WelcomeState.EXISTING_USER) {
+            this.panelLogin[WelcomeState.EXISTING_USER].updateText(this.controlLoginStatus, s + ' ' + s1);
         }
 
-        this.loginUserDisp = s1;
         this.drawLoginScreens();
-        this.resetRenderTimers();
+        this.unsetFrameTimes();
     }
 
     async lostConnection() {
         this.systemUpdate = 0;
 
-        if (this.logoutTimeout !== 0) {
+        if (this.logoutBoxFrames !== 0) {
             this.resetLoginVars();
-            
             return;
         }
         
@@ -14085,14 +14124,14 @@ class mudclient extends GameConnection {
 
         return true;
     }
-
-    resetLoginScreenVariables() {
+    
+    resetGameState() {
         this.gameState = GameState.LOGIN;
-        this.loginScreen = 0;
-        this.loginUser = '';
-        this.loginPass = '';
-        this.loginUserDesc = 'Please enter a username:';
-        this.loginUserDisp = '*' + this.loginUser + '*';
+        this.welcomeState = WelcomeState.WELCOME;
+        if (!this.savePass) {
+            this.loginUser = '';
+            this.loginPass = '';
+        }
         this.playerCount = 0;
         this.npcCount = 0;
     }
@@ -14379,7 +14418,7 @@ class mudclient extends GameConnection {
                             model.key = this.objectCount;
                             model.rotate(0, direction * 32, 0);
                             model.translate(mX, -this.world.getElevation(mX, mY), mY);
-                            model._setLight_from6(true, 48, 48, -50, -10, -50);
+                            model.createGouraudLightSource(true, 48, 48, -50, -10, -50);
 
                             this.world.removeObject2(lX, lY, id);
 
@@ -14440,7 +14479,7 @@ class mudclient extends GameConnection {
                     offset++;
 
                     // speech bubble with an item in it
-                    if (updateType === 0) { 
+                    if (updateType === 0) {
                         let id = Utility.getUnsignedShort(pdata, offset);
                         offset += 2;
 
@@ -14453,7 +14492,7 @@ class mudclient extends GameConnection {
                         offset++;
 
                         if (character !== null) {
-                            let filtered = WordFilter.filter(decodeString(pdata.slice(offset, offset+messageLength)));
+                            let filtered = filter(decodeString(pdata.slice(offset, offset+messageLength)));
 
                             let ignored = false;
 
@@ -14557,9 +14596,7 @@ class mudclient extends GameConnection {
                             character.skullVisible = pdata[offset++] & 0xff;
                         } else {
                             offset += 14;
-
                             let unused = Utility.getUnsignedByte(pdata[offset]);
-
                             offset += unused + 1;
                         }
                     } else if (updateType === 6) {
@@ -14587,7 +14624,7 @@ class mudclient extends GameConnection {
 
             if (opcode === S_OPCODES.REGION_WALL_OBJECTS) {
                 for (let offset = 1; offset < psize; )
-                    if (Utility.getUnsignedByte(pdata[offset]) === 255) {
+                    if (Utility.getUnsignedByte(pdata[offset]) === 0xFF) {
                         let count = 0;
                         let lX = this.localRegionX + pdata[offset + 1] >> 3;
                         let lY = this.localRegionY + pdata[offset + 2] >> 3;
@@ -14649,7 +14686,7 @@ class mudclient extends GameConnection {
                         // This block never can run??? why is it even here
                         if (id !== 65535) {
                             this.world._setObjectAdjacency_from4(lX, lY, direction, id);
-                            this.wallObjectModel[this.wallObjectCount] = this.createModel(lX, lY, direction, id, this.wallObjectCount);
+                            this.wallObjectModel[this.wallObjectCount] = this.createBoundaryModel(lX, lY, direction, id, this.wallObjectCount);
                             this.wallObjectX[this.wallObjectCount] = lX;
                             this.wallObjectY[this.wallObjectCount] = lY;
                             this.wallObjectId[this.wallObjectCount] = id;
@@ -15544,7 +15581,7 @@ class mudclient extends GameConnection {
         let uiX = this.surface.width2 - 199;
         let uiY = 36;
 
-        this.surface._drawSprite_from3(uiX - 49, 3, this.spriteMedia + 3);
+        this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 3);
 
         let uiWidth = 196;
         let uiHeight = 275;
@@ -15652,7 +15689,7 @@ class mudclient extends GameConnection {
                 this.panelQuestList.addListEntry(this.controlListQuest, j1 + 1, (this.questComplete[j1] ? '@gre@' : '@red@') + this.questName[j1]);
             }
 
-            this.panelQuestList.drawPanel();
+            this.panelQuestList.render();
         }
 
         if (!nomenus) {
@@ -16119,7 +16156,7 @@ class mudclient extends GameConnection {
             return;
         }
 
-        if (this.errorLoadingMemory) {
+        if (this.runtimeException) {
             return;
         }
 
@@ -16128,7 +16165,7 @@ class mudclient extends GameConnection {
         }
 
         try {
-            this.loginTimer++;
+            this.frameCounter++;
 
             if (this.gameState === GameState.LOGIN) {
                 this.mouseActionTimeout = 0;
@@ -16157,13 +16194,12 @@ class mudclient extends GameConnection {
 
             if (this.messageTabFlashPrivate > 0) {
                 this.messageTabFlashPrivate--;
-                
             }
         } catch (e) {
+            this.exception = new GameException('Fatal issue occurred in a subroutine during input handling stage:\n' + e.toString(), true);
             // OutOfMemory
             console.error(e);
-            this.disposeAndCollect();
-            this.errorLoadingMemory = true;
+            this.freeCacheMemory();
         }
     }
 
@@ -16172,97 +16208,96 @@ class mudclient extends GameConnection {
             this.worldFullTimeout--;
         }
 
-        if (this.loginScreen === 0) {
-            this.panelLoginWelcome.handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
+        if (this.welcomeState === WelcomeState.WELCOME) {
+            this.panelLogin[WelcomeState.WELCOME].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
 
-            if (this.panelLoginWelcome.isClicked(this.controlWelcomeNewuser)) {
-                this.loginScreen = 1;
-                this.panelLoginNewuser.updateText(this.controlRegisterUser, '');
-                this.panelLoginNewuser.updateText(this.controlRegisterPassword, '');
-                this.panelLoginNewuser.updateText(this.controlRegisterConfirmPassword, '');
-                this.panelLoginNewuser.setFocus(this.controlRegisterUser);
-                this.panelLoginNewuser.toggleCheckbox(this.controlRegisterCheckbox, false);
-                this.panelLoginNewuser.updateText(this.controlRegisterStatus, 'To create an account please enter all the requested details');
+            if (this.panelLogin[WelcomeState.WELCOME].isClicked(this.controlWelcomeNewuser)) {
+                this.welcomeState = WelcomeState.NEW_USER;
+                this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterUser, '');
+                this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterPassword, '');
+                this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterConfirmPassword, '');
+                this.panelLogin[WelcomeState.NEW_USER].setFocus(this.controlRegisterUser);
+                this.panelLogin[WelcomeState.NEW_USER].toggleCheckbox(this.controlRegisterCheckbox, false);
+                this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterStatus, 'To create an account please enter all the requested details');
             }
 
-            if (this.panelLoginWelcome.isClicked(this.controlWelcomeExistinguser)) {
-                this.loginScreen = 2;
-                this.panelLoginExistinguser.updateText(this.controlLoginStatus, 'Please enter your username and password');
-                let save = getCookie('savePass') === 'true';
-                this.panelLoginExistinguser.toggleCheckbox(this.controlLoginSavePass, save);
-                let user = save ? getCookie('username') : '';
-                this.panelLoginExistinguser.updateText(this.controlLoginUser, user);
-                this.panelLoginExistinguser.updateText(this.controlLoginPass, '');
-                if (user.length > 0) {
-                    this.panelLoginExistinguser.setFocus(this.controlLoginPass);
+            if (this.panelLogin[WelcomeState.WELCOME].isClicked(this.controlWelcomeExistinguser)) {
+                this.welcomeState = WelcomeState.EXISTING_USER;
+                this.panelLogin[WelcomeState.EXISTING_USER].updateText(this.controlLoginStatus, 'Please enter your username and password');
+                if (this.savePass) {
+                    this.panelLogin[WelcomeState.EXISTING_USER].toggleCheckbox(this.controlLoginSavePass, true);
+                    this.panelLogin[WelcomeState.EXISTING_USER].updateText(this.controlLoginUser, getCookie('username'));
+                    this.panelLogin[WelcomeState.EXISTING_USER].setFocus(this.controlLoginPass);
                 } else {
-                    this.panelLoginExistinguser.setFocus(this.controlLoginUser);
+                    this.panelLogin[WelcomeState.EXISTING_USER].toggleCheckbox(this.controlLoginSavePass, false);
+                    this.panelLogin[WelcomeState.EXISTING_USER].updateText(this.controlLoginUser, '');
+                    this.panelLogin[WelcomeState.EXISTING_USER].updateText(this.controlLoginPass, '');
+                    this.panelLogin[WelcomeState.EXISTING_USER].setFocus(this.controlLoginUser);
                 }
             }
+        } else if (this.welcomeState === WelcomeState.NEW_USER) {
+            this.panelLogin[WelcomeState.NEW_USER].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
 
-        } else if (this.loginScreen === 1) {
-            this.panelLoginNewuser.handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
-
-            if (this.panelLoginNewuser.isClicked(this.controlRegisterCancel)) {
-                this.loginScreen = 0;
+            if (this.panelLogin[WelcomeState.NEW_USER].isClicked(this.controlRegisterCancel)) {
+                this.welcomeState = WelcomeState.WELCOME;
                 return;
             }
 
-            if (this.panelLoginNewuser.isClicked(this.controlRegisterUser)) {
-                this.panelLoginNewuser.setFocus(this.controlRegisterPassword);
+            if (this.panelLogin[WelcomeState.NEW_USER].isClicked(this.controlRegisterUser)) {
+                this.panelLogin[WelcomeState.NEW_USER].setFocus(this.controlRegisterPassword);
             }
 
-            if (this.panelLoginNewuser.isClicked(this.controlRegisterPassword)) {
-                this.panelLoginNewuser.setFocus(this.controlRegisterConfirmPassword);
+            if (this.panelLogin[WelcomeState.NEW_USER].isClicked(this.controlRegisterPassword)) {
+                this.panelLogin[WelcomeState.NEW_USER].setFocus(this.controlRegisterConfirmPassword);
             }
 
-            if (this.panelLoginNewuser.isClicked(this.controlRegisterConfirmPassword) || this.panelLoginNewuser.isClicked(this.controlRegisterSubmit)) {
-                let username = this.panelLoginNewuser.getText(this.controlRegisterUser);
-                let pass = this.panelLoginNewuser.getText(this.controlRegisterPassword);
-                let confPass = this.panelLoginNewuser.getText(this.controlRegisterConfirmPassword);
+            if (this.panelLogin[WelcomeState.NEW_USER].isClicked(this.controlRegisterConfirmPassword) || this.panelLogin[WelcomeState.NEW_USER].isClicked(this.controlRegisterSubmit)) {
+                let username = this.panelLogin[WelcomeState.NEW_USER].getText(this.controlRegisterUser);
+                let pass = this.panelLogin[WelcomeState.NEW_USER].getText(this.controlRegisterPassword);
+                let confPass = this.panelLogin[WelcomeState.NEW_USER].getText(this.controlRegisterConfirmPassword);
 
                 if (username === null || username.length <= 0 || pass === null || pass.length <= 0 || confPass === null || confPass.length <= 0) {
                     return;
                 }
 
                 if (pass !== confPass) {
-                    this.panelLoginNewuser.updateText(this.controlRegisterStatus, '@yel@The two passwords entered are not the same as each other!');
+                    this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterStatus, '@yel@The two passwords entered are not the same as each other!');
                     return;
                 }
 
                 if (pass.length < 5 || pass.length > 20) {
-                    this.panelLoginNewuser.updateText(this.controlRegisterStatus, '@yel@Your password must be between 5 and 20 characters long.');
+                    this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterStatus, '@yel@Your password must be between 5 and 20 characters long.');
                     return;
                 }
 
-                if (!this.panelLoginNewuser.isActivated(this.controlRegisterCheckbox)) {
-                    this.panelLoginNewuser.updateText(this.controlRegisterStatus, '@yel@You must agree to the terms+conditions to continue');
+                if (!this.panelLogin[WelcomeState.NEW_USER].isActivated(this.controlRegisterCheckbox)) {
+                    this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterStatus, '@yel@You must agree to the terms+conditions to continue');
                     return;
                 }
 
-                this.panelLoginNewuser.updateText(this.controlRegisterStatus, 'Please wait... Creating new account');
+                this.panelLogin[WelcomeState.NEW_USER].updateText(this.controlRegisterStatus, 'Please wait... Creating new account');
                 this.drawLoginScreens();
-                this.resetRenderTimers();
-                this.registerUser = this.panelLoginNewuser.getText(this.controlRegisterUser);
-                this.registerPassword = this.panelLoginNewuser.getText(this.controlRegisterPassword);
-                this.registerAccount(this.registerUser, this.registerPassword);
+                this.unsetFrameTimes();
+                this.registerUser = this.panelLogin[WelcomeState.NEW_USER].getText(this.controlRegisterUser);
+                this.registerPassword = this.panelLogin[WelcomeState.NEW_USER].getText(this.controlRegisterPassword);
+                await this.registerAccount(this.registerUser, this.registerPassword);
                 
             }
-        } else if (this.loginScreen === 2) {
-            this.panelLoginExistinguser.handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
+        } else if (this.welcomeState === WelcomeState.EXISTING_USER) {
+            this.panelLogin[WelcomeState.EXISTING_USER].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
 
-            if (this.panelLoginExistinguser.isClicked(this.controlLoginCancel)) {
-                this.loginScreen = 0;
+            if (this.panelLogin[WelcomeState.EXISTING_USER].isClicked(this.controlLoginCancel)) {
+                this.welcomeState = WelcomeState.WELCOME;
             }
 
-            if (this.panelLoginExistinguser.isClicked(this.controlLoginUser)) {
-                this.panelLoginExistinguser.setFocus(this.controlLoginPass);
+            if (this.panelLogin[WelcomeState.EXISTING_USER].isClicked(this.controlLoginUser)) {
+                this.panelLogin[WelcomeState.EXISTING_USER].setFocus(this.controlLoginPass);
             }
 
-            if (this.panelLoginExistinguser.isClicked(this.controlLoginPass) || this.panelLoginExistinguser.isClicked(this.controlLoginOk)) {
-                this.loginUser = this.panelLoginExistinguser.getText(this.controlLoginUser);
-                this.loginPass = this.panelLoginExistinguser.getText(this.controlLoginPass);
-                await this.login(this.loginUser, this.loginPass, false, this.panelLoginExistinguser.isActivated(this.controlLoginSavePass));
+            if (this.panelLogin[WelcomeState.EXISTING_USER].isClicked(this.controlLoginPass) || this.panelLogin[WelcomeState.EXISTING_USER].isClicked(this.controlLoginOk)) {
+                this.loginUser = this.panelLogin[WelcomeState.EXISTING_USER].getText(this.controlLoginUser);
+                this.loginPass = this.panelLogin[WelcomeState.EXISTING_USER].getText(this.controlLoginPass);
+                await this.login(this.loginUser, this.loginPass, false, this.panelLogin[WelcomeState.EXISTING_USER].isActivated(this.controlLoginSavePass));
             }
         }
     }
@@ -16281,7 +16316,7 @@ class mudclient extends GameConnection {
         }
     }
 
-    createModel(x, y, direction, id, count) {
+    createBoundaryModel(x, y, direction, id, count) {
         let x1 = x;
         let y1 = y;
         let x2 = x;
@@ -16321,7 +16356,7 @@ class mudclient extends GameConnection {
         let ai = new Int32Array([i3, j3, k3, l3]);
 
         gameModel.createFace(4, ai, j2, k2);
-        gameModel._setLight_from6(false, 60, 24, -50, -10, -50);
+        gameModel.createGouraudLightSource(false, 60, 24, -50, -10, -50);
 
         if (x >= 0 && y >= 0 && x < 96 && y < 96) {
             this.scene.addModel(gameModel);
@@ -16335,7 +16370,7 @@ class mudclient extends GameConnection {
 
 module.exports = mudclient;
 
-},{"./chat-message":11,"./game-buffer":13,"./game-character":14,"./game-connection":15,"./game-data":16,"./game-model":17,"./lib/graphics/color":19,"./lib/graphics/font":20,"./opcodes/client":27,"./opcodes/server":28,"./panel":30,"./scene":33,"./stream-audio-player":34,"./surface":36,"./surface-sprite":35,"./utility":37,"./version":38,"./word-filter":39,"./world":40,"long":7}],27:[function(require,module,exports){
+},{"./chat-message":11,"./game-buffer":13,"./game-character":14,"./game-connection":15,"./game-data":16,"./game-model":17,"./lib/game-exception":20,"./lib/graphics/color":21,"./lib/graphics/font":22,"./opcodes/client":30,"./opcodes/server":31,"./panel":33,"./scene":36,"./stream-audio-player":37,"./surface":39,"./surface-sprite":38,"./utility":40,"./version":41,"./word-filter":42,"./world":43,"long":7}],30:[function(require,module,exports){
 module.exports={
     "APPEARANCE": 235,
     "BANK_CLOSE": 212,
@@ -16418,7 +16453,7 @@ module.exports={
 }
 
 
-},{}],28:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 module.exports={
     "APPEARANCE": 59,
     "BANK_CLOSE": 203,
@@ -16481,7 +16516,7 @@ module.exports={
     "WELCOME": 182,
     "WORLD_INFO": 25
 }
-},{}],29:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 const Long = require('long');
 
 function toCharArray(s) {
@@ -16496,13 +16531,13 @@ function toCharArray(s) {
 
 class Packet {
 	constructor() {
-		this.readTries = 0;
-		this.maxReadTries = 0;
+		this.readTicksCount = 0;
+		this.readTicksMax = 0;
 		this.packetStart = 0;
 		this.packetData = null;
-		this.length = 0;
+		this.bufferSize = 0;
 		this.socketException = false;
-		this.delay = 0;
+		this.flushTimer = 0;
 		
 		this.packetEnd = 3;
 		this.packetMaxLength = 5000;
@@ -16515,38 +16550,34 @@ class Packet {
 	
 	async readPacket(buff) {
 		try {
-			this.readTries++;
-			
-			if (this.maxReadTries > 0 && this.readTries > this.maxReadTries) {
+			this.readTicksCount++;
+			if (this.readTicksMax > 0 && this.readTicksCount > this.readTicksMax) {
+				this.readTicksCount = 0;
 				this.socketException = true;
 				this.socketExceptionMessage = 'time-out';
-				this.maxReadTries += this.maxReadTries;
 				return 0;
 			}
-			
-			if (this.length === 0 && this.availableStream() >= 2) {
-				this.length = await this.readStream();
-				
-				if (this.length >= 160) this.length = ((this.length - 160) << 8) | await this.readStream();
+			// if the first byte is >=0xA0 that means its a flag to indicate we need to decode a uint16 for frame size
+			// otherwise the 1st byte has the frame size and second byte contains the last byte of the frame
+			if (this.bufferSize === 0 && this.availableStream() >= 2) {
+				this.bufferSize = await this.readStream();
+				if (this.bufferSize >= 0xA0) {
+					this.bufferSize = (this.bufferSize - 0xA0) << 8 | await this.readStream();
+				}
 			}
-			
-			if (this.length > 0 && this.availableStream() >= this.length) {
-				if (this.length >= 160) {
-					await this.readBytes(this.length, buff);
-				} else {
-					buff[this.length - 1] = await this.readStream() & 0xFF;
-					
-					if (this.length > 1) {
-						await this.readBytes(this.length - 1, buff);
+			// frame
+			if (this.bufferSize > 0 && this.availableStream() >= this.bufferSize) {
+				let frameBufferSize = this.bufferSize;
+				if (frameBufferSize > 0) {
+					if (this.bufferSize < 0xA0) {
+						this.bufferSize -= 1;
+						buff[this.bufferSize] = await this.readStream() & 0xFF
 					}
+					await this.readBytes(this.bufferSize, buff);
 				}
 				
-				let i = this.length;
-				
-				this.length = 0;
-				this.readTries = 0;
-				
-				return i;
+				this.bufferSize = this.readTicksCount = 0;
+				return frameBufferSize;
 			}
 		} catch (e) {
 			this.socketException = true;
@@ -16569,14 +16600,14 @@ class Packet {
 			throw Error(this.socketExceptionMessage);
 		}
 
-		this.delay++;
+		this.flushTimer++;
 		
-		if (this.delay < i) {
+		if (this.flushTimer < i) {
 			return;
 		}
 		
 		if (this.packetStart > 0) {
-			this.delay = 0;
+			this.flushTimer = 0;
 			this.writeStreamBytes(this.packetData, 0, this.packetStart);
 		}
 		
@@ -16643,7 +16674,7 @@ class Packet {
 	
 	putString(s) {
 		this.putBytes(toCharArray(s), 0, s.length);
-		this.putByte('\0')
+		this.putByte(0);
 	}
 	
 	putByte(i) {
@@ -16670,8 +16701,8 @@ class Packet {
 	}
 	
 	putBytes(src, srcPos, len) {
-		for (let k = 0; k < len; k++) {
-			this.putByte(src[srcPos + k]);
+		for (let c of src.slice(srcPos, srcPos+len)) {
+			this.putByte(c)
 		}
 	}
 	
@@ -16683,7 +16714,7 @@ class Packet {
 
 module.exports = Packet;
 
-},{"long":7}],30:[function(require,module,exports){
+},{"long":7}],33:[function(require,module,exports){
 const Surface = require('./surface');
 
 const CONTROL_TYPES = {
@@ -16811,24 +16842,18 @@ class Panel {
     }
 
     keyPress(code, key) {
-        if (key === 0) {
-            return;
-        }
-
         if (this.focusControlIndex !== -1 && this.controlText[this.focusControlIndex] !== null && this.controlShown[this.focusControlIndex]) {
             let inputLen = this.controlText[this.focusControlIndex].length;
 
-            if (code === 'Backspace' && inputLen > 0) {
+            if (code === 8) {
                 this.controlText[this.focusControlIndex] = this.controlText[this.focusControlIndex].slice(0, inputLen - 1);
                 return;
             }
-
-            if ((code === 'Enter' || code === 'NumpadEnter') && inputLen > 0) {
+            if (code === 13 || code === 10) {
                 this.controlClicked[this.focusControlIndex] = true;
                 return;
             }
-
-            if (code === 'Tab') {
+            if (code === 9) {
                 do {
                     this.focusControlIndex = (this.focusControlIndex + 1) % this.controlCount;
                 } while (this.controlType[this.focusControlIndex] !== 5 && this.controlType[this.focusControlIndex] !== 6);
@@ -16836,14 +16861,16 @@ class Panel {
             }
 
             if (inputLen < this.controlInputMaxLen[this.focusControlIndex]) {
-                if (key !== 65535) {
-                    this.controlText[this.focusControlIndex] += String.fromCharCode(key);
+                if (key.length > 1) {
+                    console.log(key + " ignored in panel!");
+                    return;
                 }
+                this.controlText[this.focusControlIndex] += key;
             }
         }
     }
 
-    drawPanel() {
+    render() {
         for (let i = 0; i < this.controlCount; i++) {
             if (this.controlShown[i]) {
                 if (this.controlType[i] === CONTROL_TYPES.TEXT) {
@@ -16973,14 +17000,14 @@ class Panel {
         this.surface.drawBoxEdge(x, y, width, height, this.colourRoundedBoxOut);
         this.surface.drawBoxEdge(x + 1, y + 1, width - 2, height - 2, this.colourRoundedBoxMid);
         this.surface.drawBoxEdge(x + 2, y + 2, width - 4, height - 4, this.colourRoundedBoxIn);
-        this.surface._drawSprite_from3(x, y, 2 + Panel.baseSpriteStart);
-        this.surface._drawSprite_from3((x + width) - 7, y, 3 + Panel.baseSpriteStart);
-        this.surface._drawSprite_from3(x, (y + height) - 7, 4 + Panel.baseSpriteStart);
-        this.surface._drawSprite_from3((x + width) - 7, (y + height) - 7, 5 + Panel.baseSpriteStart);
+        this.surface.drawSpriteID(x, y, 2 + Panel.baseSpriteStart);
+        this.surface.drawSpriteID((x + width) - 7, y, 3 + Panel.baseSpriteStart);
+        this.surface.drawSpriteID(x, (y + height) - 7, 4 + Panel.baseSpriteStart);
+        this.surface.drawSpriteID((x + width) - 7, (y + height) - 7, 5 + Panel.baseSpriteStart);
     }
 
     drawPicture(x, y, size) {
-        this.surface._drawSprite_from3(x, y, size);
+        this.surface.drawSpriteID(x, y, size);
     }
 
     drawLineHoriz(x, y, width) {
@@ -17076,8 +17103,8 @@ class Panel {
     drawListContainer(x, y, width, height, corner1, corner2) {
         let x2 = (x + width) - 12;
         this.surface.drawBoxEdge(x2, y, 12, height, 0);
-        this.surface._drawSprite_from3(x2 + 1, y + 1, Panel.baseSpriteStart); // up arrow?
-        this.surface._drawSprite_from3(x2 + 1, (y + height) - 12, 1 + Panel.baseSpriteStart); // down arrow?
+        this.surface.drawSpriteID(x2 + 1, y + 1, Panel.baseSpriteStart); // up arrow?
+        this.surface.drawSpriteID(x2 + 1, (y + height) - 12, 1 + Panel.baseSpriteStart); // down arrow?
         this.surface.drawLineHoriz(x2, y + 13, 12, 0);
         this.surface.drawLineHoriz(x2, (y + height) - 13, 12, 0);
         this.surface.drawGradient(x2 + 1, y + 14, 11, height - 27, this.colourScrollbarTop, this.colourScrollbarBottom);
@@ -17561,7 +17588,7 @@ class Panel {
     hide(control) {
         this.controlShown[control] = false;
     }
-
+    
     setFocus(control) {
         this.focusControlIndex = control;
     }
@@ -17580,7 +17607,7 @@ Panel.textListEntryHeightMod = 0;
 
 module.exports = Panel;
 
-},{"./surface":36}],31:[function(require,module,exports){
+},{"./surface":39}],34:[function(require,module,exports){
 class Polygon {
     constructor() {
         this.minPlaneX = 0;
@@ -17604,7 +17631,7 @@ class Polygon {
 }
 
 module.exports = Polygon;
-},{}],32:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 class Scanline {
     constructor() {
         this.startX = 0;
@@ -17615,7 +17642,7 @@ class Scanline {
 }
 
 module.exports = Scanline;
-},{}],33:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 const Long = require('long');
 const Polygon = require('./polygon');
 const Scanline = require('./scanline');
@@ -21012,32 +21039,32 @@ class Scene {
         }
     }
 
-    _setLight_from3(i, j, k) {
+    setLightSourceCoords(i, j, k) {
         if (i === 0 && j === 0 && k === 0) {
             i = 32;
         }
 
         for (let l = 0; l < this.modelCount; l++) {
-            this.models[l]._setLight_from3(i, j, k);
+            this.models[l].setLightCoords(i, j, k);
         }
     }
 
-    _setLight_from5(i, j, k, l, i1) {
+    createLightSource(i, j, k, l, i1) {
         if (k === 0 && l === 0 && i1 === 0) {
             k = 32;
         }
 
         for (let j1 = 0; j1 < this.modelCount; j1++) {
-            this.models[j1]._setLight_from5(i, j, k, l, i1);
+            this.models[j1].offsetLightSourceCoords(i, j, k, l, i1);
         }
     }
 
     setLight(...args) {
         switch (args.length) {
         case 3:
-            return this._setLight_from3(...args);
+            return this.setLightSourceCoords(...args);
         case 5:
-            return this._setLight_from5(...args);
+            return this.createLightSource(...args);
         }
     }
 
@@ -21447,7 +21474,7 @@ Scene.aByteArray434 = null;
 
 module.exports = Scene;
 
-},{"./polygon":31,"./scanline":32,"long":7}],34:[function(require,module,exports){
+},{"./polygon":34,"./scanline":35,"long":7}],37:[function(require,module,exports){
 const PCMPlayer = require('./lib/pcm-player');
 const { mulaw } = require('alawmulaw');
 
@@ -21471,7 +21498,7 @@ class StreamAudioPlayer {
 }
 
 module.exports = StreamAudioPlayer;
-},{"./lib/pcm-player":24,"alawmulaw":2}],35:[function(require,module,exports){
+},{"./lib/pcm-player":27,"alawmulaw":2}],38:[function(require,module,exports){
 const Surface = require('./surface');
 
 class SurfaceSprite extends Surface {
@@ -21507,7 +21534,7 @@ class SurfaceSprite extends Surface {
 }
 
 module.exports = SurfaceSprite;
-},{"./surface":36}],36:[function(require,module,exports){
+},{"./surface":39}],39:[function(require,module,exports){
 const {Utility} = require('./utility');
 
 const C_0 = '0'.charCodeAt(0);
@@ -21622,24 +21649,20 @@ class Surface {
     }
 
     blackScreen() {
-        let area = this.width2 * this.height2;
-
         if (!this.interlace) {
-            for (let j = 0; j < area; j++) {
-                this.pixels[j] = 0;
+            for (let pixelId = 0; pixelId < this.width2 * this.height2; pixelId++) {
+                this.pixels[pixelId] = 0;
             }
-
             return;
         }
-
-        let k = 0;
-
-        for (let l = -this.height2; l < 0; l += 2) {
-            for (let i1 = -this.width2; i1 < 0; i1++) {
-                this.pixels[k++] = 0;
+        let pixelId = 0;
+        for (let y = 0; y < this.height2; y += 2) {
+            for (let x = 0; x < this.width2; x++) {
+                this.pixels[pixelId++] = 0;
             }
-
-            k += this.width2;
+        
+            // for each horizontal line, skip one
+            pixelId += this.width2;
         }
     }
 
@@ -22197,7 +22220,7 @@ class Surface {
         }
     }
 
-    _drawSprite_from3(x, y, id) {
+    drawSpriteID(x, y, id) {
         if (this.spriteTranslate[id]) {
             x += this.spriteTranslateX[id];
             y += this.spriteTranslateY[id];
@@ -22344,7 +22367,7 @@ class Surface {
         }
     }
 
-    _drawSpriteAlpha_from4(x, y, spriteId, alpha) {
+    fadeThenDrawSpriteID(x, y, spriteId, alpha) {
         if (this.spriteTranslate[spriteId]) {
             x += this.spriteTranslateX[spriteId];
             y += this.spriteTranslateY[spriteId];
@@ -23870,7 +23893,8 @@ for (let i = 0; i < 256; i++) {
 
 module.exports = Surface;
 
-},{"./utility":37}],37:[function(require,module,exports){
+},{"./utility":40}],40:[function(require,module,exports){
+const {Enum} = require('./lib/enum');
 const BZLib = require('./bzlib');
 const FileDownloadStream = require('./lib/net/file-download-stream');
 const Long = require('long');
@@ -23947,14 +23971,14 @@ class Utility {
         let i1 = 0;
 
         for (; len > l; l = 8) {
-            i1 += (buff[k++] & Utility.bitmask[l]) << len - l;
+            i1 += (buff[k++] & bitmasks[l]) << len - l;
             len -= l;
         }
 
         if (len === l) {
-            i1 += buff[k] & Utility.bitmask[l];
+            i1 += buff[k] & bitmasks[l];
         } else {
-            i1 += buff[k] >> l - len & Utility.bitmask[len];
+            i1 += buff[k] >> l - len & bitmasks[len];
         }
 
         return i1;
@@ -23965,19 +23989,19 @@ class Utility {
 
         for (let j = 0; j < maxLen; j++) {
             if (j >= s.length) {
-                s1 = s1 + ' ';
-            } else {
-                let c = s.charCodeAt(j);
+                break;
+            }
+                
+            let c = s.charCodeAt(j);
 
-                if (c >= C_A && c <= C_Z) {
-                    s1 = s1 + String.fromCharCode(c);
-                } else if (c >= C_BIG_A && c <= C_BIG_Z) {
-                    s1 = s1 + String.fromCharCode(c);
-                } else if (c >= C_0 && c <= C_9) {
-                    s1 = s1 + String.fromCharCode(c);
-                } else {
-                    s1 = s1 + '_';
-                }
+            if (c >= C_A && c <= C_Z) {
+                s1 = s1 + String.fromCharCode(c);
+            } else if (c >= C_BIG_A && c <= C_BIG_Z) {
+                s1 = s1 + String.fromCharCode(c);
+            } else if (c >= C_0 && c <= C_9) {
+                s1 = s1 + String.fromCharCode(c);
+            } else {
+                s1 = s1 + '_';
             }
         }
 
@@ -24109,8 +24133,7 @@ class Utility {
     }
 
     static loadData(s, i, abyte0) {
-        let b = Utility.unpackData(s, i, abyte0, null);
-        return b;
+        return Utility.unpackData(s, i, abyte0, null);
     }
 
     static unpackData(filename, i, archiveData, fileData) {
@@ -24154,21 +24177,37 @@ class Utility {
 }
 
 Utility.aBoolean546 = false;
-Utility.bitmask = new Int32Array([
+const bitmasks = new Int32Array([
     0, 1, 3, 7, 15, 31, 63, 127, 255, 511,
     1023, 2047, 4095, 8191, 16383, 32767, 65535, 0x1ffff, 0x3ffff, 0x7ffff,
     0xfffff, 0x1fffff, 0x3fffff, 0x7fffff, 0xffffff, 0x1ffffff, 0x3ffffff, 0x7ffffff, 0xfffffff, 0x1fffffff,
     0x3fffffff, 0x7fffffff, -1
 ]);
 
-const GameState = {
+// class GameState extends Enum{}
+//
+// let GameStates = {
+//     WELCOME: new GameState('Welcome'),
+//     WORLD: new GameState('WorldChat'),
+// };
+
+class WelcomeState extends Enum {}
+WelcomeState.WELCOME = new WelcomeState('Welcome view');
+WelcomeState.NEW_USER = new WelcomeState('New User view');
+WelcomeState.EXISTING_USER = new WelcomeState('Existing User view');
+
+class GamePanel extends Enum {}
+GamePanel.APPEARANCE = new GamePanel('Avatar Maker');
+GamePanel.CHAT = new GamePanel('Game Chat');
+
+let GameStateL = {
     LOGIN: 0,
     WORLD: 1,
 };
 
-module.exports = {Utility, GameState};
+module.exports = {Utility, GameState: GameStateL, WelcomeState, GamePanel};
 
-},{"./bzlib":10,"./lib/net/file-download-stream":22,"long":7}],38:[function(require,module,exports){
+},{"./bzlib":10,"./lib/enum":19,"./lib/net/file-download-stream":25,"long":7}],41:[function(require,module,exports){
 module.exports={
     "CLIENT": 204,
     "CONFIG": 85,
@@ -24181,7 +24220,7 @@ module.exports={
     "SOUNDS": 1,
     "TEXTURES": 17
 }
-},{}],39:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 const C_0 = '0'.charCodeAt(0);
 const C_9 = '9'.charCodeAt(0);
 const C_A = 'a'.charCodeAt(0);
@@ -24200,83 +24239,9 @@ const C_V = 'v'.charCodeAt(0);
 const C_X = 'x'.charCodeAt(0);
 const C_Z = 'z'.charCodeAt(0);
 
-function toCharArray(s) {
-    let a = new Uint16Array(s.length);
-
-    for (let i = 0; i < s.length; i += 1) {
-        a[i] = s.charCodeAt(i);
-    }
-
-    return a;
-}
-
-function fromCharArray(a) {
-    return Array.from(a).map(c => String.fromCharCode(c)).join('');
-}
-
-class WordFilter {
-    static loadFilters(fragments, bad, host, tld) {
-        WordFilter.loadBad(bad);
-        WordFilter.loadHost(host);
-        WordFilter.loadFragments(fragments);
-        WordFilter.loadTld(tld);
-    }
-
-    static loadTld(buffer) {
-        let wordCount = buffer.getUnsignedInt();
-
-        WordFilter.tldList = [];
-        WordFilter.tldType = new Int32Array(wordCount);
-
-        for (let i = 0; i < wordCount; i++) {
-            WordFilter.tldType[i] = buffer.getUnsignedByte();
-
-            let ac = new Uint16Array(buffer.getUnsignedByte());
-
-            for (let j = 0; j < ac.length; j++) {
-                ac[j] = buffer.getUnsignedByte();
-            }
-
-            WordFilter.tldList.push(ac);
-        }
-    }
-
-    static loadBad(buffer) {
-        // let wordCount = buffer.getUnsignedInt();
-        let wordCount = 0;
-
-        WordFilter.badList = [];
-        WordFilter.badList.length = wordCount;
-        WordFilter.badList.fill(null);
-        WordFilter.badCharIds = [];
-        WordFilter.badCharIds.length = wordCount;
-        WordFilter.badCharIds.fill(null);
-
-        // WordFilter.readBuffer(buffer, WordFilter.badList, WordFilter.badCharIds);
-    }
-
-    static loadHost(buffer) {
-        let wordCount = buffer.getUnsignedInt();
-
-        WordFilter.hostList = [];
-        WordFilter.hostList.length = wordCount;
-        WordFilter.hostList.fill(null);
-        WordFilter.hostCharIds = [];
-        WordFilter.hostCharIds.length = wordCount;
-        WordFilter.hostCharIds.fill(null);
-
-        WordFilter.readBuffer(buffer, WordFilter.hostList, WordFilter.hostCharIds);
-    }
-
-    static loadFragments(buffer) {
-        WordFilter.hashFragments = new Int32Array(buffer.getUnsignedInt());
-        
-        for (let i = 0; i < WordFilter.hashFragments.length; i++) {
-            WordFilter.hashFragments[i] = buffer.getUnsignedShort();
-        }
-    }
-
-    static readBuffer(buffer, wordList, charIds) {
+const toCharArray = s => new TextEncoder().encode(s);
+const fromCharArray = a => new TextDecoder().decode(a);
+    function readBuffer(buffer, wordList, charIds) {
         for (let i = 0; i < wordList.length; i++) {
             let currentWord = new Uint16Array(buffer.getUnsignedByte());
 
@@ -24300,17 +24265,17 @@ class WordFilter {
         }
     }
 
-    static filter(input) {
+    function filter(input) {
         let inputChars = toCharArray(input.toLowerCase());
 
-        WordFilter.applyDotSlashFilter(inputChars);
-        WordFilter.applyBadwordFilter(inputChars);
-        WordFilter.applyHostFilter(inputChars);
-        WordFilter.heywhathteufck(inputChars);
+        applyDotSlashFilter(inputChars);
+        applyBadwordFilter(inputChars);
+        applyHostFilter(inputChars);
+        heywhathteufck(inputChars);
 
-        for (let ignoreIdx = 0; ignoreIdx < WordFilter.ignoreList.length; ignoreIdx++) {
-            for (let inputIgnoreIdx = -1; (inputIgnoreIdx = input.indexOf(WordFilter.ignoreList[ignoreIdx], inputIgnoreIdx + 1)) !== -1;) {
-                let ignoreWordChars = toCharArray(WordFilter.ignoreList[ignoreIdx]);
+        for (let ignoreIdx = 0; ignoreIdx < ignoreList.length; ignoreIdx++) {
+            for (let inputIgnoreIdx = -1; (inputIgnoreIdx = input.indexOf(ignoreList[ignoreIdx], inputIgnoreIdx + 1)) !== -1;) {
+                let ignoreWordChars = toCharArray(ignoreList[ignoreIdx]);
 
                 for (let ignorewordIdx = 0; ignorewordIdx < ignoreWordChars.length; ignorewordIdx++) {
                     inputChars[ignorewordIdx + inputIgnoreIdx] = ignoreWordChars[ignorewordIdx];
@@ -24318,34 +24283,34 @@ class WordFilter {
             }
         }
 
-        if (WordFilter.forceLowerCase) {
-            WordFilter.stripLowerCase(toCharArray(input), inputChars);
-            WordFilter.toLowerCase(inputChars);
+        if (forceLowerCase) {
+            stripLowerCase(toCharArray(input), inputChars);
+            toLowerCase(inputChars);
         }
 
         return fromCharArray(inputChars);
     }
 
-    static stripLowerCase(input, output) {
+    function stripLowerCase(input, output) {
         for (let i = 0; i < input.length; i++) {
-            if (output[i] !== C_ASTERISK && WordFilter.isUpperCase(input[i])) {
+            if (output[i] !== C_ASTERISK && checkUpperCase(input[i])) {
                 output[i] = input[i];
             }
         }
     }
 
-    static toLowerCase(input) {
+    function toLowerCase(input) {
         let isUpperCase = true;
 
         for (let i = 0; i < input.length; i++) {
             let current = input[i];
 
-            if (WordFilter.isLetter(current)) {
+            if (isLetter(current)) {
                 if (isUpperCase) {
-                    if (WordFilter.isLowerCase(current)) {
+                    if (isLowerCase(current)) {
                         isUpperCase = false;
                     }
-                } else if (WordFilter.isUpperCase(current)) {
+                } else if (checkUpperCase(current)) {
                     input[i] = ((current + 97) - 65);
                 }
             } else {
@@ -24354,35 +24319,35 @@ class WordFilter {
         }
     }
 
-    static applyBadwordFilter(input) {
+    function applyBadwordFilter(input) {
         for (let i = 0; i < 2; i++) {
-            for (let j = WordFilter.badList.length - 1; j >= 0; j--) {
-                WordFilter.applyWordFilter(input, WordFilter.badList[j], WordFilter.badCharIds[j]);
+            for (let j = badList.length - 1; j >= 0; j--) {
+                apply(input, badList[j], badCharIds[j]);
             }
         }
     }
 
-    static applyHostFilter(input) {
-        for (let i = WordFilter.hostList.length - 1; i >= 0; i--) {
-            WordFilter.applyWordFilter(input, WordFilter.hostList[i], WordFilter.hostCharIds[i]);
+    function applyHostFilter(input) {
+        for (let i = hostList.length - 1; i >= 0; i--) {
+            apply(input, hostList[i], hostCharIds[i]);
         }
     }
 
-    static applyDotSlashFilter(input) {
+    function applyDotSlashFilter(input) {
         let input1 = input.slice();
         let dot = toCharArray('dot');
-        WordFilter.applyWordFilter(input1, dot, null);
+        apply(input1, dot, null);
 
         let input2 = input.slice();
         let slash = toCharArray('slash');
-        WordFilter.applyWordFilter(input2, slash, null);
+        apply(input2, slash, null);
 
-        for (let i = 0; i < WordFilter.tldList.length; i++) {
-            WordFilter.applyTldFilter(input, input1, input2, WordFilter.tldList[i], WordFilter.tldType[i]);
+        for (let domain of tldList) {
+            applyTldFilter(input, input1, input2, domain.value, domain.score);
         }
     }
 
-    static applyTldFilter(input, input1, input2, tld, type) {
+    function applyTldFilter(input, input1, input2, tld, type) {
         if (tld.length > input.length) {
             return;
         }
@@ -24400,7 +24365,7 @@ class WordFilter {
                     next = input[inputCharCount + 1];
                 }
 
-                if (l < tld.length && (i1 = WordFilter.compareLettersNumbers(tld[l], current, next)) > 0) {
+                if (l < tld.length && (i1 = compareLettersNumbers(tld[l], current, next)) > 0) {
                     inputCharCount += i1;
                     l++;
                     continue;
@@ -24410,12 +24375,12 @@ class WordFilter {
                     break;
                 }
 
-                if ((i1 = WordFilter.compareLettersNumbers(tld[l - 1], current, next)) > 0) {
+                if ((i1 = compareLettersNumbers(tld[l - 1], current, next)) > 0) {
                     inputCharCount += i1;
                     continue;
                 }
 
-                if (l >= tld.length || !WordFilter.isSpecial(current)) {
+                if (l >= tld.length || !isSpecial(current)) {
                     break;
                 }
 
@@ -24424,10 +24389,10 @@ class WordFilter {
 
             if (l >= tld.length) {
                 let flag = false;
-                let startMatch = WordFilter.getAsteriskCount(input, input1, charIndex);
-                let endMatch = WordFilter.getAsteriskCount2(input, input2, inputCharCount - 1);
+                let startMatch = getAsteriskCount(input, input1, charIndex);
+                let endMatch = getAsteriskCount2(input, input2, inputCharCount - 1);
 
-                if (WordFilter.DEBUGTLD) {
+                if (DEBUGTLD) {
                     console.log(`Potential tld: ${tld} at char ${charIndex} (type="${type}, startmatch="${startMatch}, endmatch=${endMatch})`);
                 }
 
@@ -24444,7 +24409,7 @@ class WordFilter {
                 }
 
                 if (flag) {
-                    if (WordFilter.DEBUGTLD) {
+                    if (DEBUGTLD) {
                         console.log(`Filtered tld: ${tld} at char ${charIndex}`);
                     }
 
@@ -24473,12 +24438,12 @@ class WordFilter {
 
                         for (let l2 = l1 - 1; l2 >= 0; l2--) {
                             if (flag2) {
-                                if (WordFilter.isSpecial(input[l2])) {
+                                if (isSpecial(input[l2])) {
                                     break;
                                 }
 
                                 l1 = l2;
-                            } else if (!WordFilter.isSpecial(input[l2])) {
+                            } else if (!isSpecial(input[l2])) {
                                 flag2 = true;
                                 l1 = l2;
                             }
@@ -24507,12 +24472,12 @@ class WordFilter {
 
                         for (let j3 = i2 + 1; j3 < input.length; j3++) {
                             if (flag4) {
-                                if (WordFilter.isSpecial(input[j3])) {
+                                if (isSpecial(input[j3])) {
                                     break;
                                 }
 
                                 i2 = j3;
-                            } else if (!WordFilter.isSpecial(input[j3])) {
+                            } else if (!isSpecial(input[j3])) {
                                 flag4 = true;
                                 i2 = j3;
                             }
@@ -24527,13 +24492,13 @@ class WordFilter {
         }
     }
 
-    static getAsteriskCount(input, input1, len) {
+    function getAsteriskCount(input, input1, len) {
         if (len === 0) {
             return 2;
         }
 
         for (let j = len - 1; j >= 0; j--) {
-            if (!WordFilter.isSpecial(input[j])) {
+            if (!isSpecial(input[j])) {
                 break;
             }
 
@@ -24545,7 +24510,7 @@ class WordFilter {
         let filtered = 0;
 
         for (let l = len - 1; l >= 0; l--) {
-            if (!WordFilter.isSpecial(input1[l])) {
+            if (!isSpecial(input1[l])) {
                 break;
             }
 
@@ -24558,16 +24523,16 @@ class WordFilter {
             return 4;
         }
 
-        return WordFilter.isSpecial(input[len - 1]) ? 1 : 0;
+        return isSpecial(input[len - 1]) ? 1 : 0;
     }
 
-    static getAsteriskCount2(input, input1, len) {
+    function getAsteriskCount2(input, input1, len) {
         if ((len + 1) === input.length) {
             return 2;
         }
 
         for (let j = len + 1; j < input.length; j++) {
-            if (!WordFilter.isSpecial(input[j])) {
+            if (!isSpecial(input[j])) {
                 break;
             }
 
@@ -24579,7 +24544,7 @@ class WordFilter {
         let filtered = 0;
 
         for (let l = len + 1; l < input.length; l++) {
-            if (!WordFilter.isSpecial(input1[l])) {
+            if (!isSpecial(input1[l])) {
                 break;
             }
 
@@ -24592,10 +24557,10 @@ class WordFilter {
             return 4;
         }
 
-        return WordFilter.isSpecial(input[len + 1]) ? 1 : 0;
+        return isSpecial(input[len + 1]) ? 1 : 0;
     }
 
-    static applyWordFilter(input, wordList, charIds) {
+    function apply(input, wordList, charIds) {
         if (wordList.length > input.length) {
             return;
         }
@@ -24614,7 +24579,7 @@ class WordFilter {
                     nextChar = input[inputCharCount + 1];
                 }
 
-                if (k < wordList.length && (l = WordFilter.compareLettersSymbols(wordList[k], inputChar, nextChar)) > 0) {
+                if (k < wordList.length && (l = compareLettersSymbols(wordList[k], inputChar, nextChar)) > 0) {
                     inputCharCount += l;
                     k++;
                     continue;
@@ -24624,16 +24589,16 @@ class WordFilter {
                     break;
                 }
 
-                if ((l = WordFilter.compareLettersSymbols(wordList[k - 1], inputChar, nextChar)) > 0) {
+                if ((l = compareLettersSymbols(wordList[k - 1], inputChar, nextChar)) > 0) {
                     inputCharCount += l;
                     continue;
                 }
 
-                if (k >= wordList.length || !WordFilter.isNotLowerCase(inputChar)) {
+                if (k >= wordList.length || !isNotLowerCase(inputChar)) {
                     break;
                 }
 
-                if (WordFilter.isSpecial(inputChar) && inputChar !== C_SINGLE_QUOTE) {
+                if (isSpecial(inputChar) && inputChar !== C_SINGLE_QUOTE) {
                     specialChar = true;
                 }
 
@@ -24643,7 +24608,7 @@ class WordFilter {
             if (k >= wordList.length) {
                 let filter = true;
 
-                if (WordFilter.DEBUGTLD) {
+                if (DEBUGTLD) {
                     console.log(`Potential word: ${wordList} at char ${charIndex}`);
                 }
 
@@ -24660,21 +24625,21 @@ class WordFilter {
                         curChar = input[inputCharCount];
                     }
 
-                    let prevId = WordFilter.getCharId(prevChar);
-                    let curId = WordFilter.getCharId(curChar);
+                    let prevId = getCharId(prevChar);
+                    let curId = getCharId(curChar);
 
-                    if (charIds && WordFilter.compareCharIds(charIds, prevId, curId)) { 
+                    if (charIds && compareCharIds(charIds, prevId, curId)) {
                         filter = false;
                     }
                 } else {
                     let flag2 = false;
                     let flag3 = false;
 
-                    if ((charIndex - 1) < 0 || WordFilter.isSpecial(input[charIndex - 1]) && input[charIndex - 1] !== C_SINGLE_QUOTE) {
+                    if ((charIndex - 1) < 0 || isSpecial(input[charIndex - 1]) && input[charIndex - 1] !== C_SINGLE_QUOTE) {
                         flag2 = true;
                     }
 
-                    if (inputCharCount >= input.length || WordFilter.isSpecial(input[inputCharCount]) && input[inputCharCount] !== C_SINGLE_QUOTE) {
+                    if (inputCharCount >= input.length || isSpecial(input[inputCharCount]) && input[inputCharCount] !== C_SINGLE_QUOTE) {
                         flag3 = true;
                     }
 
@@ -24687,12 +24652,12 @@ class WordFilter {
                         }
 
                         for (; !flag4 && j1 < inputCharCount; j1++) {
-                            if (j1 >= 0 && (!WordFilter.isSpecial(input[j1]) || input[j1] === C_SINGLE_QUOTE)) {
+                            if (j1 >= 0 && (!isSpecial(input[j1]) || input[j1] === C_SINGLE_QUOTE)) {
                                 let ac2 = new Uint16Array(3);
                                 let k1;
 
                                 for (k1 = 0; k1 < 3; k1++) {
-                                    if ((j1 + k1) >= input.length || WordFilter.isSpecial(input[j1 + k1]) && input[j1 + k1] !== C_SINGLE_QUOTE) {
+                                    if ((j1 + k1) >= input.length || isSpecial(input[j1 + k1]) && input[j1 + k1] !== C_SINGLE_QUOTE) {
                                         break;
                                     }
 
@@ -24705,11 +24670,11 @@ class WordFilter {
                                     flag5 = false;
                                 }
 
-                                if (k1 < 3 && j1 - 1 >= 0 && (!WordFilter.isSpecial(input[j1 - 1]) || input[j1 - 1] === C_SINGLE_QUOTE)) {
+                                if (k1 < 3 && j1 - 1 >= 0 && (!isSpecial(input[j1 - 1]) || input[j1 - 1] === C_SINGLE_QUOTE)) {
                                     flag5 = false;
                                 }
 
-                                if (flag5 && !WordFilter.containsFragmentHashes(ac2)) {
+                                if (flag5 && !containsFragmentHashes(ac2)) {
                                     flag4 = true;
                                 }
                             }
@@ -24722,7 +24687,7 @@ class WordFilter {
                 }
 
                 if (filter) {
-                    if (WordFilter.DEBUGWORD) {
+                    if (DEBUGWORD) {
                         console.log(`Filtered word: ${wordList} at char ${charIndex}`);
                     }
 
@@ -24734,7 +24699,7 @@ class WordFilter {
         }
     }
 
-    static compareCharIds(charIdData, prevCharId, curCharId) {
+    function compareCharIds(charIdData, prevCharId, curCharId) {
         let first = 0;
 
         if (charIdData[first][0] === prevCharId && charIdData[first][1] === curCharId) {
@@ -24764,7 +24729,7 @@ class WordFilter {
         return false;
     }
 
-    static compareLettersNumbers(filterChar, currentChar, nextChar) {
+    function compareLettersNumbers(filterChar, currentChar, nextChar) {
         filterChar = String.fromCharCode(filterChar);
         currentChar = String.fromCharCode(currentChar);
         nextChar = String.fromCharCode(nextChar);
@@ -24804,7 +24769,7 @@ class WordFilter {
         return filterChar === 'g' && currentChar === '9' ? 1 : 0;
     }
 
-    static compareLettersSymbols(filterChar, currentChar, nextChar) {
+    function compareLettersSymbols(filterChar, currentChar, nextChar) {
         filterChar = String.fromCharCode(filterChar);
         currentChar = String.fromCharCode(currentChar);
         nextChar = String.fromCharCode(nextChar);
@@ -25000,14 +24965,14 @@ class WordFilter {
             return 0;
         }
 
-        if (WordFilter.DEBUGWORD) {
+        if (DEBUGWORD) {
             console.log(`Letter=${filterChar} not matched`);
         }
 
         return 0;
     }
 
-    static getCharId(c) {
+    function getCharId(c) {
         if (c >= C_A && c <= C_Z) {
             return c - 97 + 1;
         }
@@ -25023,17 +24988,17 @@ class WordFilter {
         return 27;
     }
 
-    static heywhathteufck(input) {
+    function heywhathteufck(input) {
         let digitIndex = 0;
         let fromIndex = 0;
         let k = 0;
         let l = 0;
 
-        while ((digitIndex = WordFilter.indexOfDigit(input, fromIndex)) != -1) {
+        while ((digitIndex = indexOfDigit(input, fromIndex)) != -1) {
             let flag = false;
 
             for (let i = fromIndex; i >= 0 && i < digitIndex && !flag; i++) {
-                if (!WordFilter.isSpecial(input[i]) && !WordFilter.isNotLowerCase(input[i])) {
+                if (!isSpecial(input[i]) && !isNotLowerCase(input[i])) {
                     flag = true;
                 }
             }
@@ -25046,7 +25011,7 @@ class WordFilter {
                 l = digitIndex;
             }
 
-            fromIndex = WordFilter.indexOfNonDigit(input, digitIndex);
+            fromIndex = indexOfNonDigit(input, digitIndex);
 
             let j1 = 0;
 
@@ -25070,7 +25035,7 @@ class WordFilter {
         }
     }
 
-    static indexOfDigit(input, fromIndex) {
+    function indexOfDigit(input, fromIndex) {
         for (let i = fromIndex; i < input.length && i >= 0; i++) {
             if (input[i] >= C_0 && input[i] <= C_9) {
                 return i;
@@ -25080,7 +25045,7 @@ class WordFilter {
         return -1;
     }
 
-    static indexOfNonDigit(input, fromIndex) {
+    function indexOfNonDigit(input, fromIndex) {
         for (let i = fromIndex; i < input.length && i >= 0; i++) {
             if (input[i] < C_0 || input[i] > C_9) {
                 return i;
@@ -25090,11 +25055,11 @@ class WordFilter {
         return input.length;
     }
 
-    static isSpecial(c) {
-        return !WordFilter.isLetter(c) && !WordFilter.isDigit(c);
+    function isSpecial(c) {
+        return !isLetter(c) && !isDigit(c);
     }
 
-    static isNotLowerCase(c) {
+    function isNotLowerCase(c) {
         if (c < C_A || c > C_Z) {
             return true;
         }
@@ -25102,27 +25067,27 @@ class WordFilter {
         return c === C_V || c === C_X || c === C_J || c === C_Q || c === C_Z;
     }
 
-    static isLetter(c) {
+    function isLetter(c) {
         return c >= C_A && c <= C_Z || c >= C_BIG_A && c <= C_BIG_Z;
     }
 
-    static isDigit(c) {
+    function isDigit(c) {
         return c >= C_0 && c <= C_9;
     }
 
-    static isLowerCase(c) {
+    function isLowerCase(c) {
         return c >= C_A && c <= C_Z;
     }
 
-    static isUpperCase(c) {
+    function checkUpperCase(c) {
         return c >= C_BIG_A && c <= C_BIG_Z;
     }
 
-    static containsFragmentHashes(input) {
+    function containsFragmentHashes(input) {
         let notNum = true;
 
         for (let i = 0; i < input.length; i++) {
-            if (!WordFilter.isDigit(input[i]) && input[i] !== 0) {
+            if (!isDigit(input[i]) && input[i] !== 0) {
                 notNum = false;
             }
         }
@@ -25131,22 +25096,22 @@ class WordFilter {
             return true;
         }
 
-        let inputHash = WordFilter.wordToHash(input);
+        let inputHash = wordToHash(input);
         let first = 0;
-        let last = WordFilter.hashFragments.length - 1;
+        let last = hashFragments.length - 1;
 
-        if (inputHash === WordFilter.hashFragments[first] || inputHash === WordFilter.hashFragments[last]) {
+        if (inputHash === hashFragments[first] || inputHash === hashFragments[last]) {
             return true;
         }
 
-        while (first != last && first + 1 != last) {
+        while (first !== last && first + 1 != last) {
             let middle = ((first + last) / 2) | 0;
 
-            if (inputHash === WordFilter.hashFragments[middle]) {
+            if (inputHash === hashFragments[middle]) {
                 return true;
             }
 
-            if (inputHash < WordFilter.hashFragments[middle]) {
+            if (inputHash < hashFragments[middle]) {
                 last = middle;
             } else {
                 first = middle;
@@ -25156,7 +25121,7 @@ class WordFilter {
         return false;
     }
 
-    static wordToHash(word) {
+    function wordToHash(word) {
         if (word.length > 6) {
             return 0;
         }
@@ -25173,7 +25138,7 @@ class WordFilter {
             } else if (c >= C_0 && c <= C_9) {
                 hash = (hash * 38 + c - 48 + 28) | 0;
             } else if (c !== 0) {
-                if (WordFilter.DEBUGWORD) {
+                if (DEBUGWORD) {
                     console.log(`wordToHash failed on ${fromCharArray(word)}`);
                 }
 
@@ -25183,22 +25148,75 @@ class WordFilter {
 
         return hash;
     }
-}
 
-WordFilter.DEBUGTLD = false;
-WordFilter.DEBUGWORD = false;
-WordFilter.forceLowerCase = true;
-WordFilter.ignoreList = [ 'cook', 'cook\'s', 'cooks', 'seeks', 'sheet' ];
 
-module.exports = WordFilter;
+DEBUGTLD = true;
+DEBUGWORD = true;
+forceLowerCase = true;
+ignoreList = [ 'cook', 'cook\'s', 'cooks', 'seeks', 'sheet' ];
+tldList = [];
 
-},{}],40:[function(require,module,exports){
+const readFilteredTLDs = buffer => {
+    for (let i = 0; i < buffer.getUnsignedInt(); i++) {
+        const tldScore = buffer.getUnsignedByte();
+        let tldValue = buffer.getString(buffer.getUnsignedByte());
+        
+        if (tldValue.length > 0) {
+            let tld = {
+                score: tldScore,
+                value: tldValue
+            };
+            tldList.push(tld);
+        }
+    }
+};
+
+const readFilteredWords = buffer => {
+    // let wordCount = buffer.getUnsignedInt();
+    let wordCount = 0;
+    
+    badList = [];
+    // badList.length = wordCount;
+    // badList.fill(null);
+    badCharIds = [];
+    // badCharIds.length = wordCount;
+    // badCharIds.fill(null);
+    
+    // readBuffer(buffer, badList, badCharIds);
+};
+
+let hostList = [];
+
+let hostCharIds = [];
+let hashFragments = new Uint16Array();
+
+const readFilteredHashFragments = buffer => {
+    for (let i = 0; i < buffer.getUnsignedInt(); i++) {
+        hashFragments[i] = buffer.getUnsignedShort();
+    }
+};
+
+const readFilteredHosts = buffer => {
+    let wordCount = buffer.getUnsignedInt();
+    
+    hostList.length = wordCount;
+    hostList.fill(null);
+    hostCharIds.length = wordCount;
+    hostCharIds.fill(null);
+    
+    readBuffer(buffer, hostList, hostCharIds);
+};
+
+module.exports = {filter, readFilteredTLDs, readFilteredHosts, readFilteredWords, readFilteredHashFragments};
+
+},{}],43:[function(require,module,exports){
 const GameData = require('./game-data');
 const Scene = require('./scene');
 const GameModel = require('./game-model');
 const {Utility} = require('./utility');
 const ndarray = require('ndarray');
 
+const OBJECT_MAPS_START = 48000;
 class World {
     constructor(scene, surface) {
         this.regionWidth = 96;
@@ -25491,7 +25509,7 @@ class World {
         }
     }
 
-    _loadSection_from4I(x, y, plane, chunk) {
+    decodeSector(x, y, plane, chunk) {
         let mapName = 'm' + plane + ((x / 10) | 0) + x % 10 + ((y / 10) | 0) + y % 10;
             if (this.landscapePack !== null) {
                 let mapData = Utility.loadData(mapName + '.hei', 0, this.landscapePack);
@@ -25674,10 +25692,10 @@ class World {
             return this._loadSection_from3(...args);
         case 4:
             if (typeof args[3] === 'number') {
-                return this._loadSection_from4I(...args);
+                return this.decodeSector(...args);
             }
 
-            return this._loadSection_from4(...args);
+            return this.loadRegionThenMakeModel(...args);
         }
     }
 
@@ -25761,11 +25779,11 @@ class World {
     fillEmptySectorsAndBorder() {
         for (let x = 0; x < this.regionWidth; x++) {
             for (let y = 0; y < this.regionHeight; y++) {
-                if (this.getTileDecoration(x, y, 0) === 250) {
+                if (this.getOverlayID(x, y, 0) === 250) {
                     // fills in the white edge surrounding ground-level sectors
-                    if (x === 47 && this.getTileDecoration(x + 1, y, 0) !== 250 && this.getTileDecoration(x + 1, y, 0) !== 2) {
+                    if (x === 47 && this.getOverlayID(x + 1, y, 0) !== 250 && this.getOverlayID(x + 1, y, 0) !== 2) {
                         this.setTileDecoration(x, y, 9);
-                    } else if (y === 47 && this.getTileDecoration(x, y + 1, 0) !== 250 && this.getTileDecoration(x, y + 1, 0) !== 2) {
+                    } else if (y === 47 && this.getOverlayID(x, y + 1, 0) !== 250 && this.getOverlayID(x, y + 1, 0) !== 2) {
                         this.setTileDecoration(x, y, 9); 
                     } else {
                         // Fills in the empty ground-level landscape to water overlay
@@ -25852,7 +25870,7 @@ class World {
         return this.tileDecoration.get(h, x * 48 + y) & 0xff;
     }
 
-    getTileDecoration(...args) {
+    getOverlayID(...args) {
         switch (args.length) {
         case 3:
             return this._getTileDecoration_from3(...args);
@@ -26063,14 +26081,14 @@ class World {
         }
     }
 
-    _loadSection_from4(x, y, plane, flag) {
+    loadRegionThenMakeModel(x, y, plane, flag) {
         let l = ((x + 24) / 48) | 0;
         let i1 = ((y + 24) / 48) | 0;
 
-        this._loadSection_from4I(l - 1, i1 - 1, plane, 0);
-        this._loadSection_from4I(l, i1 - 1, plane, 1);
-        this._loadSection_from4I(l - 1, i1, plane, 2);
-        this._loadSection_from4I(l, i1, plane, 3);
+        this.decodeSector(l - 1, i1 - 1, plane, 0);
+        this.decodeSector(l, i1 - 1, plane, 1);
+        this.decodeSector(l - 1, i1, plane, 2);
+        this.decodeSector(l, i1, plane, 3);
         this.fillEmptySectorsAndBorder();
 
         if (this.parentModel === null) {
@@ -26088,36 +26106,48 @@ class World {
 
             let gameModel = this.parentModel;
             gameModel.clear();
+    
+            // for each tile, we offset the ambient lighting, to make the world seem less fake??
+            // the tile vectors new ambience will be set to (256 - (rand(-5, 5)*4)
+            for (let x = 0; x < this.regionWidth; x++) for (let y = 0; y < this.regionHeight; y++) {
+                let z = -this.getTerrainHeight(x, y);
+    
+                for (let xOff = -1; xOff < 1; xOff++) {
+                    for (let yOff = -1; yOff < 1; yOff++) {
+                        let overlayID = this.getOverlayID(x + xOff, y + yOff, plane);
+                        if (overlayID > 0 && GameData.overlays[overlayID-1] === 4) {
+                            z = 0;
+                            break;
+                        }
+                    }
+                }
+                // if (this.getOverlayID(x, y, plane) > 0 && GameData.overlays[this.getOverlayID(x, y, plane) - 1] === 4) {
+                //     z = 0;
+                // }
+                //
+                // if (this.getOverlayID(x - 1, y, plane) > 0 && GameData.overlays[this.getOverlayID(x - 1, y, plane) - 1] === 4) {
+                //     z = 0;
+                // }
+                //
+                // if (this.getOverlayID(x, y - 1, plane) > 0 && GameData.overlays[this.getOverlayID(x, y - 1, plane) - 1] === 4) {
+                //     z = 0;
+                // }
+                //
+                // if (this.getOverlayID(x - 1, y - 1, plane) > 0 && GameData.overlays[this.getOverlayID(x - 1, y - 1, plane) - 1] === 4) {
+                //     z = 0;
+                // }
+    
+                let vertexHandle = gameModel.vertexAt(x * this.tileSize, z, y * this.tileSize);
+                // let ambienceOffset = rand(-5, 5)
+                let ambienceOffset = (Math.random() * 10 | 0) - 5;
 
-            for (let j2 = 0; j2 < this.regionWidth; j2++) for (let i3 = 0; i3 < this.regionHeight; i3++) {
-                let i4 = -this.getTerrainHeight(j2, i3);
-    
-                if (this.getTileDecoration(j2, i3, plane) > 0 && GameData.tileType[this.getTileDecoration(j2, i3, plane) - 1] === 4) {
-                    i4 = 0;
-                }
-    
-                if (this.getTileDecoration(j2 - 1, i3, plane) > 0 && GameData.tileType[this.getTileDecoration(j2 - 1, i3, plane) - 1] === 4) {
-                    i4 = 0;
-                }
-    
-                if (this.getTileDecoration(j2, i3 - 1, plane) > 0 && GameData.tileType[this.getTileDecoration(j2, i3 - 1, plane) - 1] === 4) {
-                    i4 = 0;
-                }
-    
-                if (this.getTileDecoration(j2 - 1, i3 - 1, plane) > 0 && GameData.tileType[this.getTileDecoration(j2 - 1, i3 - 1, plane) - 1] === 4) {
-                    i4 = 0;
-                }
-    
-                let j5 = gameModel.vertexAt(j2 * this.tileSize, i4, i3 * this.tileSize);
-                let j7 = ((Math.random() * 10) | 0) - 5;
-    
-                gameModel.setVertexAmbience(j5, j7);
+                gameModel.setVertexAmbience(vertexHandle, ambienceOffset);
             }
     
             for (let lx = 0; lx < 95; lx++) {
                 for (let ly = 0; ly < 95; ly++) {
-                    let colourIndex = this.getTerrainColour(lx, ly);
-                    let colour = this.terrainColours[colourIndex];
+                    let groundColor = this.getTerrainColour(lx, ly);
+                    let colour = this.terrainColours[groundColor];
                     let colour_1 = colour;
                     let colour_2 = colour;
                     let l14 = 0;
@@ -26127,41 +26157,41 @@ class World {
                         colour_1 = World.colourTransparent;
                         colour_2 = World.colourTransparent;
                     }
-
-                    if (this.getTileDecoration(lx, ly, plane) > 0) {
-                        let decorationType = this.getTileDecoration(lx, ly, plane);
-                        let decorationTileType = GameData.tileType[decorationType - 1];
+    
+                    let overlayIndex = this.getOverlayID(lx, ly, plane);
+                    if (overlayIndex > 0) {
+                        let overlay = GameData.overlays[overlayIndex - 1];
                         let tileType = this.getTileType(lx, ly, plane);
 
-                        colour = colour_1 = GameData.tileDecoration[decorationType - 1];
+                        colour = colour_1 = GameData.tileDecoration[overlayIndex - 1];
 
-                        if (decorationTileType === 4) {
+                        if (overlay === 4) {
                             colour = 1;
                             colour_1 = 1;
 
-                            if (decorationType === 12) {
+                            if (overlayIndex === 12) {
                                 colour = 31;
                                 colour_1 = 31;
                             }
                         }
 
-                        if (decorationTileType === 5) {
+                        if (overlay === 5) {
                             if (this.getWallDiagonal(lx, ly) > 0 && this.getWallDiagonal(lx, ly) < 24000) {
-                                if (this.getTileDecoration(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getTileDecoration(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
-                                    colour = this.getTileDecoration(lx - 1, ly, plane, colour_2);
+                                if (this.getOverlayID(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
+                                    colour = this.getOverlayID(lx - 1, ly, plane, colour_2);
                                     l14 = 0;
-                                } else if (this.getTileDecoration(lx + 1, ly, plane, colour_2) !== World.colourTransparent && this.getTileDecoration(lx, ly + 1, plane, colour_2) !== World.colourTransparent) {
-                                    colour_1 = this.getTileDecoration(lx + 1, ly, plane, colour_2);
+                                } else if (this.getOverlayID(lx + 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly + 1, plane, colour_2) !== World.colourTransparent) {
+                                    colour_1 = this.getOverlayID(lx + 1, ly, plane, colour_2);
                                     l14 = 0;
-                                } else if (this.getTileDecoration(lx + 1, ly, plane, colour_2) !== World.colourTransparent && this.getTileDecoration(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
-                                    colour_1 = this.getTileDecoration(lx + 1, ly, plane, colour_2);
+                                } else if (this.getOverlayID(lx + 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
+                                    colour_1 = this.getOverlayID(lx + 1, ly, plane, colour_2);
                                     l14 = 1;
-                                } else if (this.getTileDecoration(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getTileDecoration(lx, ly + 1, plane, colour_2) !== World.colourTransparent) {
-                                    colour = this.getTileDecoration(lx - 1, ly, plane, colour_2);
+                                } else if (this.getOverlayID(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly + 1, plane, colour_2) !== World.colourTransparent) {
+                                    colour = this.getOverlayID(lx - 1, ly, plane, colour_2);
                                     l14 = 1;
                                 }
                             }
-                        } else if (decorationTileType !== 2 || this.getWallDiagonal(lx, ly) > 0 && this.getWallDiagonal(lx, ly) < 24000) {
+                        } else if (overlay !== 2 || this.getWallDiagonal(lx, ly) > 0 && this.getWallDiagonal(lx, ly) < 24000) {
                             if (this.getTileType(lx - 1, ly, plane) !== tileType && this.getTileType(lx, ly - 1, plane) !== tileType) {
                                 colour = colour_2;
                                 l14 = 0;
@@ -26177,12 +26207,12 @@ class World {
                             }
                         }
                         
-                        if (GameData.tileAdjacent[decorationType - 1] !== 0) {
+                        if (GameData.tileAdjacent[overlayIndex - 1] !== 0) {
                             const adjacency = this.objectAdjacency.get(lx, ly);
                             this.objectAdjacency.set(lx, ly, adjacency | 0x40);
                         }
 
-                        if (GameData.tileType[decorationType - 1] === 2) {
+                        if (GameData.overlays[overlayIndex - 1] === 2) {
                             const adjacency = this.objectAdjacency.get(lx, ly);
                             this.objectAdjacency.set(lx, ly, adjacency | 0x80);
                         }
@@ -26268,8 +26298,8 @@ class World {
 
             for (let k4 = 1; k4 < 95; k4++) {
                 for (let i6 = 1; i6 < 95; i6++) {
-                    if (this.getTileDecoration(k4, i6, plane) > 0 && GameData.tileType[this.getTileDecoration(k4, i6, plane) - 1] === 4) {
-                        let l7 = GameData.tileDecoration[this.getTileDecoration(k4, i6, plane) - 1];
+                    if (this.getOverlayID(k4, i6, plane) > 0 && GameData.overlays[this.getOverlayID(k4, i6, plane) - 1] === 4) {
+                        let l7 = GameData.tileDecoration[this.getOverlayID(k4, i6, plane) - 1];
                         let j10 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                         let l12 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                         let i15 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -26280,9 +26310,9 @@ class World {
                         this.localY[i20] = i6;
                         gameModel.faceTag[i20] = 0x30d40 + i20;
                         this.method402(k4, i6, 0, l7, l7);
-                    } else if (this.getTileDecoration(k4, i6, plane) === 0 || GameData.tileType[this.getTileDecoration(k4, i6, plane) - 1] !== 3) {
-                        if (this.getTileDecoration(k4, i6 + 1, plane) > 0 && GameData.tileType[this.getTileDecoration(k4, i6 + 1, plane) - 1] === 4) {
-                            let i8 = GameData.tileDecoration[this.getTileDecoration(k4, i6 + 1, plane) - 1];
+                    } else if (this.getOverlayID(k4, i6, plane) === 0 || GameData.overlays[this.getOverlayID(k4, i6, plane) - 1] !== 3) {
+                        if (this.getOverlayID(k4, i6 + 1, plane) > 0 && GameData.overlays[this.getOverlayID(k4, i6 + 1, plane) - 1] === 4) {
+                            let i8 = GameData.tileDecoration[this.getOverlayID(k4, i6 + 1, plane) - 1];
                             let k10 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                             let i13 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                             let j15 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -26295,8 +26325,8 @@ class World {
                             this.method402(k4, i6, 0, i8, i8);
                         }
 
-                        if (this.getTileDecoration(k4, i6 - 1, plane) > 0 && GameData.tileType[this.getTileDecoration(k4, i6 - 1, plane) - 1] === 4) {
-                            let j8 = GameData.tileDecoration[this.getTileDecoration(k4, i6 - 1, plane) - 1];
+                        if (this.getOverlayID(k4, i6 - 1, plane) > 0 && GameData.overlays[this.getOverlayID(k4, i6 - 1, plane) - 1] === 4) {
+                            let j8 = GameData.tileDecoration[this.getOverlayID(k4, i6 - 1, plane) - 1];
                             let l10 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                             let j13 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                             let k15 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -26309,8 +26339,8 @@ class World {
                             this.method402(k4, i6, 0, j8, j8);
                         }
 
-                        if (this.getTileDecoration(k4 + 1, i6, plane) > 0 && GameData.tileType[this.getTileDecoration(k4 + 1, i6, plane) - 1] === 4) {
-                            let k8 = GameData.tileDecoration[this.getTileDecoration(k4 + 1, i6, plane) - 1];
+                        if (this.getOverlayID(k4 + 1, i6, plane) > 0 && GameData.overlays[this.getOverlayID(k4 + 1, i6, plane) - 1] === 4) {
+                            let k8 = GameData.tileDecoration[this.getOverlayID(k4 + 1, i6, plane) - 1];
                             let i11 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                             let k13 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                             let l15 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -26323,8 +26353,8 @@ class World {
                             this.method402(k4, i6, 0, k8, k8);
                         }
 
-                        if (this.getTileDecoration(k4 - 1, i6, plane) > 0 && GameData.tileType[this.getTileDecoration(k4 - 1, i6, plane) - 1] === 4) {
-                            let l8 = GameData.tileDecoration[this.getTileDecoration(k4 - 1, i6, plane) - 1];
+                        if (this.getOverlayID(k4 - 1, i6, plane) > 0 && GameData.overlays[this.getOverlayID(k4 - 1, i6, plane) - 1] === 4) {
+                            let l8 = GameData.tileDecoration[this.getOverlayID(k4 - 1, i6, plane) - 1];
                             let j11 = gameModel.vertexAt(k4 * this.tileSize, -this.getTerrainHeight(k4, i6), i6 * this.tileSize);
                             let l13 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6), i6 * this.tileSize);
                             let i16 = gameModel.vertexAt((k4 + 1) * this.tileSize, -this.getTerrainHeight(k4 + 1, i6 + 1), (i6 + 1) * this.tileSize);
@@ -26340,7 +26370,7 @@ class World {
                 }
             }
 
-            gameModel._setLight_from6(true, 40, 48, -50, -10, -50);
+            gameModel.createGouraudLightSource(true, 40, 48, -50, -10, -50);
             this.terrainModels = this.parentModel.split(0, 0, 1536, 1536, 8, 64, 233, false);
 
             for (let j6 = 0; j6 < 64; j6++) {
@@ -26435,7 +26465,7 @@ class World {
             this.surface.drawSpriteMinimap(this.baseMediaSprite - 1, 0, 0, 285, 285);
         }
 
-        this.parentModel._setLight_from6(false, 60, 24, -50, -10, -50);
+        this.parentModel.createGouraudLightSource(false, 60, 24, -50, -10, -50);
 
         this.wallModels[plane] = this.parentModel.split(0, 0, 1536, 1536, 8, 64, 338, true);
 
@@ -26781,7 +26811,7 @@ class World {
             }
         }
 
-        this.parentModel._setLight_from6(true, 50, 50, -50, -10, -50);
+        this.parentModel.createGouraudLightSource(true, 50, 50, -50, -10, -50);
         this.roofModels[plane] = this.parentModel.split(0, 0, 1536, 1536, 8, 64, 169, true);
 
         for (let l9 = 0; l9 < 64; l9++) {
@@ -26808,65 +26838,64 @@ class World {
     }
 
     getTileType(i, j, k) {
-        let l = this.getTileDecoration(i, j, k);
+        let l = this.getOverlayID(i, j, k);
 
         if (l === 0) {
             return -1;
         }
 
-        let i1 = GameData.tileType[l - 1];
+        let i1 = GameData.overlays[l - 1];
 
         return i1 !== 2 ? 0 : 1;
     }
 
     addModels(models) {
-        for (let i = 0; i < 94; i++) {
-            for (let j = 0; j < 94; j++) {
-                if (this.getWallDiagonal(i, j) > 48000 && this.getWallDiagonal(i, j) < 60000) {
-                    let k = this.getWallDiagonal(i, j) - 48001;
-                    let l = this.getTileDirection(i, j);
-                    let i1 = 0;
-                    let j1 = 0;
-
-                    if (l === 0 || l === 4) {
-                        i1 = GameData.objectWidth[k];
-                        j1 = GameData.objectHeight[k];
-                    } else {
-                        j1 = GameData.objectWidth[k];
-                        i1 = GameData.objectHeight[k];
+        for (let x = 0; x < 94; x++) {
+            for (let y = 0; y < 94; y++) {
+                let diagVal = this.getWallDiagonal(x, y);
+                if (diagVal > OBJECT_MAPS_START && diagVal < OBJECT_MAPS_START+12000) {
+                    let objectID = diagVal - OBJECT_MAPS_START - 1;
+                    let height = GameData.objectWidth[objectID];
+                    let width = GameData.objectHeight[objectID];
+    
+                    // dir goes counter-clockwise, 0 = North, 4 = south
+                    let objectDir = this.getTileDirection(x, y);
+                    if (objectDir === 0 || objectDir === 4) {
+                        height = GameData.objectWidth[objectID];
+                        width = GameData.objectHeight[objectID];
                     }
 
-                    this.removeObject2(i, j, k);
+                    this.removeObject2(x, y, objectID);
 
-                    let gameModel = models[GameData.objectModelIndex[k]].copy(false, true, false, false);
-                    let k1 = (((i + i + i1) * this.tileSize) / 2) | 0;
-                    let i2 = (((j + j + j1) * this.tileSize) / 2) | 0;
+                    let gameModel = models[GameData.objectModelIndex[objectID]].copy(false, true, false, false);
+                    let k1 = (((x + x + height) * this.tileSize) / 2) | 0;
+                    let i2 = (((y + y + width) * this.tileSize) / 2) | 0;
                     gameModel.translate(k1, -this.getElevation(k1, i2), i2);
-                    gameModel.orient(0, this.getTileDirection(i, j) * 32, 0);
+                    gameModel.orient(0, this.getTileDirection(x, y) * 32, 0);
                     this.scene.addModel(gameModel);
-                    gameModel._setLight_from5(48, 48, -50, -10, -50);
+                    gameModel.offsetLightSourceCoords(48, 48, -50, -10, -50);
 
-                    if (i1 > 1 || j1 > 1) {
-                        for (let k2 = i; k2 < i + i1; k2++) {
-                            for (let l2 = j; l2 < j + j1; l2++) {
-                                if ((k2 > i || l2 > j) && this.getWallDiagonal(k2, l2) - 48001 === k) {
-                                    let l1 = k2;
-                                    let j2 = l2;
-                                    let byte0 = 0;
+                    if (height > 1 || width > 1) {
+                        for (let xOff = x; xOff < x + height; xOff++) {
+                            for (let yOff = y; yOff < y + width; yOff++) {
+                                if ((xOff > x || yOff > y) && this.getWallDiagonal(xOff, yOff) - (OBJECT_MAPS_START+1) === objectID) {
+                                    let regionX = xOff;
+                                    let regionY = yOff;
+                                    let plane = 0;
 
-                                    if (l1 >= 48 && j2 < 48) {
-                                        byte0 = 1;
-                                        l1 -= 48;
-                                    } else if (l1 < 48 && j2 >= 48) {
-                                        byte0 = 2;
-                                        j2 -= 48;
-                                    } else if (l1 >= 48 && j2 >= 48) {
-                                        byte0 = 3;
-                                        l1 -= 48;
-                                        j2 -= 48;
+                                    if (regionX >= 48 && regionY < 48) {
+                                        plane = 1;
+                                        regionX -= 48;
+                                    } else if (regionX < 48 && regionY >= 48) {
+                                        plane = 2;
+                                        regionY -= 48;
+                                    } else if (regionX >= 48 && regionY >= 48) {
+                                        plane = 3;
+                                        regionX -= 48;
+                                        regionY -= 48;
                                     }
 
-                                    this.wallsDiagonal.set(byte0, l1 * 48 + j2,  0);
+                                    this.wallsDiagonal.set(plane, regionX * 48 + regionY,  0);
                                 }
                             }
                         }
@@ -26929,15 +26958,15 @@ class World {
         let l = ((x + 24) / 48) | 0;
         let i1 = ((y + 24) / 48) | 0;
 
-        this._loadSection_from4(x, y, plane, true);
+        this.loadRegionThenMakeModel(x, y, plane, true);
 
         if (plane === 0) {
-            this._loadSection_from4(x, y, 1, false);
-            this._loadSection_from4(x, y, 2, false);
-            this._loadSection_from4I(l - 1, i1 - 1, plane, 0);
-            this._loadSection_from4I(l, i1 - 1, plane, 1);
-            this._loadSection_from4I(l - 1, i1, plane, 2);
-            this._loadSection_from4I(l, i1, plane, 3);
+            this.loadRegionThenMakeModel(x, y, 1, false);
+            this.loadRegionThenMakeModel(x, y, 2, false);
+            this.decodeSector(l - 1, i1 - 1, plane, 0);
+            this.decodeSector(l, i1 - 1, plane, 1);
+            this.decodeSector(l - 1, i1, plane, 2);
+            this.decodeSector(l, i1, plane, 3);
             this.fillEmptySectorsAndBorder();
         }
     }
@@ -26969,43 +26998,40 @@ class World {
         }
 
         if (GameData.objectType[id] === 1 || GameData.objectType[id] === 2) {
-            let l = this.getTileDirection(x, y);
-            let i1 = 0;
-            let j1 = 0;
+            let direction = this.getTileDirection(x, y);
+            let height = GameData.objectHeight[id];
+            let width = GameData.objectWidth[id];
 
-            if (l === 0 || l === 4) {
-                i1 = GameData.objectWidth[id];
-                j1 = GameData.objectHeight[id];
-            } else {
-                j1 = GameData.objectWidth[id];
-                i1 = GameData.objectHeight[id];
+            if (direction === 0 || direction === 4) {
+                height = GameData.objectWidth[id];
+                width = GameData.objectHeight[id];
             }
 
-            for (let k1 = x; k1 < x + i1; k1++) {
-                for (let l1 = y; l1 < y + j1; l1++) {
+            for (let k1 = x; k1 < x + height; k1++) {
+                for (let l1 = y; l1 < y + width; l1++) {
                     const adjacency = this.objectAdjacency.get(k1, l1);
 
                     if (GameData.objectType[id] === 1) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111110111111);
-                    } else if (l === 0) {
+                    } else if (direction === 0) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111111111101);
 
                         if (k1 > 0) {
                             this.method407(k1 - 1, l1, 8);
                         }
-                    } else if (l === 2) {
+                    } else if (direction === 2) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111111111011);
 
                         if (l1 < 95) {
                             this.method407(k1, l1 + 1, 1);
                         }
-                    } else if (l === 4) {
+                    } else if (direction === 4) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111111110111);
 
                         if (k1 < 95) {
                             this.method407(k1 + 1, l1, 2);
                         }
-                    } else if (l === 6) {
+                    } else if (direction === 6) {
                         this.objectAdjacency.set(k1, l1, adjacency & 0b1111111111111110);
 
                         if (l1 > 0) {
@@ -27015,7 +27041,7 @@ class World {
                 }
             }
 
-            this.method404(x, y, i1, j1);
+            this.method404(x, y, height, width);
         }
     }
     
@@ -27044,4 +27070,4 @@ World.colourTransparent = 12345678;
 
 module.exports = World;
 
-},{"./game-data":16,"./game-model":17,"./scene":33,"./utility":37,"ndarray":8}]},{},[1]);
+},{"./game-data":16,"./game-model":17,"./scene":36,"./utility":40,"ndarray":8}]},{},[1]);

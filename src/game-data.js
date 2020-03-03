@@ -51,7 +51,7 @@ class GameData {
         return s;
     }
 
-    static loadData(buffer, isMembers) {
+    static loadDefinitions(buffer, isMembers) {
         GameData.dataString = Utility.loadData('string.dat', 0, buffer);
         GameData.stringOffset = 0;
         GameData.dataInteger = Utility.loadData('integer.dat', 0, buffer);
@@ -382,7 +382,7 @@ class GameData {
 
         GameData.tileCount = GameData.getUnsignedShort(); // and these
         GameData.tileDecoration = new Int32Array(GameData.tileCount);
-        GameData.tileType = new Int32Array(GameData.tileCount);
+        GameData.overlays = new Int32Array(GameData.tileCount);
         GameData.tileAdjacent = new Int32Array(GameData.tileCount);
 
         for (i = 0; i < GameData.tileCount; i++) {
@@ -390,7 +390,7 @@ class GameData {
         }
 
         for (i = 0; i < GameData.tileCount; i++) {
-            GameData.tileType[i] = GameData.getUnsignedByte();
+            GameData.overlays[i] = GameData.getUnsignedByte();
         }
 
         for (i = 0; i < GameData.tileCount; i++) {
@@ -517,7 +517,7 @@ GameData.wallObjectCount = 0;
 GameData.prayerLevel = null;
 GameData.prayerDrain = null;
 GameData.tileDecoration = null;
-GameData.tileType = null;
+GameData.overlays = null;
 GameData.tileAdjacent = null;
 GameData.modelCount = 0;
 GameData.roofHeight = null;

@@ -37,6 +37,10 @@ class GameCharacter {
         this.equippedItem = new Int32Array(12);
         this.level = -1;
     }
+    
+    isFighting() {
+        return this.animationCurrent === 8 || this.animationCurrent === 9;
+    }
 }
 
 module.exports = GameCharacter;

@@ -1,3 +1,4 @@
+const {Enum} = require('./lib/enum');
 const BZLib = require('./bzlib');
 const FileDownloadStream = require('./lib/net/file-download-stream');
 const Long = require('long');
@@ -74,14 +75,14 @@ class Utility {
         let i1 = 0;
 
         for (; len > l; l = 8) {
-            i1 += (buff[k++] & Utility.bitmask[l]) << len - l;
+            i1 += (buff[k++] & bitmasks[l]) << len - l;
             len -= l;
         }
 
         if (len === l) {
-            i1 += buff[k] & Utility.bitmask[l];
+            i1 += buff[k] & bitmasks[l];
         } else {
-            i1 += buff[k] >> l - len & Utility.bitmask[len];
+            i1 += buff[k] >> l - len & bitmasks[len];
         }
 
         return i1;
@@ -92,19 +93,19 @@ class Utility {
 
         for (let j = 0; j < maxLen; j++) {
             if (j >= s.length) {
-                s1 = s1 + ' ';
-            } else {
-                let c = s.charCodeAt(j);
+                break;
+            }
+                
+            let c = s.charCodeAt(j);
 
-                if (c >= C_A && c <= C_Z) {
-                    s1 = s1 + String.fromCharCode(c);
-                } else if (c >= C_BIG_A && c <= C_BIG_Z) {
-                    s1 = s1 + String.fromCharCode(c);
-                } else if (c >= C_0 && c <= C_9) {
-                    s1 = s1 + String.fromCharCode(c);
-                } else {
-                    s1 = s1 + '_';
-                }
+            if (c >= C_A && c <= C_Z) {
+                s1 = s1 + String.fromCharCode(c);
+            } else if (c >= C_BIG_A && c <= C_BIG_Z) {
+                s1 = s1 + String.fromCharCode(c);
+            } else if (c >= C_0 && c <= C_9) {
+                s1 = s1 + String.fromCharCode(c);
+            } else {
+                s1 = s1 + '_';
             }
         }
 
@@ -236,8 +237,7 @@ class Utility {
     }
 
     static loadData(s, i, abyte0) {
-        let b = Utility.unpackData(s, i, abyte0, null);
-        return b;
+        return Utility.unpackData(s, i, abyte0, null);
     }
 
     static unpackData(filename, i, archiveData, fileData) {
@@ -281,16 +281,32 @@ class Utility {
 }
 
 Utility.aBoolean546 = false;
-Utility.bitmask = new Int32Array([
+const bitmasks = new Int32Array([
     0, 1, 3, 7, 15, 31, 63, 127, 255, 511,
     1023, 2047, 4095, 8191, 16383, 32767, 65535, 0x1ffff, 0x3ffff, 0x7ffff,
     0xfffff, 0x1fffff, 0x3fffff, 0x7fffff, 0xffffff, 0x1ffffff, 0x3ffffff, 0x7ffffff, 0xfffffff, 0x1fffffff,
     0x3fffffff, 0x7fffffff, -1
 ]);
 
-const GameState = {
+// class GameState extends Enum{}
+//
+// let GameStates = {
+//     WELCOME: new GameState('Welcome'),
+//     WORLD: new GameState('WorldChat'),
+// };
+
+class WelcomeState extends Enum {}
+WelcomeState.WELCOME = new WelcomeState('Welcome view');
+WelcomeState.NEW_USER = new WelcomeState('New User view');
+WelcomeState.EXISTING_USER = new WelcomeState('Existing User view');
+
+class GamePanel extends Enum {}
+GamePanel.APPEARANCE = new GamePanel('Avatar Maker');
+GamePanel.CHAT = new GamePanel('Game Chat');
+
+let GameStateL = {
     LOGIN: 0,
     WORLD: 1,
 };
 
-module.exports = {Utility, GameState};
+module.exports = {Utility, GameState: GameStateL, WelcomeState, GamePanel};

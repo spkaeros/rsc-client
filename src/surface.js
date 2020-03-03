@@ -112,24 +112,20 @@ class Surface {
     }
 
     blackScreen() {
-        let area = this.width2 * this.height2;
-
         if (!this.interlace) {
-            for (let j = 0; j < area; j++) {
-                this.pixels[j] = 0;
+            for (let pixelId = 0; pixelId < this.width2 * this.height2; pixelId++) {
+                this.pixels[pixelId] = 0;
             }
-
             return;
         }
-
-        let k = 0;
-
-        for (let l = -this.height2; l < 0; l += 2) {
-            for (let i1 = -this.width2; i1 < 0; i1++) {
-                this.pixels[k++] = 0;
+        let pixelId = 0;
+        for (let y = 0; y < this.height2; y += 2) {
+            for (let x = 0; x < this.width2; x++) {
+                this.pixels[pixelId++] = 0;
             }
-
-            k += this.width2;
+        
+            // for each horizontal line, skip one
+            pixelId += this.width2;
         }
     }
 
@@ -687,7 +683,7 @@ class Surface {
         }
     }
 
-    _drawSprite_from3(x, y, id) {
+    drawSpriteID(x, y, id) {
         if (this.spriteTranslate[id]) {
             x += this.spriteTranslateX[id];
             y += this.spriteTranslateY[id];
@@ -834,7 +830,7 @@ class Surface {
         }
     }
 
-    _drawSpriteAlpha_from4(x, y, spriteId, alpha) {
+    fadeThenDrawSpriteID(x, y, spriteId, alpha) {
         if (this.spriteTranslate[spriteId]) {
             x += this.spriteTranslateX[spriteId];
             y += this.spriteTranslateY[spriteId];

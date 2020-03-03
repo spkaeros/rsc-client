@@ -3394,32 +3394,32 @@ class Scene {
         }
     }
 
-    _setLight_from3(i, j, k) {
+    setLightSourceCoords(i, j, k) {
         if (i === 0 && j === 0 && k === 0) {
             i = 32;
         }
 
         for (let l = 0; l < this.modelCount; l++) {
-            this.models[l]._setLight_from3(i, j, k);
+            this.models[l].setLightCoords(i, j, k);
         }
     }
 
-    _setLight_from5(i, j, k, l, i1) {
+    createLightSource(i, j, k, l, i1) {
         if (k === 0 && l === 0 && i1 === 0) {
             k = 32;
         }
 
         for (let j1 = 0; j1 < this.modelCount; j1++) {
-            this.models[j1]._setLight_from5(i, j, k, l, i1);
+            this.models[j1].offsetLightSourceCoords(i, j, k, l, i1);
         }
     }
 
     setLight(...args) {
         switch (args.length) {
         case 3:
-            return this._setLight_from3(...args);
+            return this.setLightSourceCoords(...args);
         case 5:
-            return this._setLight_from5(...args);
+            return this.createLightSource(...args);
         }
     }
 

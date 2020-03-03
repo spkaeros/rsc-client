@@ -4,16 +4,18 @@ const Font = require('./lib/graphics/font');
 const Graphics = require('./lib/graphics/graphics');
 const Socket = require('./lib/net/socket');
 const Surface = require('./surface');
-const {Utility} = require('./utility');
+const {Utility, WelcomeState, GameState, GamePanel} = require('./utility');
 const VERSION = require('./version');
 const zzz = require('sleep-promise');
 const { TGA } = require('./lib/tga');
+const {FontStyle} = require('./lib/graphics/fontStyle')
+const {Enum} = require('./lib/enum');
 
-const InitState = {
-	IDLE: 0,
-	LAUNCH_ENGINE: 1,
-	FETCH_ASSETS: 2,
-};
+class EngineState extends Enum {}
+EngineState.LAUNCH = new EngineState("Launching game engine")
+EngineState.INITIALIZE_DATA = new EngineState("Downloading and setting up all the game assets")
+EngineState.RUNNING = new EngineState("Engine clock is ticking")
+EngineState.SHUTDOWN = new EngineState("Emgine is shutting down")
 
 class GameShell {
 	constructor(canvas) {
@@ -25,34 +27,33 @@ class GameShell {
 			mouseWheel: false,
 			resetCompass: false,
 			zoomCamera: false,
-			showRoofs: true
+			showRoofs: false
 		};
-		
 		this.middleButtonDown = false;
 		this.mouseScrollDelta = 0;
-		
 		this.mouseActionTimeout = 0;
-		this.initState = InitState.IDLE;
+		this.panelLogin = {};
+		this.panelGame = {};
+		this.engineState = EngineState.IDLE;
+		this.gameState = GameState.LOGIN;
+		this.welcomeState = WelcomeState.WELCOME;
 		// this.logoHeaderText = null;
 		this.mouseX = 0;
 		this.mouseY = 0;
 		this.mouseButtonDown = 0;
 		this.lastMouseButtonDown = 0;
-		this.renderTimestamps = [];
-		this.resetRenderTimers();
-		this.stopTimeout = 0;
-		this.interlaceTimer = 0;
+		this.clockTimings = [];
+		this.unsetFrameTimes();
+		this.shutdownCounter = 0;
+		this.powerThrottle = 0;
 		this.loadingProgressPercent = 0;
 		this.imageLogo = null;
 		this.appletWidth = 512;
 		this.appletHeight = 346;
 		this.targetFps = 20;
-		this.maxDrawTime = 1000;
+		this.inputClockRate = 1000;
 		this.hasRefererLogoNotUsed = false;
 		this.loadingProgessText = 'Loading';
-		this.fontTimesRoman15 = new Font('Arial', Font.BOLD, 15);
-		this.fontHelvetica13b = new Font('Helvetica', Font.BOLD, 13);
-		this.fontHelvetica12 = new Font('Helvetica', 0, 12);
 		this.keyLeft = false;
 		this.keyRight = false;
 		this.keyUp = false;
@@ -61,7 +62,7 @@ class GameShell {
 		this.keyHome = false;
 		this.keyPgUp = false;
 		this.keyPgDown = false;
-		this.threadSleep = 1;
+		this.maxTickTimeout = 1;
 		this.interlace = false;
 		this.inputTextCurrent = '';
 		this.inputTextFinal = '';
@@ -71,6 +72,8 @@ class GameShell {
 	
 	// eslint-disable-next-line no-unused-vars
 	async startApplication(width, height, title, resizeable) {
+		this.engineState = EngineState.IDLE;
+		
 		// window.document.title = title;
 		this._canvas.width = width;
 		this._canvas.height = height;
@@ -80,8 +83,10 @@ class GameShell {
 		this.appletHeight = height;
 		
 		GameShell.gameFrame = this._canvas.getContext('2d', {
-			'alpha': false,
-			'desynchronized': true,
+			alpha: false,
+			desynchronized: true,
+			depth:true,
+			antialias:true,
 		});
 		
 		this._canvas.addEventListener('mousedown', this.mousePressed.bind(this));
@@ -94,7 +99,13 @@ class GameShell {
 		window.addEventListener('keyup', this.keyReleased.bind(this));
 		
 		this.graphics = this.getGraphics();
-		this.initState = InitState.LAUNCH_ENGINE;
+
+		this.engineState = EngineState.INITIALIZE_DATA;
+		this.drawLoadingScreen(0, 'Loading...');
+		await this.loadFonts();
+		this.imageLogo = await this.fetchLogo();
+		
+		await this.startGame();
 		await this.run();
 	}
 	
@@ -106,74 +117,78 @@ class GameShell {
 		this.targetFps = 1000 / i;
 	}
 	
-	resetRenderTimers() {
-		for (let i = 0; i < 10; i++) this.renderTimestamps[i] = 0;
+	unsetFrameTimes() {
+		for (let i = 0; i < 10; i++) this.clockTimings[i] = 0;
 	}
 	
-	initRenderTimers() {
-		for (let i = 0; i < 10; i++) this.renderTimestamps[i] = Date.now();
+	setFrameTimes() {
+		for (let i = 0; i < 10; i++) this.clockTimings[i] = Date.now();
 	}
 	
 	keyPressed(e) {
-		e.preventDefault();
-		
-		let code = e.code;
-		let chr = e.key.length === 1 ? e.key.charCodeAt(0) : 65535;
-		
-		// if (!/^Key.$/.test(e.code)) {
-		//     console.log(e.code,e.key,e.keyCode);
-		//     chr = e.keyCode;
-		// }
-		
-		this.handleKeyPress(code, chr);
-		
-		if (code === 'ArrowLeft') {
+		if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
+			this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
+			e.preventDefault();
+			return;
+		}
+
+		if (this.gameState === GameState.WORLD) {
+			if (this.showAppearanceChange && this.panelGame[GamePanel.APPEARANCE] !== null) {
+				this.panelGame[GamePanel.APPEARANCE].keyPress(e.which, e.key);
+				return;
+			}
+
+			if (this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
+				this.panelGame[GamePanel.CHAT].keyPress(e.which, e.key);
+			}
+		}
+		switch (e.which) {
+		case 37:
 			this.keyLeft = true;
-		} else if (code === 'ArrowRight') {
-			this.keyRight = true;
-		} else if (code === 'ArrowUp') {
+			e.preventDefault();
+			break;
+		case 38:
 			this.keyUp = true;
-		} else if (code === 'ArrowDown') {
+			e.preventDefault();
+			break;
+		case 39:
+			this.keyRight = true;
+			e.preventDefault();
+			break;
+		case 40:
 			this.keyDown = true;
-		} else if (code === 'Space') {
+			e.preventDefault();
+			break;
+		case 32:
 			this.keySpace = true;
-		} else if (code === 'F1') {
-			this.interlace = !this.interlace;
-		} else if (code === 'F2') {
-			this.options.showRoofs = !this.options.showRoofs;
-		} else if (code === 'Home') {
+			e.preventDefault();
+			break;
+		case 36:
 			this.keyHome = true;
-		} else if (code === 'PageUp') {
+			e.preventDefault();
+			break;
+		case 33:
 			this.keyPgUp = true;
-		} else if (code === 'PageDown') {
+			e.preventDefault();
+			break;
+		case 34:
 			this.keyPgDown = true;
-		}
-		
-		let foundText = false;
-		
-		for (let i = 0; i < GameShell.charMap.length; i++) {
-			if (GameShell.charMap.charCodeAt(i) === chr) {
-				foundText = true;
-				break;
-			}
-		}
-		
-		if (foundText) {
-			if (this.inputTextCurrent.length < 20) {
-				this.inputTextCurrent += String.fromCharCode(chr);
-			}
-			
-			if (this.inputPmCurrent.length < 80) {
-				this.inputPmCurrent += String.fromCharCode(chr);
-			}
-		}
-		
-		if (code === 'Enter') {
+			e.preventDefault();
+			break;
+		case 112:
+			this.interlace = !this.interlace;
+			e.preventDefault();
+			break;
+		case 113:
+			this.options.showRoofs = !this.options.showRoofs;
+			e.preventDefault();
+			break;
+		case 13:
 			this.inputTextFinal = this.inputTextCurrent;
 			this.inputPmFinal = this.inputPmCurrent;
-		}
-		
-		if (code === 'Backspace') {
+			e.preventDefault();
+			break;
+		case 8:
 			if (this.inputTextCurrent.length > 0) {
 				this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
 			}
@@ -181,32 +196,50 @@ class GameShell {
 			if (this.inputPmCurrent.length > 0) {
 				this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
 			}
+			e.preventDefault();
+			break;
+		default:
+			if (this.inputTextCurrent.length < 20) {
+				this.inputTextCurrent += e.key;
+			}
+			
+			if (this.inputPmCurrent.length < 80) {
+				this.inputPmCurrent += e.key;
+			}
+			e.preventDefault();
+			break;
 		}
-		
 		return false;
 	}
 	
 	keyReleased(e) {
 		e.preventDefault();
 		
-		let code = e.code;
-		
-		if (code === 'ArrowLeft') {
+		switch (e.which) {
+		case 37:
 			this.keyLeft = false;
-		} else if (code === 'ArrowRight') {
-			this.keyRight = false;
-		} else if (code === 'ArrowUp') {
+			break;
+		case 38:
 			this.keyUp = false;
-		} else if (code === 'ArrowDown') {
+			break;
+		case 39:
+			this.keyRight = false;
+			break;
+		case 40:
 			this.keyDown = false;
-		} else if (code === 'Space') {
+			break;
+		case 32:
 			this.keySpace = false;
-		} else if (code === 'Home') {
+			break;
+		case 36:
 			this.keyHome = false;
-		} else if (code === 'PageUp') {
+			break;
+		case 33:
 			this.keyPgUp = false;
-		} else if (code === 'PageDown') {
+			break;
+		case 34:
 			this.keyPgDown = false;
+			break;
 		}
 		
 		return false;
@@ -287,106 +320,99 @@ class GameShell {
 	}
 	
 	start() {
-		if (this.stopTimeout >= 0) {
-			this.stopTimeout = 0;
+		if (this.shutdownCounter >= 0) {
+			this.shutdownCounter = 0;
 		}
 	}
 	
 	stop() {
-		if (this.stopTimeout >= 0) {
-			this.stopTimeout = 4000 / this.targetFps;
+		if (this.shutdownCounter >= 0) {
+			this.shutdownCounter = 4000 / this.targetFps;
 		}
 	}
 	
 	async run() {
-		if (this.initState === InitState.LAUNCH_ENGINE) {
-			this.initState = InitState.FETCH_ASSETS;
-			await this.loadFonts()
-			this.imageLogo = await this.fetchLogo()
-			this.drawLoadingScreen(0, 'Loading...');
-			this.initState = InitState.LAUNCH_ENGINE;
-			await this.startGame();
-		}
+		// if (this.engineState.toNumber() < EngineState.INITIALIZE_DATA.toNumber()) {
+		// 	this.engineState = EngineState.INITIALIZE_DATA;
+		// 	this.drawLoadingScreen(0, 'Loading...');
+		// 	await this.loadFonts()
+		// 	this.imageLogo = await this.fetchLogo()
+		// 	await this.startGame();
+		// }
+		this.engineState = EngineState.RUNNING;
 		
-		let i = 0;
-		let j = 256;
-		let sleep = 1;
-		let i1 = 0;
+		let clockTick = 0;
+		let lastInputTimeslice = 256;
+		let lastTickTimeout = 1;
+		let inputTiming = 0;
 		
-		this.initRenderTimers()
+		this.setFrameTimes()
 		
-		while (this.stopTimeout >= 0) {
-			if (this.stopTimeout > 0) {
-				this.stopTimeout--;
+		while (this.shutdownCounter >= 0) {
+			if (this.shutdownCounter > 0) {
+				this.shutdownCounter--;
 				
-				if (this.stopTimeout === 0) {
-					this.onClosing();
+				if (this.shutdownCounter === 0) {
+					this.clearResources();
 					return;
 				}
 			}
 			
-			let k1 = j;
-			let lastSleep = sleep;
-			
-			j = 300;
-			sleep = 1;
+			let inputTimeslice = 300;
+			let tickTimeout = 1;
 			
 			let time = Date.now();
 			
-			if (this.renderTimestamps[i] === 0) {
-				j = k1;
-				sleep = lastSleep;
-			} else if (time > this.renderTimestamps[i]) {
-				j = ((2560 * this.targetFps) / (time - this.renderTimestamps[i])) | 0;
+			if (this.clockTimings[clockTick] === 0) {
+				inputTimeslice = Math.max(25, lastInputTimeslice);
+				tickTimeout = lastTickTimeout;
+			} else if (time > this.clockTimings[clockTick]) {
+				inputTimeslice = Math.max(25, (2560 * this.targetFps) / (time - this.clockTimings[clockTick]) | 0);
 			}
 			
-			if (j < 25) {
-				j = 25;
+			if (inputTimeslice > 256) {
+				inputTimeslice = 256;
+				tickTimeout = Math.max(1, this.targetFps - (time - this.clockTimings[clockTick]) / 10 | 0);
 			}
+			lastInputTimeslice = inputTimeslice;
 			
-			if (j > 256) {
-				j = 256;
-				sleep = (this.targetFps - (time - this.renderTimestamps[i]) / 10) | 0;
-				
-				if (sleep < this.threadSleep) {
-					sleep = this.threadSleep;
-				}
+			await zzz(tickTimeout);
+			
+			this.clockTimings[clockTick] = time;
+			clockTick = (clockTick + 1) % 10;
+			
+			if (tickTimeout > 1) {
+				for (let tick = 0; tick < 10; tick++)
+					if (this.clockTimings[tick] !== 0)
+						this.clockTimings[tick] += tickTimeout;
 			}
-			
-			await zzz(sleep);
-			
-			this.renderTimestamps[i] = time;
-			i = (i + 1) % 10;
-			
-			if (sleep > 1) {
-				for (let j2 = 0; j2 < 10; j2++) {
-					if (this.renderTimestamps[j2] !== 0) {
-						this.renderTimestamps[j2] += sleep;
-					}
-				}
-			}
-			
-			let k2 = 0;
-			
-			while (i1 < 256) {
+			lastTickTimeout = tickTimeout;
+
+			let inputCounter = 0;
+			while (inputTiming < 256) {
 				await this.handleInputs();
-				i1 += j;
+				inputTiming += inputTimeslice;
 				
-				if (++k2 > this.maxDrawTime) {
-					i1 = 0;
-					this.interlaceTimer += 6;
+				// if our input processing is using up too much of the engine cycle, possibly render every other line
+				// as compensation.  Less time during the render phase may make up for the loss during input
+				if (++inputCounter > this.inputClockRate) {
+					inputTiming = 0;
+					this.powerThrottle += 6;
 					
-					if (this.interlaceTimer > 25) {
-						this.interlaceTimer = 0;
+					if (this.powerThrottle > 25) {
+						this.powerThrottle = 0;
 						this.interlace = true;
 					}
-					
 					break;
 				}
 			}
 			
-			this.interlaceTimer--;
-			i1 &= 0xff;
+			lastInputTimeslice = inputTimeslice;
+			this.powerThrottle--;
+			
+			// faster than equivalent: i1 = Math.min(255, i1);
+			inputTiming &= 0xFF;
+			
 			this.draw();
 			
 			this.mouseScrollDelta = 0;
@@ -399,7 +425,7 @@ class GameShell {
 	
 	// eslint-disable-next-line no-unused-vars
 	paint(g) {
-		if (this.initState >= InitState.FETCH_ASSETS) {
+		if (this.engineState.toNumber() < EngineState.RUNNING.toNumber()) {
 			if (this.imageLogo !== null) {
 				this.drawLoadingScreen(this.loadingProgressPercent, this.loadingProgessText);
 			}
@@ -452,21 +478,24 @@ class GameShell {
 		this.loadingProgessText = text;
 		this.loadingProgressPercent = percent;
 		this.graphics.drawRect(midX - 2, midY - 2, 280, 23);
-		this.graphics.fillRect(midX, midY, ((277 * percent) / 100) | 0, 20);
+		this.graphics.fillRect(midX, midY, (277 * percent) / 100 | 0, 20);
 		
 		if (!this.hasRefererLogoNotUsed) {
 			this.graphics.setColor(new Color(198, 198, 198));
 		} else {
 			this.graphics.setColor(new Color(255, 255, 255));
 		}
-		this.drawString(this.graphics, this.loadingProgessText, this.fontHelvetica12, midX + 138, midY + 10);
+		this.drawString(this.graphics, this.loadingProgessText, Font.HELVETICA.withConfig(FontStyle.NORMAL, 12), midX + 138, midY + 12);
 		
 		if (!this.hasRefererLogoNotUsed) {
-			this.drawString(this.graphics, 'Created by JAGeX - visit www.jagex.com', this.fontHelvetica13b, midX + 138, midY + 30);
-			this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', this.fontHelvetica13b, midX + 138, midY + 44);
+			this.drawString(this.graphics, 'Powered by RSCGo, a free and open source software project', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 35);
+			this.drawString(this.graphics, '\u00a92019-2020 Zach Knight, and the 2003scape team', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 49);
+			// this.drawString(this.graphics, 'Created by JAGeX - visit www.jagex.com', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 35); // midY + 30
+			// this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 49); // midY + 44
 		} else {
 			this.graphics.setColor(new Color(132, 132, 152));
-			this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', this.fontHelvetica12, midX + 138, this.appletHeight - 20);
+			this.drawString(this.graphics, '\u00a92019-2020 Zach Knight, and the 2003scape team', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY - 20);
+			// this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', Font.HELVETICA.withConfig(FontStyle.NORMAL, 12), midX + 138, this.appletHeight - 20);
 		}
 		// not sure where this would have been used. maybe to indicate a special client?
 		// if (this.logoHeaderText !== null) {
@@ -475,32 +504,29 @@ class GameShell {
 		// }
 	}
 	
-	drawLoadingStatus(curPercent, statusText) {
+	updateLoadingStatus(curPercent, statusText) {
+		this.loadingProgressPercent = curPercent;
+		this.loadingProgessText = statusText;
 		let j = ((this.appletWidth - 281) / 2) | 0;
 		let k = ((this.appletHeight - 148) / 2) | 0;
 		j += 2;
 		k += 90;
 		
-		this.loadingProgressPercent = curPercent;
-		this.loadingProgessText = statusText;
-		
-		let l = ((277 * curPercent) / 100) | 0;
 		this.graphics.setColor(new Color(132, 132, 132));
-		
 		if (this.hasRefererLogoNotUsed) {
 			this.graphics.setColor(new Color(220, 0, 0));
 		}
-		
+		let l = ((277 * curPercent) / 100) | 0;
 		this.graphics.fillRect(j, k, l, 20);
 		this.graphics.setColor(Color.black);
 		this.graphics.fillRect(j + l, k, 277 - l, 20);
-		this.graphics.setColor(new Color(198, 198, 198));
 		
+		this.graphics.setColor(new Color(198, 198, 198));
 		if (this.hasRefererLogoNotUsed) {
 			this.graphics.setColor(new Color(255, 255, 255));
 		}
 		
-		this.drawString(this.graphics, statusText, this.fontTimesRoman15, j + 138, k + 10);
+		this.drawString(this.graphics, statusText, Font.TIMES_ROMAN.withConfig(FontStyle.BOLD, 15), j + 138, k + 12);
 	}
 	
 	drawString(g, s, font, i, j) {
@@ -510,9 +536,7 @@ class GameShell {
 	}
 	
 	createImage(buff) {
-		const tgaImage = new TGA();
-		
-		tgaImage.load(buff.buffer);
+		let tgaImage = new TGA(buff.buffer);;
 		
 		const canvas = tgaImage.getCanvas();
 		const ctx = canvas.getContext('2d');
@@ -525,7 +549,7 @@ class GameShell {
 		file = './data204/' + file;
 		
 		
-		this.drawLoadingStatus(percent, 'Loading ' + description + ' - 0%');
+		this.updateLoadingStatus(percent, 'Loading ' + description + ' - 0%');
 		
 		let fileDownloadStream = Utility.openFile(file);
 		let header = new Int8Array(6);
@@ -535,26 +559,21 @@ class GameShell {
 		let archiveSize = ((header[0] & 0xFF) << 16) + ((header[1] & 0xFF) << 8) + (header[2] & 0xFF);
 		let archiveSizeCompressed = ((header[3] & 0xFF) << 16) + ((header[4] & 0xFF) << 8) + (header[5] & 0xFF);
 		
-		this.drawLoadingStatus(percent, 'Loading ' + description + ' - 5%');
+		this.updateLoadingStatus(percent, 'Loading ' + description + ' - 5%');
 		
 		let read = 0;
 		let archiveData = new Int8Array(archiveSizeCompressed);
 		
 		while (read < archiveSizeCompressed) {
-			let length = archiveSizeCompressed - read;
-			
-			// read in 4KiB data at once
-			if (length > 4096) {
-				length = 4096;
-			}
-			
+			let length = Math.min(archiveSizeCompressed - read, 8192);
 			await fileDownloadStream.readFully(archiveData, read, length);
 			read += length;
-			this.drawLoadingStatus(percent, 'Loading ' + description + ' - ' + ((5 + (read * 95) / archiveSizeCompressed) | 0) + '%');
+
+			this.updateLoadingStatus(percent, 'Loading ' + description + ' - ' + (5 + (read * 95) / archiveSizeCompressed | 0) + '%');
 		}
 		
 		
-		this.drawLoadingStatus(percent, 'Unpacking ' + description);
+		this.updateLoadingStatus(percent, 'Unpacking ' + description);
 		if (archiveSizeCompressed !== archiveSize) {
 			// archive was bzip-compressed as a whole, like a jagball or something
 			let decompressed = new Int8Array(archiveSize);
@@ -579,6 +598,5 @@ class GameShell {
 }
 
 GameShell.gameFrame = null;
-GameShell.charMap = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!"\243$%^&*()-_=+[{]};:\'@#~,<.>/?\\| ';
 
 module.exports = GameShell;

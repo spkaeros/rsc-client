@@ -71,13 +71,14 @@
    * @constructor
    */
   function Targa() {
-    if (arguments.length == 1) {
-      var h = arguments[0];
-
-      this.header = createHeader(h);
-      setHeaderBooleans(this.header);
-      checkHeader(this.header);
-    }
+      this.load(arguments[0])
+    // if (arguments.length == 1) {
+    //   var h = arguments[0];
+    //
+    //   this.header = createHeader(h);
+    //   setHeaderBooleans(this.header);
+    //   checkHeader(this.header);
+    // }
   }
 
   /**
@@ -725,7 +726,7 @@
     // Create an imageData
     if (!imageData) {
       if (document) {
-        imageData = document.createElement('canvas').getContext('2d').createImageData(width, height);
+        imageData = document.createElement('canvas').getContext('2d', {alpha:true,desynchronized:true,depth:true,antialias:true}).createImageData(width, height);
       }
       // In Thread context ?
       else {

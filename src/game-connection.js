@@ -1,4 +1,5 @@
 const C_OPCODES = require('./opcodes/client');
+const VERSION = require('./version.json');
 const {decodeString} = require('./chat-message');
 const ClientStream = require('./client-stream');
 const Color = require('./lib/graphics/color');
@@ -6,35 +7,15 @@ const Font = require('./lib/graphics/font');
 const GameShell = require('./game-shell');
 const Long = require('long');
 
+const {FontStyle} = require('./lib/graphics/fontStyle')
+
 const S_OPCODES = require('./opcodes/server');
 const {Utility} = require('./utility');
-const WordFilter = require('./word-filter');
+const {WordFilter, filter} = require('./word-filter');
 const sleep = require('sleep-promise');
 
 function fromCharArray(a) {
 	return Array.from(a).map(c => String.fromCharCode(c)).join('');
-}
-
-const getCookie = cname => {
-	const name = cname + '=';
-	const decodedCookie = decodeURIComponent(document.cookie);
-	const ca = decodedCookie.split(';');
-	for (let i = 0; i < ca.length; i++) {
-		let c = ca[i];
-		while (c.charAt(0) === ' ') {
-			c = c.substring(1);
-		}
-		if (c.indexOf(name) === 0) {
-			return c.substring(name.length, c.length);
-		}
-	}
-	return "";
-};
-
-function setCookie(cname, cvalue, exdays) {
-	let d = new Date();
-	d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
-	document.cookie = cname + "=" + cvalue + ";expires = " + d.toUTCString() + ";path=/";
 }
 
 class GameConnection extends GameShell {
@@ -54,7 +35,7 @@ class GameConnection extends GameShell {
 		this.nextPrivateMessage = 0;
 		
 		this.server = '127.0.0.1';
-		this.port = 43594;
+		this.port = 43595;
 		this.username = '';
 		this.password = '';
 		this.incomingPacket = new Int8Array(5000);
@@ -74,35 +55,31 @@ class GameConnection extends GameShell {
 	
 	
 	async registerAccount(user, pass) {
-		if (this.worldFullTimeout > 0) {
-			this.showLoginScreenStatus('Please wait...', 'Connecting to server');
-			await sleep(2000);
-			this.showLoginScreenStatus('Sorry! The server is currently full.', 'Please try again later');
-			return;
-		}
-		
 		try {
-			user = Utility.formatAuthString(user, 20);
+			user = Utility.formatAuthString(user, 12);
 			pass = Utility.formatAuthString(pass, 20);
 			
-			this.showLoginScreenStatus('Please wait...', 'Connecting to server');
+			if (this.clientStream !== null) {
+				this.clientStream.closeStream();
+			}
 			
+			this.showLoginScreenStatus('Please wait...', 'creating new account...');
 			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port), this);
-			this.clientStream.maxReadTries = GameConnection.maxReadTries;
+			this.clientStream.readTicksMax = 1000;
 			
 			this.clientStream.newPacket(C_OPCODES.REGISTER);
-			this.clientStream.putShort(GameConnection.clientVersion);
-			this.clientStream.putString(user);
+			this.clientStream.putShort(VERSION.CLIENT);
+			this.clientStream.putLong(Utility.usernameToHash(user));
 			this.clientStream.putString(pass);
 			this.clientStream.flushPacket();
-			
 			let response = await this.clientStream.readStream();
 			
-			console.log('Newplayer response: ' + response);
-			this.clientStream.close()
+			console.log('registration response: ' + response);
+			this.clientStream.closeStream();
 			switch(response) {
 			case 2: // success
 				this.resetLoginVars();
+				await this.login(user, pass, false)
 				return;
 			case 13: // username taken
 			case 3:
@@ -136,10 +113,8 @@ class GameConnection extends GameShell {
 			case 16: // switch to members server
 				this.showLoginScreenStatus('Please login to a members server', 'to access member-only features');
 				return;
-			default:
-				this.showLoginScreenStatus('Error unable to create user.', 'Unrecognised response code');
-				return;
 			}
+			this.showLoginScreenStatus('Error unable to create user.', 'Unrecognised response code');
 		} catch(e) {
 			console.error(e);
 			this.showLoginScreenStatus('Error unable to create user.', 'Unrecognised response code');
@@ -164,30 +139,33 @@ class GameConnection extends GameShell {
 			this.showLoginScreenStatus('Sorry! The server is currently full.', 'Please try again later');
 			return;
 		}
-		setCookie('savePass', save ? 'true' : '', 30);
-		
+
 		try {
 			this.username = u;
-			u = Utility.formatAuthString(u, 20);
+			u = Utility.formatAuthString(u, 12);
 			
 			this.password = p;
 			p = Utility.formatAuthString(p, 20);
-			
+
 			if (u.trim().length === 0) {
 				this.showLoginScreenStatus('You must enter both a username', 'and a password - Please try again');
 				return;
 			}
-			
+
 			if (reconnecting) {
 				this.drawTextBox('Connection lost! Please wait...', 'Attempting to re-establish');
 			} else {
 				this.showLoginScreenStatus('Please wait...', 'Connecting to server');
 			}
-			
-			
+
+
+			if (this.clientStream !== null) {
+				this.clientStream.closeStream();
+			}
+
 			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port), this);
-			this.clientStream.maxReadTries = GameConnection.maxReadTries;
-			
+			this.clientStream.readTicksMax = 1000;
+
 			// let l = Utility.usernameToHash(u);
 			//
 			// this.clientStream.newPacket(C_OPCODES.SESSION);
@@ -203,9 +181,6 @@ class GameConnection extends GameShell {
 			// }
 			//
 			// console.log('Verb: Session id: ' + sessId);
-
-			this.clientStream.newPacket(C_OPCODES.LOGIN);
-			
 			// let rand = new Uint32Array(4); crypto.getRandomValues(rand);
 			// this.clientStream.putByte(0); // limit30
 			//
@@ -215,29 +190,23 @@ class GameConnection extends GameShell {
 			// this.clientStream.putInt(randArr[2]);
 			// this.clientStream.putInt(randArr[3]);
 			// this.clientStream.putInt(0); // uuid
+
+			this.clientStream.newPacket(C_OPCODES.LOGIN);
 			this.clientStream.putBool(reconnecting);
-			this.clientStream.putShort(GameConnection.clientVersion);
+			this.clientStream.putShort(VERSION.CLIENT);
 			this.clientStream.putLong(Utility.usernameToHash(u));
 			this.clientStream.putString(p);
-			
 			this.clientStream.flushPacket();
+
 			let resp = await this.clientStream.readStream();
 			console.log('login response:' + resp);
-			if (resp === 25) {
-				if (save) {
-					setCookie('username', this.loginUser, 30);
-				}
-				
+			if (resp === 25 || resp === 24) {
 				this.moderatorLevel = 1;
 				this.autoLoginTimeout = 0;
 				this.resetGame();
 				return;
 			}
 			if (resp === 0) {
-				if (save) {
-					setCookie('username', this.loginUser, 30);
-				}
-				
 				this.moderatorLevel = 0;
 				this.autoLoginTimeout = 0;
 				this.resetGame();
@@ -253,6 +222,7 @@ class GameConnection extends GameShell {
 				this.resetLoginVars();
 				return;
 			}
+			this.clientStream.closeStream();
 			if (resp === -1) {
 				this.showLoginScreenStatus('Error unable to login.', 'Server timed out');
 				return;
@@ -358,6 +328,7 @@ class GameConnection extends GameShell {
 			} catch (e) {
 				console.error(e);
 			}
+			this.clientStream.closeStream();
 		}
 		
 		// this.username = '';
@@ -380,15 +351,18 @@ class GameConnection extends GameShell {
 	
 	drawTextBox(s, s1) {
 		let g = this.getGraphics();
-		let font = new Font('Helvetica', 1, 15);
-		let w = 512;
-		let h = 344;
+		let font = Font.HELVETICA.withConfig(FontStyle.BOLD, 15);
+		let w = this.width;
+		let h = this.height;
 		g.setColor(Color.black);
-		g.fillRect(((w / 2) | 0) - 140, ((h / 2) | 0) - 25, 280, 50);
+		g.fillRect((this.width >> 1 | 0) - 140, (this.height >> 1 | 0) - 25, 280, 50);
+		
 		g.setColor(Color.white);
-		g.drawRect(((w / 2) | 0) - 140, ((h / 2) | 0) - 25, 280, 50);
-		this.drawString(g, s, font, (w / 2) | 0, ((h / 2) | 0) - 10);
-		this.drawString(g, s1, font, (w / 2) | 0, ((h / 2) | 0) + 10);
+		g.drawRect((this.width >> 1 | 0) - 140, (this.height >> 1 | 0) - 25, 280, 50);
+		
+		this.drawString(g, s, font, this.width >> 1 | 0, ((h / 2) | 0) - 10);
+		
+		this.drawString(g, s1, font, this.width >> 1 | 0, ((h / 2) | 0) + 10);
 	}
 	
 	async checkConnection() {
@@ -421,7 +395,6 @@ class GameConnection extends GameShell {
 	
 	handlePacket(opcode, psize) {
 		// console.log('opcode:' + opcode + ' psize:' + psize);
-		
 		if (opcode === S_OPCODES.MESSAGE) {
 			let s = fromCharArray(this.incomingPacket.slice(1, psize));
 			this.showServerMessage(s);
@@ -452,7 +425,7 @@ class GameConnection extends GameShell {
 		
 		if (opcode === S_OPCODES.FRIEND_STATUS_CHANGE) {
 			let hash = Utility.getUnsignedLong(this.incomingPacket, 1);
-			let online = this.incomingPacket[9] & 0xff;
+			let online = this.incomingPacket[9] & 0xFF;
 			
 			for (let i2 = 0; i2 < this.friendListCount; i2++) {
 				if (this.friendListHashes[i2].equals(hash)) {
@@ -465,7 +438,7 @@ class GameConnection extends GameShell {
 					}
 					
 					this.friendListOnline[i2] = online;
-					psize = 0; // not sure what this is for
+//					psize = 0; // not sure what this is for
 					this.sortFriendsList();
 					return;
 				}
@@ -508,7 +481,7 @@ class GameConnection extends GameShell {
 			
 			this.privateMessageIds[this.nextPrivateMessage] = id;
 			this.nextPrivateMessage = (this.nextPrivateMessage + 1) % GameConnection.maxSocialListSize;
-			let msg = WordFilter.filter(decodeString(this.incomingPacket.slice(13, psize - 13)));
+			let msg = filter(decodeString(this.incomingPacket.slice(13, psize)));
 			this.showServerMessage('@pri@' + Utility.hashToUsername(from) + ': tells you ' + msg);
 			return;
 		}
@@ -654,7 +627,6 @@ class GameConnection extends GameShell {
 	}
 }
 
-GameConnection.clientVersion = 1;
 GameConnection.maxReadTries = 0;
 GameConnection.maxSocialListSize = 100;
 

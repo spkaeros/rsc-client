@@ -125,24 +125,18 @@ class Panel {
     }
 
     keyPress(code, key) {
-        if (key === 0) {
-            return;
-        }
-
         if (this.focusControlIndex !== -1 && this.controlText[this.focusControlIndex] !== null && this.controlShown[this.focusControlIndex]) {
             let inputLen = this.controlText[this.focusControlIndex].length;
 
-            if (code === 'Backspace' && inputLen > 0) {
+            if (code === 8) {
                 this.controlText[this.focusControlIndex] = this.controlText[this.focusControlIndex].slice(0, inputLen - 1);
                 return;
             }
-
-            if ((code === 'Enter' || code === 'NumpadEnter') && inputLen > 0) {
+            if (code === 13 || code === 10) {
                 this.controlClicked[this.focusControlIndex] = true;
                 return;
             }
-
-            if (code === 'Tab') {
+            if (code === 9) {
                 do {
                     this.focusControlIndex = (this.focusControlIndex + 1) % this.controlCount;
                 } while (this.controlType[this.focusControlIndex] !== 5 && this.controlType[this.focusControlIndex] !== 6);
@@ -150,14 +144,16 @@ class Panel {
             }
 
             if (inputLen < this.controlInputMaxLen[this.focusControlIndex]) {
-                if (key !== 65535) {
-                    this.controlText[this.focusControlIndex] += String.fromCharCode(key);
+                if (key.length > 1) {
+                    console.log(key + " ignored in panel!");
+                    return;
                 }
+                this.controlText[this.focusControlIndex] += key;
             }
         }
     }
 
-    drawPanel() {
+    render() {
         for (let i = 0; i < this.controlCount; i++) {
             if (this.controlShown[i]) {
                 if (this.controlType[i] === CONTROL_TYPES.TEXT) {
@@ -287,14 +283,14 @@ class Panel {
         this.surface.drawBoxEdge(x, y, width, height, this.colourRoundedBoxOut);
         this.surface.drawBoxEdge(x + 1, y + 1, width - 2, height - 2, this.colourRoundedBoxMid);
         this.surface.drawBoxEdge(x + 2, y + 2, width - 4, height - 4, this.colourRoundedBoxIn);
-        this.surface._drawSprite_from3(x, y, 2 + Panel.baseSpriteStart);
-        this.surface._drawSprite_from3((x + width) - 7, y, 3 + Panel.baseSpriteStart);
-        this.surface._drawSprite_from3(x, (y + height) - 7, 4 + Panel.baseSpriteStart);
-        this.surface._drawSprite_from3((x + width) - 7, (y + height) - 7, 5 + Panel.baseSpriteStart);
+        this.surface.drawSpriteID(x, y, 2 + Panel.baseSpriteStart);
+        this.surface.drawSpriteID((x + width) - 7, y, 3 + Panel.baseSpriteStart);
+        this.surface.drawSpriteID(x, (y + height) - 7, 4 + Panel.baseSpriteStart);
+        this.surface.drawSpriteID((x + width) - 7, (y + height) - 7, 5 + Panel.baseSpriteStart);
     }
 
     drawPicture(x, y, size) {
-        this.surface._drawSprite_from3(x, y, size);
+        this.surface.drawSpriteID(x, y, size);
     }
 
     drawLineHoriz(x, y, width) {
@@ -390,8 +386,8 @@ class Panel {
     drawListContainer(x, y, width, height, corner1, corner2) {
         let x2 = (x + width) - 12;
         this.surface.drawBoxEdge(x2, y, 12, height, 0);
-        this.surface._drawSprite_from3(x2 + 1, y + 1, Panel.baseSpriteStart); // up arrow?
-        this.surface._drawSprite_from3(x2 + 1, (y + height) - 12, 1 + Panel.baseSpriteStart); // down arrow?
+        this.surface.drawSpriteID(x2 + 1, y + 1, Panel.baseSpriteStart); // up arrow?
+        this.surface.drawSpriteID(x2 + 1, (y + height) - 12, 1 + Panel.baseSpriteStart); // down arrow?
         this.surface.drawLineHoriz(x2, y + 13, 12, 0);
         this.surface.drawLineHoriz(x2, (y + height) - 13, 12, 0);
         this.surface.drawGradient(x2 + 1, y + 14, 11, height - 27, this.colourScrollbarTop, this.colourScrollbarBottom);
@@ -875,7 +871,7 @@ class Panel {
     hide(control) {
         this.controlShown[control] = false;
     }
-
+    
     setFocus(control) {
         this.focusControlIndex = control;
     }

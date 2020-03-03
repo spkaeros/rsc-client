@@ -20,7 +20,7 @@ function init2DInt32Array(x, y) {
 
 class BZState {
     constructor() {
-        this.tt = null; // Int32Array
+        this.tt = null; // Int8Array
         this.input = null; // Int8Array
         this.nextIn = 0;
         this.availIn = 0;

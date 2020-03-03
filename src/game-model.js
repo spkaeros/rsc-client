@@ -598,11 +598,11 @@ class GameModel {
         model.normalScale[outF] = this.normalScale[inF];
         model.normalMagnitude[outF] = this.normalMagnitude[inF];
     }
-
-    _setLight_from5(ambience, diffuse, x, y, z) {
+    
+    offsetLightSourceCoords(ambience, diffuse, x, y, z) {
         this.lightAmbience = 256 - ambience * 4;
         this.lightDiffuse = (64 - diffuse) * 16 + 128;
-
+        
         if (!this.unlit) {
             this.lightDirectionX = x;
             this.lightDirectionY = y;
@@ -611,8 +611,8 @@ class GameModel {
             this.light();
         }
     }
-
-    _setLight_from6(gouraud, ambient, diffuse, x, y, z) {
+    
+    createGouraudLightSource(gouraud, ambient, diffuse, x, y, z) {
         this.lightAmbience = 256 - ambient * 4;
         this.lightDiffuse = (64 - diffuse) * 16 + 128;
 
@@ -632,11 +632,10 @@ class GameModel {
         this.lightDirectionY = y;
         this.lightDirectionZ = z;
         this.lightDirectionMagnitude = Math.sqrt(x * x + y * y + z * z) | 0;
-
         this.light();
     }
 
-    _setLight_from3(x, y, z) {
+    setLightCoords(x, y, z) {
         if (!this.unlit) {
             this.lightDirectionX = x;
             this.lightDirectionY = y;
@@ -649,11 +648,11 @@ class GameModel {
     setLight(...args) {
         switch (args.length) {
         case 6:
-            return this._setLight_from6(...args);
+            return this.createGouraudLightSource(...args);
         case 5:
-            return this._setLight_from5(...args);
+            return this.offsetLightSourceCoords(...args);
         case 3:
-            return this._setLight_from3(...args);
+            return this.setLightCoords(...args);
         }
     }
 

@@ -12,13 +12,13 @@ function toCharArray(s) {
 
 class Packet {
 	constructor() {
-		this.readTries = 0;
-		this.maxReadTries = 0;
+		this.readTicksCount = 0;
+		this.readTicksMax = 0;
 		this.packetStart = 0;
 		this.packetData = null;
-		this.length = 0;
+		this.bufferSize = 0;
 		this.socketException = false;
-		this.delay = 0;
+		this.flushTimer = 0;
 		
 		this.packetEnd = 3;
 		this.packetMaxLength = 5000;
@@ -31,38 +31,34 @@ class Packet {
 	
 	async readPacket(buff) {
 		try {
-			this.readTries++;
-			
-			if (this.maxReadTries > 0 && this.readTries > this.maxReadTries) {
+			this.readTicksCount++;
+			if (this.readTicksMax > 0 && this.readTicksCount > this.readTicksMax) {
+				this.readTicksCount = 0;
 				this.socketException = true;
 				this.socketExceptionMessage = 'time-out';
-				this.maxReadTries += this.maxReadTries;
 				return 0;
 			}
-			
-			if (this.length === 0 && this.availableStream() >= 2) {
-				this.length = await this.readStream();
-				
-				if (this.length >= 160) this.length = ((this.length - 160) << 8) | await this.readStream();
+			// if the first byte is >=0xA0 that means its a flag to indicate we need to decode a uint16 for frame size
+			// otherwise the 1st byte has the frame size and second byte contains the last byte of the frame
+			if (this.bufferSize === 0 && this.availableStream() >= 2) {
+				this.bufferSize = await this.readStream();
+				if (this.bufferSize >= 0xA0) {
+					this.bufferSize = (this.bufferSize - 0xA0) << 8 | await this.readStream();
+				}
 			}
-			
-			if (this.length > 0 && this.availableStream() >= this.length) {
-				if (this.length >= 160) {
-					await this.readBytes(this.length, buff);
-				} else {
-					buff[this.length - 1] = await this.readStream() & 0xFF;
-					
-					if (this.length > 1) {
-						await this.readBytes(this.length - 1, buff);
+			// frame
+			if (this.bufferSize > 0 && this.availableStream() >= this.bufferSize) {
+				let frameBufferSize = this.bufferSize;
+				if (frameBufferSize > 0) {
+					if (this.bufferSize < 0xA0) {
+						this.bufferSize -= 1;
+						buff[this.bufferSize] = await this.readStream() & 0xFF
 					}
+					await this.readBytes(this.bufferSize, buff);
 				}
 				
-				let i = this.length;
-				
-				this.length = 0;
-				this.readTries = 0;
-				
-				return i;
+				this.bufferSize = this.readTicksCount = 0;
+				return frameBufferSize;
 			}
 		} catch (e) {
 			this.socketException = true;
@@ -85,14 +81,14 @@ class Packet {
 			throw Error(this.socketExceptionMessage);
 		}
 
-		this.delay++;
+		this.flushTimer++;
 		
-		if (this.delay < i) {
+		if (this.flushTimer < i) {
 			return;
 		}
 		
 		if (this.packetStart > 0) {
-			this.delay = 0;
+			this.flushTimer = 0;
 			this.writeStreamBytes(this.packetData, 0, this.packetStart);
 		}
 		
@@ -159,7 +155,7 @@ class Packet {
 	
 	putString(s) {
 		this.putBytes(toCharArray(s), 0, s.length);
-		this.putByte('\0')
+		this.putByte(0);
 	}
 	
 	putByte(i) {
@@ -186,8 +182,8 @@ class Packet {
 	}
 	
 	putBytes(src, srcPos, len) {
-		for (let k = 0; k < len; k++) {
-			this.putByte(src[srcPos + k]);
+		for (let c of src.slice(srcPos, srcPos+len)) {
+			this.putByte(c)
 		}
 	}
 	
