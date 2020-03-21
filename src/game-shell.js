@@ -50,7 +50,7 @@ class GameShell {
 		this.imageLogo = null;
 		this.appletWidth = 512;
 		this.appletHeight = 346;
-		this.targetFps = 20;
+		this.targetFrameTime = 20;
 		this.inputClockRate = 1000;
 		this.hasRefererLogoNotUsed = false;
 		this.loadingProgessText = 'Loading';
@@ -114,7 +114,7 @@ class GameShell {
 	}
 	
 	setTargetFps(i) {
-		this.targetFps = 1000 / i;
+		this.targetFrameTime = 1000 / i;
 	}
 	
 	unsetFrameTimes() {
@@ -124,127 +124,285 @@ class GameShell {
 	setFrameTimes() {
 		for (let i = 0; i < 10; i++) this.clockTimings[i] = Date.now();
 	}
-	
-	keyPressed(e) {
-		if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
-			this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
-			e.preventDefault();
-			return;
-		}
 
-		if (this.gameState === GameState.WORLD) {
-			if (this.showAppearanceChange && this.panelGame[GamePanel.APPEARANCE] !== null) {
-				this.panelGame[GamePanel.APPEARANCE].keyPress(e.which, e.key);
-				return;
-			}
+    keyPressed(e) {
+        if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
+            this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
+            e.preventDefault();
+            return;
+        }
 
+        if (e.key === 'Escape') {
+            // this.drawWelcomeNotification = false;
+            // this.drawBankPanel = false;
+            // this.drawShopPanel = false;
+            // this.drawTradePanel = false;
+            // this.drawDuelPanel = false;
+            this.abuseReportWindow = 0;
+            this.contactsInputFormIndex = 0;
+            e.preventDefault();
+            return;
+        }
+
+        if (this.gameState === GameState.WORLD) {
+            if (this.showAppearanceChange && this.panelGame[GamePanel.APPEARANCE] !== null) {
+                // TODO: Need this?  No text input fields to speak of
+                this.panelGame[GamePanel.APPEARANCE].keyPress(e.which, e.key);
+                e.preventDefault();
+                return;
+            }
 			if (this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
-				this.panelGame[GamePanel.CHAT].keyPress(e.which, e.key);
-			}
-		}
-		switch (e.which) {
-		case 37:
-			this.keyLeft = true;
-			e.preventDefault();
-			break;
-		case 38:
-			this.keyUp = true;
-			e.preventDefault();
-			break;
-		case 39:
-			this.keyRight = true;
-			e.preventDefault();
-			break;
-		case 40:
-			this.keyDown = true;
-			e.preventDefault();
-			break;
-		case 32:
-			this.keySpace = true;
-			e.preventDefault();
-			break;
-		case 36:
-			this.keyHome = true;
-			e.preventDefault();
-			break;
-		case 33:
-			this.keyPgUp = true;
-			e.preventDefault();
-			break;
-		case 34:
-			this.keyPgDown = true;
-			e.preventDefault();
-			break;
-		case 112:
-			this.interlace = !this.interlace;
-			e.preventDefault();
-			break;
-		case 113:
-			this.options.showRoofs = !this.options.showRoofs;
-			e.preventDefault();
-			break;
-		case 13:
-			this.inputTextFinal = this.inputTextCurrent;
-			this.inputPmFinal = this.inputPmCurrent;
-			e.preventDefault();
-			break;
-		case 8:
-			if (this.inputTextCurrent.length > 0) {
-				this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
-			}
-			
-			if (this.inputPmCurrent.length > 0) {
-				this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
-			}
-			e.preventDefault();
-			break;
-		default:
-			if (this.inputTextCurrent.length < 20) {
-				this.inputTextCurrent += e.key;
-			}
-			
-			if (this.inputPmCurrent.length < 80) {
-				this.inputPmCurrent += e.key;
-			}
-			e.preventDefault();
-			break;
-		}
-		return false;
-	}
-	
-	keyReleased(e) {
-		e.preventDefault();
-		
-		switch (e.which) {
-		case 37:
-			this.keyLeft = false;
-			break;
-		case 38:
-			this.keyUp = false;
-			break;
-		case 39:
-			this.keyRight = false;
-			break;
-		case 40:
-			this.keyDown = false;
-			break;
-		case 32:
-			this.keySpace = false;
-			break;
-		case 36:
-			this.keyHome = false;
-			break;
-		case 33:
-			this.keyPgUp = false;
-			break;
-		case 34:
-			this.keyPgDown = false;
-			break;
-		}
-		
-		return false;
-	}
-	
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (this.lastLogIdx >= this.lastLog.length - 1) {
+                        this.showMessage("End of chat history buffer; press down to navigate forward.", 3)
+                        return
+                    }
+                    this.lastLogIdx += 1;
+                    this.panelGame[GamePanel.CHAT].updateText(this.controlTextListAll, this.lastLog[this.lastLog.length - 1 - this.lastLogIdx]);
+                    return;
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (this.lastLogIdx > 0) {
+                        this.lastLogIdx -= 1;
+                        this.panelGame[GamePanel.CHAT].updateText(this.controlTextListAll, this.lastLog[this.lastLog.length - 1 - this.lastLogIdx]);
+                    } else {
+                        this.lastLogIdx = -1;
+                        this.panelGame[GamePanel.CHAT].updateText(this.controlTextListAll, '');
+                    }
+                    return;
+                }
+                this.panelGame[GamePanel.CHAT].keyPress(e.which, e.key);
+                e.preventDefault();
+            }
+        }
+
+        switch (e.which) {
+            case 37:
+                this.keyLeft = true;
+                e.preventDefault();
+                break;
+            // case 38:
+            // 	this.keyUp = true;
+            // 	e.preventDefault();
+            // 	break;
+            case 39:
+                this.keyRight = true;
+                e.preventDefault();
+                break;
+            // case 40:
+            // 	this.keyDown = true;
+            // 	e.preventDefault();
+            // 	break;
+            case 32:
+                this.keySpace = true;
+                e.preventDefault();
+                break;
+            case 36:
+                this.keyHome = true;
+                e.preventDefault();
+                break;
+            case 33:
+                this.keyUp = true;
+                e.preventDefault();
+                break;
+            case 34:
+                this.keyDown = true;
+                e.preventDefault();
+                break;
+            case 112:
+                this.interlace = !this.interlace;
+                e.preventDefault();
+                break;
+            case 113:
+                this.options.showRoofs = !this.options.showRoofs;
+                e.preventDefault();
+                break;
+            case 13:
+                if (this.inputTextCurrent.length > 0) {
+                    this.inputTextFinal = this.inputTextCurrent;
+                }
+                if (this.inputPmCurrent.length > 0) {
+                    this.inputPmFinal = this.inputPmCurrent;
+                }
+                e.preventDefault();
+                break;
+            case 8:
+                if (this.inputTextCurrent.length > 0) {
+                    this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
+                }
+
+                if (this.inputPmCurrent.length > 0) {
+                    this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
+                }
+                e.preventDefault();
+                break;
+            default:
+                if (this.inputTextCurrent.length < 20) {
+                    this.inputTextCurrent += e.key;
+                }
+
+                if (this.inputPmCurrent.length < 80) {
+                    this.inputPmCurrent += e.key;
+                }
+                e.preventDefault();
+                break;
+        }
+        return false;
+    }
+
+    keyReleased(e) {
+        e.preventDefault();
+
+        switch (e.which) {
+            case 37:
+                this.keyLeft = false;
+                break;
+            // case 38:
+            // 	this.keyUp = false;
+            // 	break;
+            case 39:
+                this.keyRight = false;
+                break;
+            // case 40:
+            // 	this.keyDown = false;
+            // 	break;
+            case 32:
+                this.keySpace = false;
+                break;
+            case 36:
+                this.keyHome = false;
+                break;
+            case 33:
+                this.keyUp = false;
+                break;
+            case 34:
+                this.keyDown = false;
+                break;
+        }
+
+        return false;
+    }
+	// keyPressed(e) {
+	// 	if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
+	// 		this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
+	// 		e.preventDefault();
+	// 		return;
+	// 	}
+	//
+	// 	if (this.gameState === GameState.WORLD) {
+	// 		if (this.showAppearanceChange && this.panelGame[GamePanel.APPEARANCE] !== null) {
+	// 			this.panelGame[GamePanel.APPEARANCE].keyPress(e.which, e.key);
+	// 			return;
+	// 		}
+	//
+	// 		if (this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
+	// 			this.panelGame[GamePanel.CHAT].keyPress(e.which, e.key);
+	// 		}
+	// 	}
+	// 	switch (e.which) {
+	// 	case 37:
+	// 		this.keyLeft = true;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 38:
+	// 		this.keyUp = true;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 39:
+	// 		this.keyRight = true;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 40:
+	// 		this.keyDown = true;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 32:
+	// 		this.keySpace = true;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 36:
+	// 		this.keyHome = true;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 33:
+	// 		this.keyPgUp = true;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 34:
+	// 		this.keyPgDown = true;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 112:
+	// 		this.interlace = !this.interlace;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 113:
+	// 		this.options.showRoofs = !this.options.showRoofs;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 13:
+	// 		this.inputTextFinal = this.inputTextCurrent;
+	// 		this.inputPmFinal = this.inputPmCurrent;
+	// 		e.preventDefault();
+	// 		break;
+	// 	case 8:
+	// 		if (this.inputTextCurrent.length > 0) {
+	// 			this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
+	// 		}
+	//
+	// 		if (this.inputPmCurrent.length > 0) {
+	// 			this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
+	// 		}
+	// 		e.preventDefault();
+	// 		break;
+	// 	default:
+	// 		if (this.inputTextCurrent.length < 20) {
+	// 			this.inputTextCurrent += e.key;
+	// 		}
+	//
+	// 		if (this.inputPmCurrent.length < 80) {
+	// 			this.inputPmCurrent += e.key;
+	// 		}
+	// 		e.preventDefault();
+	// 		break;
+	// 	}
+	// 	return false;
+	// }
+	//
+	// keyReleased(e) {
+	// 	e.preventDefault();
+	//
+	// 	switch (e.which) {
+	// 	case 37:
+	// 		this.keyLeft = false;
+	// 		break;
+	// 	case 38:
+	// 		this.keyUp = false;
+	// 		break;
+	// 	case 39:
+	// 		this.keyRight = false;
+	// 		break;
+	// 	case 40:
+	// 		this.keyDown = false;
+	// 		break;
+	// 	case 32:
+	// 		this.keySpace = false;
+	// 		break;
+	// 	case 36:
+	// 		this.keyHome = false;
+	// 		break;
+	// 	case 33:
+	// 		this.keyPgUp = false;
+	// 		break;
+	// 	case 34:
+	// 		this.keyPgDown = false;
+	// 		break;
+	// 	}
+	//
+	// 	return false;
+	// }
+	//
 	mouseMoved(e) {
 		e.preventDefault();
 		this.mouseX = e.offsetX;
@@ -309,10 +467,10 @@ class GameShell {
 		}
 		
 		if (e.deltaMode === 0) {
-			// deltaMode === 0 means deltaY/deltaY is given in pixels (chrome)
+			// deltaMode === 0 means deltaX/deltaY is given in pixels (chrome)
 			this.mouseScrollDelta = Math.floor(e.deltaY / 14);
 		} else if (e.deltaMode === 1) {
-			// deltaMode === 1 means deltaY/deltaY is given in lines (firefox)
+			// deltaMode === 1 means deltaX/deltaY is given in lines (firefox)
 			this.mouseScrollDelta = Math.floor(e.deltaY);
 		}
 		
@@ -327,98 +485,71 @@ class GameShell {
 	
 	stop() {
 		if (this.shutdownCounter >= 0) {
-			this.shutdownCounter = 4000 / this.targetFps;
+			this.shutdownCounter = 4000 / this.targetFrameTime;
 		}
 	}
-	
-	async run() {
-		// if (this.engineState.toNumber() < EngineState.INITIALIZE_DATA.toNumber()) {
-		// 	this.engineState = EngineState.INITIALIZE_DATA;
-		// 	this.drawLoadingScreen(0, 'Loading...');
-		// 	await this.loadFonts()
-		// 	this.imageLogo = await this.fetchLogo()
-		// 	await this.startGame();
-		// }
-		this.engineState = EngineState.RUNNING;
-		
-		let clockTick = 0;
-		let lastInputTimeslice = 256;
-		let lastTickTimeout = 1;
-		let inputTiming = 0;
-		
-		this.setFrameTimes()
-		
-		while (this.shutdownCounter >= 0) {
-			if (this.shutdownCounter > 0) {
-				this.shutdownCounter--;
-				
-				if (this.shutdownCounter === 0) {
-					this.clearResources();
-					return;
-				}
-			}
-			
-			let inputTimeslice = 300;
-			let tickTimeout = 1;
-			
-			let time = Date.now();
-			
-			if (this.clockTimings[clockTick] === 0) {
-				inputTimeslice = Math.max(25, lastInputTimeslice);
-				tickTimeout = lastTickTimeout;
-			} else if (time > this.clockTimings[clockTick]) {
-				inputTimeslice = Math.max(25, (2560 * this.targetFps) / (time - this.clockTimings[clockTick]) | 0);
-			}
-			
-			if (inputTimeslice > 256) {
-				inputTimeslice = 256;
-				tickTimeout = Math.max(1, this.targetFps - (time - this.clockTimings[clockTick]) / 10 | 0);
-			}
-			lastInputTimeslice = inputTimeslice;
-			
-			await zzz(tickTimeout);
-			
-			this.clockTimings[clockTick] = time;
-			clockTick = (clockTick + 1) % 10;
-			
-			if (tickTimeout > 1) {
-				for (let tick = 0; tick < 10; tick++)
-					if (this.clockTimings[tick] !== 0)
-						this.clockTimings[tick] += tickTimeout;
-			}
-			lastTickTimeout = tickTimeout;
 
-			let inputCounter = 0;
-			while (inputTiming < 256) {
-				await this.handleInputs();
-				inputTiming += inputTimeslice;
-				
-				// if our input processing is using up too much of the engine cycle, possibly render every other line
-				// as compensation.  Less time during the render phase may make up for the loss during input
-				if (++inputCounter > this.inputClockRate) {
-					inputTiming = 0;
-					this.powerThrottle += 6;
-					
-					if (this.powerThrottle > 25) {
-						this.powerThrottle = 0;
-						this.interlace = true;
-					}
-					break;
-				}
-			}
-			
-			lastInputTimeslice = inputTimeslice;
-			this.powerThrottle--;
-			
-			// faster than equivalent: i1 = Math.min(255, i1);
-			inputTiming &= 0xFF;
-			
-			this.draw();
-			
-			this.mouseScrollDelta = 0;
-		}
-	}
-	
+    async run() {
+        this.engineState = EngineState.RUNNING;
+
+        let curTick = 0;
+        let lastInputStepSize = 256;
+        let lastTickTimeout = 1;
+        let inputCounter = 0;
+
+        this.setFrameTimes();
+
+        while (this.shutdownCounter >= 0) {
+            if (this.shutdownCounter > 0) {
+                this.shutdownCounter--;
+
+                if (this.shutdownCounter === 0) {
+                    this.clearResources();
+                    return;
+                }
+            }
+
+            let inputStepSize = 300;
+            let tickTimeout = lastTickTimeout;
+
+            let time = Date.now();
+            let lastTickDelta = time - this.clockTimings[curTick];
+
+            if (this.clockTimings[curTick] === 0) {
+                inputStepSize = lastInputStepSize;
+            } else if (time > this.clockTimings[curTick]) {
+                inputStepSize = Math.max(25, 256 / lastTickDelta * 200 | 0);
+            }
+
+            if (inputStepSize > 256) {
+                inputStepSize = 256;
+                tickTimeout = Math.max(1, this.targetFrameTime - lastTickDelta / 10) | 0;
+            }
+
+            // console.log('timeDelta:' + lastTickDelta + ";\nstepCount:" + inputStepSize + "\nsleepDuration:" + tickTimeout);
+
+            // TODO: Consider rustification, and maybe REMOVE THE SLEEP?  I think it saves CPU and battery
+            await zzz(tickTimeout);
+
+            this.clockTimings[curTick] = time;
+            curTick = (curTick + 1) % 10;
+
+            if (tickTimeout > 1) for (let tick = 0; tick < 10; tick++)
+                if (this.clockTimings[tick] !== 0)
+                    this.clockTimings[tick] += tickTimeout;
+            lastTickTimeout = tickTimeout;
+
+            for (; inputCounter < 256; inputCounter += inputStepSize) {
+                await this.handleInputs();
+            }
+            inputCounter &= 0xFF;
+
+            lastInputStepSize = inputStepSize;
+            this.draw();
+            this.mouseScrollDelta = 0;
+        }
+    }
+
 	update(g) {
 		this.paint(g);
 	}

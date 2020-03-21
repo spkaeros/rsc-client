@@ -12,7 +12,7 @@ if (typeof window === 'undefined') {
 }
 
 (async () => {
-	const mcCanvas = document.getElementById('gameCanvas');
+    const mcCanvas = document.getElementById('gameCanvas');
     const args = window.location.hash.slice(1).split(',');
     const mc = new mudclient(mcCanvas);
     mc.options.middleClickCamera = true;
@@ -21,7 +21,8 @@ if (typeof window === 'undefined') {
     mc.options.zoomCamera = true;
     mc.members = args[0] === 'members';
     window.mcOptions = mc.options;
-    mc.server = 'rscturmoil.com';
+    // mc.server = 'rscturmoil.com';
+    mc.server = '127.0.0.1';
     mc.port = 43595;
 
     // Maximum time engine allowed to sleep between frames
