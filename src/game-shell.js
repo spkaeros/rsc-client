@@ -29,6 +29,13 @@ class GameShell {
 			zoomCamera: false,
 			showRoofs: false
 		};
+		this.loopData = {
+			opos: 0,
+			ratio: 256,
+			del: 1,
+			count: 0,
+			intex: 0
+		};
 		this.middleButtonDown = false;
 		this.mouseScrollDelta = 0;
 		this.mouseActionTimeout = 0;
@@ -42,16 +49,13 @@ class GameShell {
 		this.mouseY = 0;
 		this.mouseButtonDown = 0;
 		this.lastMouseButtonDown = 0;
-		this.clockTimings = [];
-		this.unsetFrameTimes();
+		this.clockTimings = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 		this.shutdownCounter = 0;
-		this.powerThrottle = 0;
 		this.loadingProgressPercent = 0;
 		this.imageLogo = null;
 		this.appletWidth = 512;
 		this.appletHeight = 346;
 		this.targetFrameTime = 20;
-		this.inputClockRate = 1000;
 		this.hasRefererLogoNotUsed = false;
 		this.loadingProgessText = 'Loading';
 		this.keyLeft = false;
@@ -218,6 +222,9 @@ class GameShell {
                 this.options.showRoofs = !this.options.showRoofs;
                 e.preventDefault();
                 break;
+            case 114:
+            	this.dumpRequested = true;
+            	break;
             case 13:
                 if (this.inputTextCurrent.length > 0) {
                     this.inputTextFinal = this.inputTextCurrent;
@@ -283,126 +290,7 @@ class GameShell {
 
         return false;
     }
-	// keyPressed(e) {
-	// 	if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
-	// 		this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
-	// 		e.preventDefault();
-	// 		return;
-	// 	}
-	//
-	// 	if (this.gameState === GameState.WORLD) {
-	// 		if (this.showAppearanceChange && this.panelGame[GamePanel.APPEARANCE] !== null) {
-	// 			this.panelGame[GamePanel.APPEARANCE].keyPress(e.which, e.key);
-	// 			return;
-	// 		}
-	//
-	// 		if (this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
-	// 			this.panelGame[GamePanel.CHAT].keyPress(e.which, e.key);
-	// 		}
-	// 	}
-	// 	switch (e.which) {
-	// 	case 37:
-	// 		this.keyLeft = true;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 38:
-	// 		this.keyUp = true;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 39:
-	// 		this.keyRight = true;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 40:
-	// 		this.keyDown = true;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 32:
-	// 		this.keySpace = true;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 36:
-	// 		this.keyHome = true;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 33:
-	// 		this.keyPgUp = true;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 34:
-	// 		this.keyPgDown = true;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 112:
-	// 		this.interlace = !this.interlace;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 113:
-	// 		this.options.showRoofs = !this.options.showRoofs;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 13:
-	// 		this.inputTextFinal = this.inputTextCurrent;
-	// 		this.inputPmFinal = this.inputPmCurrent;
-	// 		e.preventDefault();
-	// 		break;
-	// 	case 8:
-	// 		if (this.inputTextCurrent.length > 0) {
-	// 			this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
-	// 		}
-	//
-	// 		if (this.inputPmCurrent.length > 0) {
-	// 			this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
-	// 		}
-	// 		e.preventDefault();
-	// 		break;
-	// 	default:
-	// 		if (this.inputTextCurrent.length < 20) {
-	// 			this.inputTextCurrent += e.key;
-	// 		}
-	//
-	// 		if (this.inputPmCurrent.length < 80) {
-	// 			this.inputPmCurrent += e.key;
-	// 		}
-	// 		e.preventDefault();
-	// 		break;
-	// 	}
-	// 	return false;
-	// }
-	//
-	// keyReleased(e) {
-	// 	e.preventDefault();
-	//
-	// 	switch (e.which) {
-	// 	case 37:
-	// 		this.keyLeft = false;
-	// 		break;
-	// 	case 38:
-	// 		this.keyUp = false;
-	// 		break;
-	// 	case 39:
-	// 		this.keyRight = false;
-	// 		break;
-	// 	case 40:
-	// 		this.keyDown = false;
-	// 		break;
-	// 	case 32:
-	// 		this.keySpace = false;
-	// 		break;
-	// 	case 36:
-	// 		this.keyHome = false;
-	// 		break;
-	// 	case 33:
-	// 		this.keyPgUp = false;
-	// 		break;
-	// 	case 34:
-	// 		this.keyPgDown = false;
-	// 		break;
-	// 	}
-	//
-	// 	return false;
-	// }
-	//
+
 	mouseMoved(e) {
 		e.preventDefault();
 		this.mouseX = e.offsetX;
@@ -478,77 +366,86 @@ class GameShell {
 	}
 	
 	start() {
-		if (this.shutdownCounter >= 0) {
+		if (this.shutdownCounter >= 0)
 			this.shutdownCounter = 0;
-		}
 	}
 	
 	stop() {
-		if (this.shutdownCounter >= 0) {
+		if (this.shutdownCounter >= 0)
 			this.shutdownCounter = 4000 / this.targetFrameTime;
-		}
 	}
 
-    async run() {
-        this.engineState = EngineState.RUNNING;
+	async sleep(ms) {
+		return new Promise(res => setTimeout(res, ms));
+	}
+	
+	async run() {
+		this.engineState = EngineState.RUNNING;
 
-        let curTick = 0;
-        let lastInputStepSize = 256;
-        let lastTickTimeout = 1;
-        let inputCounter = 0;
+		this.setFrameTimes
 
-        this.setFrameTimes();
+		while (this.shutdownCounter >= 0) {
+			if (this.shutdownCounter > 0) {
+				if (--this.shutdownCounter === 0) {
+					this.clearResources();
+					return;
+				}
+			}
+			const ld = this.loopData;
+			ld.ratio = 300;
+			ld.del = 1;
+			const currentTime = Date.now();
 
-        while (this.shutdownCounter >= 0) {
-            if (this.shutdownCounter > 0) {
-                this.shutdownCounter--;
+			if (currentTime > this.clockTimings[ld.opos]) {
+				let n = (2560 * this.targetFrameTime) / (currentTime - this.clockTimings[ld.opos]);
+				ld.ratio = (n < 0 ? Math.ceil(n) : Math.floor(n)) | 0;
+			}
 
-                if (this.shutdownCounter === 0) {
-                    this.clearResources();
-                    return;
-                }
-            }
+			if (ld.ratio < 25)
+				ld.ratio = 25;
+			if (ld.ratio > 256) {
+				let n = (currentTime - this.clockTimings[ld.opos]) / 10;
+				ld.ratio = 256;
+				ld.del = (this.targetFrameTime - (n < 0 ? Math.ceil(n) : Math.floor(n))) | 0;
+			}
+			if (ld.del > this.targetFrameTime)
+				ld.del = this.targetFrameTime;
 
-            let inputStepSize = 300;
-            let tickTimeout = lastTickTimeout;
+			this.clockTimings[ld.opos] = currentTime;
+			ld.opos = (ld.opos + 1) % 10;
+			if (ld.del > 1)
+				for (let optim of this.clockTimings)
+					if (optim !== 0)
+						optim += ld.del;
+			if (ld.del < 1)
+				ld.del = 1;
 
-            let time = Date.now();
-            let lastTickDelta = time - this.clockTimings[curTick];
+			await this.sleep(ld.del);
 
-            if (this.clockTimings[curTick] === 0) {
-                inputStepSize = lastInputStepSize;
-            } else if (time > this.clockTimings[curTick]) {
-                inputStepSize = Math.max(25, 256 / lastTickDelta * 200 | 0);
-            }
+			for (; ld.count < 256; ld.count += ld.ratio) {
+				await this.handleInputs();
+			}
+			ld.count &= 0xFF;
+			if (this.targetFrameTime > 0)
+				this.fps = ((1000 * ld.ratio) / (this.targetFrameTime * 256)) | 0;
 
-            if (inputStepSize > 256) {
-                inputStepSize = 256;
-                tickTimeout = Math.max(1, this.targetFrameTime - lastTickDelta / 10) | 0;
-            }
+			await this.draw();
+			this.mouseScrollDelta = 0;
 
-            // console.log('timeDelta:' + lastTickDelta + ";\nstepCount:" + inputStepSize + "\nsleepDuration:" + tickTimeout);
-
-            // TODO: Consider rustification, and maybe REMOVE THE SLEEP?  I think it saves CPU and battery
-            await zzz(tickTimeout);
-
-            this.clockTimings[curTick] = time;
-            curTick = (curTick + 1) % 10;
-
-            if (tickTimeout > 1) for (let tick = 0; tick < 10; tick++)
-                if (this.clockTimings[tick] !== 0)
-                    this.clockTimings[tick] += tickTimeout;
-            lastTickTimeout = tickTimeout;
-
-            for (; inputCounter < 256; inputCounter += inputStepSize) {
-                await this.handleInputs();
-            }
-            inputCounter &= 0xFF;
-
-            lastInputStepSize = inputStepSize;
-            this.draw();
-            this.mouseScrollDelta = 0;
-        }
-    }
+			if (this.dumpRequested) {
+				console.info("ntime:" + currentTime);
+				for (let i = 0; i < 10; i++) {
+					let optim = (ld.opos - i - 1 + 20) % 10;
+					console.info("otim" + optim + ":" + this.clockTimings[optim]);
+				}
+				console.info("fps:" + this.fps + " ratio:" + ld.ratio + " count:" + ld.count);
+				console.info("del:" + ld.del + " targetFrameTime:" + this.targetFrameTime + " mindel:" + this.mindel);
+				console.info("intex:" + ld.intex + " opos:" + ld.opos);
+				this.dumpRequested = false;
+				ld.intex = 0;
+			}
+		}
+	}
 
 	update(g) {
 		this.paint(g);
