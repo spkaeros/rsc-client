@@ -5245,9 +5245,8 @@ const Socket = require('./lib/net/socket');
 const Surface = require('./surface');
 const {Utility, WelcomeState, GameState, GamePanel} = require('./utility');
 const VERSION = require('./version');
-const zzz = require('sleep-promise');
 const { TGA } = require('./lib/tga');
-const {FontStyle} = require('./lib/graphics/fontStyle')
+const {FontStyle} = require('./lib/graphics/fontStyle');
 const {Enum} = require('./lib/enum');
 
 class EngineState extends Enum {}
@@ -5284,6 +5283,7 @@ class GameShell {
 		this.gameState = GameState.LOGIN;
 		this.welcomeState = WelcomeState.WELCOME;
 		// this.logoHeaderText = null;
+		this.controlTextListAll = 0;
 		this.mouseX = 0;
 		this.mouseY = 0;
 		this.mouseButtonDown = 0;
@@ -5328,7 +5328,6 @@ class GameShell {
 		GameShell.gameFrame = this._canvas.getContext('2d', {
 			alpha: false,
 			desynchronized: true,
-			depth:true,
 			antialias:true,
 		});
 		
@@ -5351,28 +5350,36 @@ class GameShell {
 		await this.startGame();
 		await this.run();
 	}
-	
+
+	async startGame() {
+
+	}
+
 	eventBlocker(e) {
 		e.preventDefault();
 	}
-	
+
 	setTargetFps(i) {
 		this.targetFrameTime = 1000 / i;
 	}
-	
+
 	unsetFrameTimes() {
-		for (let i = 0; i < 10; i++) this.clockTimings[i] = 0;
+		for (let i of this.clockTimings) i = 0;
 	}
-	
+
 	setFrameTimes() {
-		for (let i = 0; i < 10; i++) this.clockTimings[i] = Date.now();
+		for (let i of this.clockTimings) i = Date.now();
 	}
 
     keyPressed(e) {
-        if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
-            this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
-            e.preventDefault();
-            return;
+		if (e.key === 'Control') {
+			return;
+		}
+		if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
+			this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
+			e.preventDefault();
+			return;
+
         }
 
         if (e.key === 'Escape') {
@@ -5868,7 +5875,7 @@ GameShell.gameFrame = null;
 
 module.exports = GameShell;
 
-},{"./bzlib":10,"./lib/enum":19,"./lib/graphics/color":21,"./lib/graphics/font":22,"./lib/graphics/fontStyle":23,"./lib/graphics/graphics":24,"./lib/net/socket":26,"./lib/tga":28,"./surface":39,"./utility":40,"./version":41,"sleep-promise":9}],19:[function(require,module,exports){
+},{"./bzlib":10,"./lib/enum":19,"./lib/graphics/color":21,"./lib/graphics/font":22,"./lib/graphics/fontStyle":23,"./lib/graphics/graphics":24,"./lib/net/socket":26,"./lib/tga":28,"./surface":39,"./utility":40,"./version":41}],19:[function(require,module,exports){
 let count = 0;
 
 class Enum {
@@ -17599,9 +17606,9 @@ class Scanline {
 
 module.exports = Scanline;
 },{}],36:[function(require,module,exports){
-const Long = require('long');
-const Polygon = require('./polygon');
-const Scanline = require('./scanline');
+let Polygon = require('./polygon');
+let Scanline = require('./scanline');
+let Long = require('long');
 
 const COLOUR_TRANSPARENT = 12345678;
 
@@ -17689,7 +17696,8 @@ class Scene {
         }
 
         this.spriteCount = 0;
-        //this.view = new GameModel(k * 2, k);
+        this.view = {};
+       // this.view = GameModel._from2(k * 2, k);
         this.spriteId = new Int32Array(k);
         this.spriteWidth = new Int32Array(k);
         this.spriteHeight = new Int32Array(k);
@@ -20688,8 +20696,8 @@ class Scene {
             return true;
         }
 
-        let ai2 = null;
-        let ai3 = null;
+        let ai2;
+        let ai3;
 
         if (k === 2) {
             ai2 = new Int32Array(4);
@@ -20714,8 +20722,8 @@ class Scene {
 
         }
 
-        let ai4 = null;
-        let ai5 = null;
+        let ai4;
+        let ai5;
 
         if (l === 2) {
             ai4 = new Int32Array(4);
@@ -20789,9 +20797,7 @@ class Scene {
             let j1 = ai1[j4];
             let l1 = (i2 - gameModel_1.projectVertexX[j1]) * l2 + (j2 - gameModel_1.projectVertexY[j1]) * i3 + (k2 - gameModel_1.projectVertexZ[j1]) * j3;
 
-            if ((l1 >= -k3 || l3 <= 0) && (l1 <= k3 || l3 >= 0)) {
-                continue;
-            }
+            if ((l1 >= -k3 || l3 <= 0) && (l1 <= k3 || l3 >= 0)) continue;
 
             flag = true;
             break;
@@ -20816,11 +20822,9 @@ class Scene {
         this.texturePixels = [];
         this.texturePixels.length = count;
         this.texturePixels.fill(null);
-        Scene.textureCountLoaded = new Long(0);
+        Scene.textureCountLoaded = Long.fromInt( 0);
 
-        for (let i = 0; i < count; i += 1) {
-            this.textureLoadedNumber.push(new Long(0));
-        }
+        for (let i = 0; i < count; i += 1) this.textureLoadedNumber.push(Long.fromInt( 0));
 
         // 64x64 rgba
         this.textureColours64 = [];
@@ -20837,7 +20841,7 @@ class Scene {
         this.textureColoursUsed[id] = usedColours;
         this.textureColourList[id] = colours;
         this.textureDimension[id] = wide128; // is 1 if the this.texture is 128+ pixels wide, 0 if <128
-        this.textureLoadedNumber[id] = new Long(0); // as in the current loaded this.texture count when its loaded
+        this.textureLoadedNumber[id] = Long.fromInt(0); // as in the current loaded this.texture count when its loaded
         this.textureBackTransparent[id] = false;
         this.texturePixels[id] = null;
         this.prepareTexture(id);
@@ -20849,7 +20853,7 @@ class Scene {
         }
 
         Scene.textureCountLoaded = Scene.textureCountLoaded.add(1);
-        this.textureLoadedNumber[id] = new Long(Scene.textureCountLoaded);
+        this.textureLoadedNumber[id] = Long.fromInt( Scene.textureCountLoaded);
 
         if (this.texturePixels[id] !== null) {
             return;
@@ -20865,7 +20869,7 @@ class Scene {
                 }
             }
 
-            let GIGALONG = new Long(1).shiftLeft(30); // almost as large as exemplar's nas storage
+            let GIGALONG = Long.fromInt(1).shiftLeft(30); // almost as large as exemplar's nas storage
             let wut = 0;
 
             for (let k1 = 0; k1 < this.textureCount; k1++) {
@@ -20891,7 +20895,7 @@ class Scene {
             }
         }
 
-        let GIGALONG = new Long(1).shiftLeft(30); // 1G 2G 3G... 4G?
+        let GIGALONG = Long.fromInt(1).shiftLeft(30); // 1G 2G 3G... 4G?
         let wat = 0;
 
         for (let i2 = 0; i2 < this.textureCount; i2++) {
@@ -20907,7 +20911,7 @@ class Scene {
     }
 
     setTexturePixels(id) {
-        let textureWidth = 0;
+        let textureWidth;
 
         if (this.textureDimension[id] === 0) {
             textureWidth = 64;
@@ -21119,11 +21123,11 @@ class Scene {
 
         let l = 0;
         let j1 = 0;
-        let flag = false;
+        let flag;
 
         if (ai1[k] < ai3[i1]) {
-            for (l = k; ai1[l] < ai3[i1]; l = (l + 1) % i);
-            for (; ai1[k] < ai3[i1]; k = ((k - 1) + i) % i);
+            for (l = k; ai1[l] < ai3[i1]; ) l = (l + 1) % i;
+            for (; ai1[k] < ai3[i1]; ) k = ((k - 1) + i) % i;
             let k1 = this.method306(ai[(k + 1) % i], ai1[(k + 1) % i], ai[k], ai1[k], ai3[i1]);
             let k6 = this.method306(ai[((l - 1) + i) % i], ai1[((l - 1) + i) % i], ai[l], ai1[l], ai3[i1]);
             let l10 = ai2[i1];
@@ -21140,8 +21144,8 @@ class Scene {
                 byte0 = 1;
             }
         } else {
-            for (j1 = i1; ai3[j1] < ai1[k]; j1 = (j1 + 1) % j);
-            for (; ai3[i1] < ai1[k]; i1 = ((i1 - 1) + j) % j);
+            for (j1 = i1; ai3[j1] < ai1[k]; ) j1 = (j1 + 1) % j;
+            for (; ai3[i1] < ai1[k]; ) i1 = ((i1 - 1) + j) % j;
             let l1 = ai[k];
             let i11 = this.method306(ai2[(i1 + 1) % j], ai3[(i1 + 1) % j], ai2[i1], ai3[i1], ai1[k]);
             let l15 = this.method306(ai2[((j1 - 1) + j) % j], ai3[((j1 - 1) + j) % j], ai2[j1], ai3[j1], ai1[k]);
@@ -21425,7 +21429,7 @@ Scene.frustumMinY = 0;
 Scene.frustumFarZ = 0;
 Scene.frustumNearZ = 0;
 Scene.sin512Cache = new Int32Array(512);
-Scene.textureCountLoaded = new Long(0);
+Scene.textureCountLoaded = Long.fromInt( 0);
 Scene.aByteArray434 = null;
 
 module.exports = Scene;

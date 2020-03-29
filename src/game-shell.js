@@ -6,9 +6,8 @@ const Socket = require('./lib/net/socket');
 const Surface = require('./surface');
 const {Utility, WelcomeState, GameState, GamePanel} = require('./utility');
 const VERSION = require('./version');
-const zzz = require('sleep-promise');
 const { TGA } = require('./lib/tga');
-const {FontStyle} = require('./lib/graphics/fontStyle')
+const {FontStyle} = require('./lib/graphics/fontStyle');
 const {Enum} = require('./lib/enum');
 
 class EngineState extends Enum {}
@@ -45,6 +44,7 @@ class GameShell {
 		this.gameState = GameState.LOGIN;
 		this.welcomeState = WelcomeState.WELCOME;
 		// this.logoHeaderText = null;
+		this.controlTextListAll = 0;
 		this.mouseX = 0;
 		this.mouseY = 0;
 		this.mouseButtonDown = 0;
@@ -89,7 +89,6 @@ class GameShell {
 		GameShell.gameFrame = this._canvas.getContext('2d', {
 			alpha: false,
 			desynchronized: true,
-			depth:true,
 			antialias:true,
 		});
 		
@@ -112,28 +111,36 @@ class GameShell {
 		await this.startGame();
 		await this.run();
 	}
-	
+
+	async startGame() {
+
+	}
+
 	eventBlocker(e) {
 		e.preventDefault();
 	}
-	
+
 	setTargetFps(i) {
 		this.targetFrameTime = 1000 / i;
 	}
-	
+
 	unsetFrameTimes() {
-		for (let i = 0; i < 10; i++) this.clockTimings[i] = 0;
+		for (let i of this.clockTimings) i = 0;
 	}
-	
+
 	setFrameTimes() {
-		for (let i = 0; i < 10; i++) this.clockTimings[i] = Date.now();
+		for (let i of this.clockTimings) i = Date.now();
 	}
 
     keyPressed(e) {
-        if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
-            this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
-            e.preventDefault();
-            return;
+		if (e.key === 'Control') {
+			return;
+		}
+		if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
+			this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
+			e.preventDefault();
+			return;
+
         }
 
         if (e.key === 'Escape') {
