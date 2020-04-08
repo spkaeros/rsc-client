@@ -2698,10 +2698,10 @@ class Scene {
 
                 for (let j4 = 0; j4 < 256; j4++) {
                     let j6 = j4 * j4;
-                    let k7 = ((k2 * j6) / 0x10000) | 0;
-                    let l8 = ((j3 * j6) / 0x10000) | 0;
-                    let j10 = ((l3 * j6) / 0x10000) | 0;
-                    this.gradientRamps[l1][255 - j4] = (k7 << 16) + (l8 << 8) + j10;
+                    let k7 = (k2 * j6) >> 16;
+                    let l8 = (j3 * j6) >> 16;
+                    let j10 = (l3 * j6) >> 16;
+                    this.gradientRamps[l1][0xFF - j4] = (k7 << 16) + (l8 << 8) + j10;
                 }
 
                 this.anIntArray377 = this.gradientRamps[l1];

@@ -1,5 +1,3 @@
-const sleep = require('sleep-promise');
-
 class FileDownloadStream {
     constructor(file) {
         this.url = file;
@@ -35,8 +33,6 @@ class FileDownloadStream {
 
         if (!this.buffer) {
             this.buffer = await this._loadResBytes();
-        } else {
-            //await sleep(5);
         }
 
         dest.set(this.buffer.slice(this.pos, this.pos + len), off);

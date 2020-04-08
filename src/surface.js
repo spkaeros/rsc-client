@@ -8,9 +8,9 @@ function fixPixel(pixel) {
     let r = (pixel >> 16) & 255;
     let g = (pixel >> 8) & 255;
     let b = pixel & 255;
-    let a = 255; // alpha always 255
+    let a = 0xFF; // alpha always 255
 
-    return (a << 24) + (b << 16) + (g << 8) + r;
+    return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
 class Surface {
@@ -72,7 +72,7 @@ class Surface {
             this.bufferedPixels[i] = fixPixel(this.pixels[i]);
         }
 
-        this.imageData.data.set(this.pixelBytes, 0, 0);
+        this.imageData.data.set(this.pixelBytes, 0);
     }
 
     setBounds(x1, y1, x2, y2) {
@@ -112,18 +112,16 @@ class Surface {
     }
 
     blackScreen() {
-        if (!this.interlace) {
-            for (let pixelId = 0; pixelId < this.width2 * this.height2; pixelId++) {
-                this.pixels[pixelId] = 0;
-            }
-            return;
-        }
         let pixelId = 0;
+        if (!this.interlace) {
+            for (let id=0; id<this.height2*this.width2; id++)
+                this.pixels[id] = 0;
+        }
         for (let y = 0; y < this.height2; y += 2) {
             for (let x = 0; x < this.width2; x++) {
                 this.pixels[pixelId++] = 0;
             }
-        
+
             // for each horizontal line, skip one
             pixelId += this.width2;
         }
@@ -172,13 +170,11 @@ class Surface {
             }
 
             let pixelIdx = j4 + yy * this.width2;
-
             for (let i5 = j4; i5 <= k4; i5++) {
                 let bgRed = (this.pixels[pixelIdx] >> 16 & 0xff) * bgAlpha;
                 let bgGreen = (this.pixels[pixelIdx] >> 8 & 0xff) * bgAlpha;
                 let bgBlue = (this.pixels[pixelIdx] & 0xff) * bgAlpha;
-                let newColour = ((red + bgRed >> 8) << 16) + ((green + bgGreen >> 8) << 8) + (blue + bgBlue >> 8);
-                this.pixels[pixelIdx++] = newColour;
+                this.pixels[pixelIdx++] = ((red + bgRed >> 8) << 16) | ((green + bgGreen >> 8) << 8) | (blue + bgBlue >> 8);
             }
         }
     }
@@ -194,24 +190,21 @@ class Surface {
             y = this.boundsTopY;
         }
 
-        if (x + width > this.boundsBottomX) {
+        if (x + width > this.boundsBottomX)
             width = this.boundsBottomX - x;
-        }
-
-        if (y + height > this.boundsBottomY) {
+        if (y + height > this.boundsBottomY)
             height = this.boundsBottomY - y;
-        }
 
-        let bgAlpha = 256 - alpha;
-        let red = (colour >> 16 & 0xff) * alpha;
-        let green = (colour >> 8 & 0xff) * alpha;
-        let blue = (colour & 0xff) * alpha;
-        let j3 = this.width2 - width; // wat
+        let bgAlpha = 0x100 - alpha;
+        let red = (colour >> 0x10 & 0xFF) * alpha;
+        let green = (colour >> 0x8 & 0xFF) * alpha;
+        let blue = (colour & 0xFF) * alpha;
+        let offsetX = this.width2 - width; // wat
         let vertInc = 1;
 
         if (this.interlace) {
             vertInc = 2;
-            j3 += this.width2;
+            offsetX += this.width2;
 
             if ((y & 1) !== 0) {
                 y++;
@@ -219,18 +212,14 @@ class Surface {
             }
         }
 
-        let pixelIdx = x + y * this.width2;
-
-        for (let l3 = 0; l3 < height; l3 += vertInc) {
-            for (let i4 = -width; i4 < 0; i4++) {
-                let bgRed = (this.pixels[pixelIdx] >> 16 & 0xff) * bgAlpha;
-                let bgGreen = (this.pixels[pixelIdx] >> 8 & 0xff) * bgAlpha;
-                let bgBlue = (this.pixels[pixelIdx] & 0xff) * bgAlpha;
-                let newColour = ((red + bgRed >> 8) << 16) + ((green + bgGreen >> 8) << 8) + (blue + bgBlue >> 8);
-                this.pixels[pixelIdx++] = newColour;
+        for (let column = x; column < x + width; column++) {
+            for (let row = y; row < y+height; row += vertInc) {
+                let idx = (row*this.width2+column);
+                let bgRed = (this.pixels[idx] >> 16 & 0xff) * bgAlpha;
+                let bgGreen = (this.pixels[idx] >> 8 & 0xff) * bgAlpha;
+                let bgBlue = (this.pixels[idx] & 0xff) * bgAlpha;
+                this.pixels[idx] = ((red + bgRed >> 8) << 16) | ((green + bgGreen >> 8) << 8) | (blue + bgBlue >> 8);
             }
-
-            pixelIdx += j3;
         }
 
     }
@@ -268,7 +257,9 @@ class Surface {
 
         for (let k3 = 0; k3 < height; k3 += vertInc) {
             if (k3 + y >= this.boundsTopY && k3 + y < this.boundsBottomY) {
-                let newColour = ((btmRed * k3 + topRed * (height - k3)) / height << 16) + ((btmGreen * k3 + topGreen * (height - k3)) / height << 8) + (((btmBlue * k3 + topBlue * (height - k3)) / height) | 0);
+                let newColour = ((btmRed * k3 + topRed * (height - k3)) / height << 16)|
+                        ((btmGreen * k3 + topGreen * (height - k3)) / height << 8)|
+                        (((btmBlue * k3 + topBlue * (height - k3)) / height) | 0);
 
                 for (let i4 = -width; i4 < 0; i4++) {
                     this.pixels[pixelIdx++] = newColour;
@@ -377,11 +368,8 @@ class Surface {
     setPixel(x, y, colour) {
         if (x < this.boundsTopX || y < this.boundsTopY || x >= this.boundsBottomX || y >= this.boundsBottomY) {
             return;
-        } else {
-            this.pixels[x + y * this.width2] = colour;
-
-            return;
         }
+        this.pixels[x + y * this.width2] = colour;
     }
 
     fadeToBlack() {
@@ -442,7 +430,7 @@ class Surface {
         colours[0] = 0xff00ff;
 
         for (let i = 0; i < colourCount - 1; i++) {
-            colours[i + 1] = ((indexData[indexOff] & 0xff) << 16) + ((indexData[indexOff + 1] & 0xff) << 8) + (indexData[indexOff + 2] & 0xff);
+            colours[i + 1] = ((0xFF << 24) | (indexData[indexOff] & 0xff) << 16) | ((indexData[indexOff + 1] & 0xff) << 8) | (indexData[indexOff + 2] & 0xff);
             indexOff += 3;
         }
 

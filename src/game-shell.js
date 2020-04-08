@@ -11,10 +11,10 @@ const {FontStyle} = require('./lib/graphics/fontStyle');
 const {Enum} = require('./lib/enum');
 
 class EngineState extends Enum {}
-EngineState.LAUNCH = new EngineState("Launching game engine")
-EngineState.INITIALIZE_DATA = new EngineState("Downloading and setting up all the game assets")
-EngineState.RUNNING = new EngineState("Engine clock is ticking")
-EngineState.SHUTDOWN = new EngineState("Emgine is shutting down")
+EngineState.LAUNCH = new EngineState("Launching game engine");
+EngineState.INITIALIZE_DATA = new EngineState("Downloading and setting up all the game assets");
+EngineState.RUNNING = new EngineState("Engine clock is ticking");
+EngineState.SHUTDOWN = new EngineState("Emgine is shutting down");
 
 class GameShell {
 	constructor(canvas) {
@@ -29,10 +29,12 @@ class GameShell {
 			showRoofs: false
 		};
 		this.loopData = {
-			opos: 0,
-			ratio: 256,
-			del: 1,
-			count: 0,
+			frameIndex: 0,
+			updateFactor: 256,
+			lastUpdateFactor: 256,
+			sleepDuration: 1,
+			lastSleepDuration: 1,
+			updateCounter: 0,
 			intex: 0
 		};
 		this.middleButtonDown = false;
@@ -58,6 +60,7 @@ class GameShell {
 		this.targetFrameTime = 20;
 		this.hasRefererLogoNotUsed = false;
 		this.loadingProgessText = 'Loading';
+		this.showFps = false;
 		this.keyLeft = false;
 		this.keyRight = false;
 		this.keyUp = false;
@@ -72,31 +75,35 @@ class GameShell {
 		this.inputTextFinal = '';
 		this.inputPmCurrent = '';
 		this.inputPmFinal = '';
+		this.lastLog = [];
+		this.lastLogIdx = 0;
 	}
 	
-	// eslint-disable-next-line no-unused-vars
-	async startApplication(width, height, title, resizeable) {
+	async startApplication(width, height) {
 		this.engineState = EngineState.IDLE;
 		
-		// window.document.title = title;
 		this._canvas.width = width;
 		this._canvas.height = height;
-		
-		console.log('Started application');
 		this.appletWidth = width;
 		this.appletHeight = height;
-		
-		GameShell.gameFrame = this._canvas.getContext('2d', {
-			alpha: false,
-			desynchronized: true,
-			antialias:true,
-		});
-		
-		this._canvas.addEventListener('mousedown', this.mousePressed.bind(this));
-		this._canvas.addEventListener('contextmenu', this.eventBlocker.bind(this));
-		this._canvas.addEventListener('mousemove', this.mouseMoved.bind(this));
-		this._canvas.addEventListener('mouseup', this.mouseReleased.bind(this));
-		this._canvas.addEventListener('mouseout', this.mouseOut.bind(this));
+
+        GameShell.gameFrame = this._canvas.getContext('2d', {
+            alpha: false,
+            desynchronized: true,
+            antialias: true,
+        });
+
+        console.log('Starting engine...');
+
+        this._canvas.addEventListener('touchstart', this.mousePressed.bind(this));
+        this._canvas.addEventListener('touchmove', this.mouseMoved.bind(this));
+        this._canvas.addEventListener('touchend', this.mouseReleased.bind(this));
+
+        this._canvas.addEventListener('mouseout', this.mouseOut.bind(this));
+        this._canvas.addEventListener('mousedown', this.mousePressed.bind(this));
+        this._canvas.addEventListener('contextmenu', this.eventBlocker.bind(this));
+        this._canvas.addEventListener('mousemove', this.mouseMoved.bind(this));
+        this._canvas.addEventListener('mouseup', this.mouseReleased.bind(this));
 		this._canvas.addEventListener('wheel', this.mouseWheel.bind(this));
 		window.addEventListener('keydown', this.keyPressed.bind(this));
 		window.addEventListener('keyup', this.keyReleased.bind(this));
@@ -166,7 +173,7 @@ class GameShell {
                 if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     if (this.lastLogIdx >= this.lastLog.length - 1) {
-                        this.showMessage("End of chat history buffer; press down to navigate forward.", 3)
+                        this.showMessage("End of chat history buffer; press down to navigate forward.", 3);
                         return
                     }
                     this.lastLogIdx += 1;
@@ -230,7 +237,8 @@ class GameShell {
                 e.preventDefault();
                 break;
             case 114:
-            	this.dumpRequested = true;
+            	// this.dumpRequested = true;
+            	this.showFps = !this.showFps;
             	break;
             case 13:
                 if (this.inputTextCurrent.length > 0) {
@@ -382,6 +390,9 @@ class GameShell {
 			this.shutdownCounter = 4000 / this.targetFrameTime;
 	}
 
+	async handleInputs() {}
+	async draw() {}
+
 	async sleep(ms) {
 		return new Promise(res => setTimeout(res, ms));
 	}
@@ -389,7 +400,7 @@ class GameShell {
 	async run() {
 		this.engineState = EngineState.RUNNING;
 
-		this.setFrameTimes
+		this.setFrameTimes();
 
 		while (this.shutdownCounter >= 0) {
 			if (this.shutdownCounter > 0) {
@@ -398,59 +409,67 @@ class GameShell {
 					return;
 				}
 			}
-			const ld = this.loopData;
-			ld.ratio = 300;
-			ld.del = 1;
-			const currentTime = Date.now();
+//			this.loopData.lastUpdateFactor = this.loopData.updateFactor;
+// 			this.loopData.updateFactor = 300;
+//			this.loopData.lastSleepDuration = this.loopData.sleepDuration;
+// 			this.loopData.sleepDuration = 1;
+			const frameTime = Date.now();
+			if (this.clockTimings[this.loopData.frameIndex] !== 0) {
+				const clockDelta = frameTime - this.clockTimings[this.loopData.frameIndex];
 
-			if (currentTime > this.clockTimings[ld.opos]) {
-				let n = (2560 * this.targetFrameTime) / (currentTime - this.clockTimings[ld.opos]);
-				ld.ratio = (n < 0 ? Math.ceil(n) : Math.floor(n)) | 0;
+				this.loopData.updateFactor = 300;
+				this.loopData.sleepDuration = 1;
+				if (clockDelta > 0)
+					this.loopData.updateFactor = 2560*this.targetFrameTime / clockDelta | 0;
+
+				if (this.loopData.updateFactor > 256) {
+					this.loopData.updateFactor = 256;
+					this.loopData.sleepDuration = Math.max(1, Math.min(20, this.targetFrameTime - clockDelta * .1 | 0));
+				}
+
+				// if (this.showFps)
+				// 	console.log(clockDelta, "ratio=" + this.loopData.updateFactor, "ld=" + this.loopData.sleepDuration);
 			}
 
-			if (ld.ratio < 25)
-				ld.ratio = 25;
-			if (ld.ratio > 256) {
-				let n = (currentTime - this.clockTimings[ld.opos]) / 10;
-				ld.ratio = 256;
-				ld.del = (this.targetFrameTime - (n < 0 ? Math.ceil(n) : Math.floor(n))) | 0;
-			}
-			if (ld.del > this.targetFrameTime)
-				ld.del = this.targetFrameTime;
+			await this.sleep(this.loopData.sleepDuration);
 
-			this.clockTimings[ld.opos] = currentTime;
-			ld.opos = (ld.opos + 1) % 10;
-			if (ld.del > 1)
+			this.clockTimings[this.loopData.frameIndex] = frameTime;
+			this.loopData.frameIndex = (this.loopData.frameIndex + 1) % 10;
+			if (this.loopData.sleepDuration > 1)
 				for (let optim of this.clockTimings)
 					if (optim !== 0)
-						optim += ld.del;
-			if (ld.del < 1)
-				ld.del = 1;
+						optim += this.loopData.sleepDuration;
 
-			await this.sleep(ld.del);
-
-			for (; ld.count < 256; ld.count += ld.ratio) {
+			for (let inputs = 0; this.loopData.updateCounter < 256; inputs++) {
 				await this.handleInputs();
+				this.loopData.updateCounter += this.loopData.updateFactor
+				if (inputs > 12) {
+					this.interlace = true;
+					break;
+				}
 			}
-			ld.count &= 0xFF;
-			if (this.targetFrameTime > 0)
-				this.fps = ((1000 * ld.ratio) / (this.targetFrameTime * 256)) | 0;
+			this.loopData.updateCounter &= 0xFF;
+
+			// Formula changed for faster calc with 50fps vars
+			if (this.showFps && this.targetFrameTime > 0)
+//				this.fps = (this.loopData.updateFactor >> 8) * (1000/this.targetFrameTime);
+				this.fps = (1000*this.loopData.updateFactor) / (this.targetFrameTime << 8) | 0;
 
 			await this.draw();
 			this.mouseScrollDelta = 0;
 
-			if (this.dumpRequested) {
-				console.info("ntime:" + currentTime);
-				for (let i = 0; i < 10; i++) {
-					let optim = (ld.opos - i - 1 + 20) % 10;
-					console.info("otim" + optim + ":" + this.clockTimings[optim]);
-				}
-				console.info("fps:" + this.fps + " ratio:" + ld.ratio + " count:" + ld.count);
-				console.info("del:" + ld.del + " targetFrameTime:" + this.targetFrameTime + " mindel:" + this.mindel);
-				console.info("intex:" + ld.intex + " opos:" + ld.opos);
-				this.dumpRequested = false;
-				ld.intex = 0;
-			}
+			// if (this.dumpRequested) {
+			// 	console.info("ntime:" + currentTime);
+			// 	for (let i = 0; i < 10; i++) {
+			// 		let optim = (ld.opos - i - 1 + 20) % 10;
+			// 		console.info("otim" + optim + ":" + this.clockTimings[optim]);
+			// 	}
+			// 	console.info("fps:" + this.fps + " ratio:" + ld.ratio + " count:" + ld.count);
+			// 	console.info("del:" + ld.del + " targetFrameTime:" + this.targetFrameTime + " mindel:" + this.mindel);
+			// 	console.info("intex:" + ld.intex + " opos:" + ld.opos);
+			// 	this.dumpRequested = false;
+			// 	ld.intex = 0;
+			// }
 		}
 	}
 
@@ -571,7 +590,7 @@ class GameShell {
 	}
 	
 	createImage(buff) {
-		let tgaImage = new TGA(buff.buffer);;
+		let tgaImage = new TGA(buff.buffer);
 		
 		const canvas = tgaImage.getCanvas();
 		const ctx = canvas.getContext('2d');

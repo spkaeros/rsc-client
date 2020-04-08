@@ -56,8 +56,8 @@ class GameConnection extends GameShell {
 	
 	async registerAccount(user, pass) {
 		try {
-			user = Utility.formatAuthString(user, 12);
-			pass = Utility.formatAuthString(pass, 20);
+			user = Utility.formatAndTruncate(user, 12);
+			pass = Utility.formatAndTruncate(pass, 20);
 			
 			if (this.clientStream !== null) {
 				this.clientStream.closeStream();
@@ -69,7 +69,7 @@ class GameConnection extends GameShell {
 			
 			this.clientStream.newPacket(C_OPCODES.REGISTER);
 			this.clientStream.putShort(VERSION.CLIENT);
-			this.clientStream.putLong(Utility.usernameToHash(user));
+			this.clientStream.putLong(Utility.encodeBase37(user));
 			this.clientStream.putString(pass);
 			this.clientStream.flushPacket();
 			let response = await this.clientStream.readStream();
@@ -123,8 +123,8 @@ class GameConnection extends GameShell {
 	
 	
 	changePassword(oldPass, newPass) {
-		oldPass = Utility.formatAuthString(oldPass, 20);
-		newPass = Utility.formatAuthString(newPass, 20);
+		oldPass = Utility.formatAndTruncate(oldPass, 20);
+		newPass = Utility.formatAndTruncate(newPass, 20);
 		
 		this.clientStream.newPacket(C_OPCODES.CHANGE_PASSWORD);
 		this.clientStream.putString(oldPass);
@@ -142,10 +142,10 @@ class GameConnection extends GameShell {
 
 		try {
 			this.username = u;
-			u = Utility.formatAuthString(u, 12);
+			u = Utility.formatAndTruncate(u, 12);
 			
 			this.password = p;
-			p = Utility.formatAuthString(p, 20);
+			p = Utility.formatAndTruncate(p, 20);
 
 			if (u.trim().length === 0) {
 				this.showLoginScreenStatus('You must enter both a username', 'and a password - Please try again');
@@ -194,7 +194,7 @@ class GameConnection extends GameShell {
 			this.clientStream.newPacket(C_OPCODES.LOGIN);
 			this.clientStream.putBool(reconnecting);
 			this.clientStream.putShort(VERSION.CLIENT);
-			this.clientStream.putLong(Utility.usernameToHash(u));
+			this.clientStream.putLong(Utility.encodeBase37(u));
 			this.clientStream.putString(p);
 			this.clientStream.flushPacket();
 
@@ -522,7 +522,7 @@ class GameConnection extends GameShell {
 	}
 	
 	ignoreAdd(s) {
-		let l = Utility.usernameToHash(s);
+		let l = Utility.encodeBase37(s);
 		
 		for (let i = 0; i < this.ignoreListCount; i++) {
 			if (this.ignoreList[i].equals(l)) {
@@ -559,10 +559,10 @@ class GameConnection extends GameShell {
 	
 	friendAdd(s) {
 		this.clientStream.newPacket(C_OPCODES.FRIEND_ADD);
-		this.clientStream.putLong(Utility.usernameToHash(s));
+		this.clientStream.putLong(Utility.encodeBase37(s));
 		this.clientStream.sendPacket();
 		
-		let l = Utility.usernameToHash(s);
+		let l = Utility.encodeBase37(s);
 		
 		for (let i = 0; i < this.friendListCount; i++) {
 			if (this.friendListHashes[i].equals(l)) {
