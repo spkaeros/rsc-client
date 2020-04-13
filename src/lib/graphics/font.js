@@ -28,7 +28,12 @@ class Font {
     }
 }
 
-Font.HELVETICA = new Font('Helvetica')
+Font.TIMES = new Font('Times')
 Font.TIMES_ROMAN = new Font('TimesRoman')
+Font.SANS = new Font('Sans')
+Font.SERIF = new Font('Serif')
+Font.SANSERIF = new Font('Sans-Serif')
+Font.ARIAL = new Font('Arial')
+Font.HELVETICA = new Font('Helvetica')
 
 module.exports = Font;

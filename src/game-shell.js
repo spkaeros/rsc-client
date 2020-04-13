@@ -9,12 +9,13 @@ const VERSION = require('./version');
 const { TGA } = require('./lib/tga');
 const {FontStyle} = require('./lib/graphics/fontStyle');
 const {Enum} = require('./lib/enum');
+const zzz = require('sleep-promise');
 
 class EngineState extends Enum {}
 EngineState.LAUNCH = new EngineState("Launching game engine");
 EngineState.INITIALIZE_DATA = new EngineState("Downloading and setting up all the game assets");
 EngineState.RUNNING = new EngineState("Engine clock is ticking");
-EngineState.SHUTDOWN = new EngineState("Emgine is shutting down");
+EngineState.SHUTDOWN = new EngineState("Engine is shutting down");
 
 class GameShell {
 	constructor(canvas) {
@@ -51,7 +52,7 @@ class GameShell {
 		this.mouseY = 0;
 		this.mouseButtonDown = 0;
 		this.lastMouseButtonDown = 0;
-		this.clockTimings = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+		this.timings = [];
 		this.shutdownCounter = 0;
 		this.loadingProgressPercent = 0;
 		this.imageLogo = null;
@@ -77,6 +78,7 @@ class GameShell {
 		this.inputPmFinal = '';
 		this.lastLog = [];
 		this.lastLogIdx = 0;
+		this.threadSleep2 = 1;
 	}
 	
 	async startApplication(width, height) {
@@ -90,7 +92,7 @@ class GameShell {
         GameShell.gameFrame = this._canvas.getContext('2d', {
             alpha: false,
             desynchronized: true,
-            antialias: true,
+//            antialias: true,
         });
 
         console.log('Starting engine...');
@@ -114,13 +116,8 @@ class GameShell {
 		this.drawLoadingScreen(0, 'Loading...');
 		await this.loadFonts();
 		this.imageLogo = await this.fetchLogo();
-		
-		await this.startGame();
+
 		await this.run();
-	}
-
-	async startGame() {
-
 	}
 
 	eventBlocker(e) {
@@ -132,11 +129,11 @@ class GameShell {
 	}
 
 	unsetFrameTimes() {
-		for (let i of this.clockTimings) i = 0;
+		for (let i = 0; i < 10; i++) this.timings[i] = 0;
 	}
 
 	setFrameTimes() {
-		for (let i of this.clockTimings) i = Date.now();
+		for (let i = 0; i < 10; i++) this.timings[i] = Date.now();
 	}
 
     keyPressed(e) {
@@ -239,6 +236,10 @@ class GameShell {
             case 114:
             	// this.dumpRequested = true;
             	this.showFps = !this.showFps;
+            	break;
+            case 115:
+            	// this.dumpRequested = true;
+            	this.dumpRequested = true;
             	break;
             case 13:
                 if (this.inputTextCurrent.length > 0) {
@@ -398,10 +399,18 @@ class GameShell {
 	}
 	
 	async run() {
+		await this.startGame();
 		this.engineState = EngineState.RUNNING;
 
-		this.setFrameTimes();
+		let i = 0;
+		let j = 256;
+		let sleep = 1;
+		let i1 = 0;
 
+//		this.setFrameTimes();
+
+		for (let j1 = 0; j1 < 10; j1++)
+			this.timings[j1] = Date.now();
 		while (this.shutdownCounter >= 0) {
 			if (this.shutdownCounter > 0) {
 				if (--this.shutdownCounter === 0) {
@@ -413,25 +422,25 @@ class GameShell {
 // 			this.loopData.updateFactor = 300;
 //			this.loopData.lastSleepDuration = this.loopData.sleepDuration;
 // 			this.loopData.sleepDuration = 1;
-			const frameTime = Date.now();
+/*			const frameTime = Date.now();
 			if (this.clockTimings[this.loopData.frameIndex] !== 0) {
 				const clockDelta = frameTime - this.clockTimings[this.loopData.frameIndex];
 
-				this.loopData.updateFactor = 300;
-				this.loopData.sleepDuration = 1;
+//				this.loopData.updateFactor = 300;
+//				this.loopData.sleepDuration = 1;
 				if (clockDelta > 0)
 					this.loopData.updateFactor = 2560*this.targetFrameTime / clockDelta | 0;
 
 				if (this.loopData.updateFactor > 256) {
 					this.loopData.updateFactor = 256;
-					this.loopData.sleepDuration = Math.max(1, Math.min(20, this.targetFrameTime - clockDelta * .1 | 0));
+					this.loopData.sleepDuration = Math.max(1, Math.min(20, this.targetFrameTime - clockDelta / 10 | 0));
 				}
 
 				// if (this.showFps)
 				// 	console.log(clockDelta, "ratio=" + this.loopData.updateFactor, "ld=" + this.loopData.sleepDuration);
 			}
 
-			await this.sleep(this.loopData.sleepDuration);
+			await zzz(this.loopData.sleepDuration);
 
 			this.clockTimings[this.loopData.frameIndex] = frameTime;
 			this.loopData.frameIndex = (this.loopData.frameIndex + 1) % 10;
@@ -440,14 +449,19 @@ class GameShell {
 					if (optim !== 0)
 						optim += this.loopData.sleepDuration;
 
-			for (let inputs = 0; this.loopData.updateCounter < 256; inputs++) {
+			while (this.loopData.updateCounter < 256) {
 				await this.handleInputs();
+				this.loopData.updateCounter += this.loopData.updateFactor;
+			}
+/*
+			for (let inputs = 0; this.loopData.updateCounter < 256; inputs++) {
 				this.loopData.updateCounter += this.loopData.updateFactor
 				if (inputs > 12) {
 					this.interlace = true;
 					break;
 				}
 			}
+* /
 			this.loopData.updateCounter &= 0xFF;
 
 			// Formula changed for faster calc with 50fps vars
@@ -455,21 +469,74 @@ class GameShell {
 //				this.fps = (this.loopData.updateFactor >> 8) * (1000/this.targetFrameTime);
 				this.fps = (1000*this.loopData.updateFactor) / (this.targetFrameTime << 8) | 0;
 
-			await this.draw();
+			this.draw();
 			this.mouseScrollDelta = 0;
+*/
+				let k1 = j;
+				let lastSleep = sleep;
 
-			// if (this.dumpRequested) {
-			// 	console.info("ntime:" + currentTime);
-			// 	for (let i = 0; i < 10; i++) {
-			// 		let optim = (ld.opos - i - 1 + 20) % 10;
-			// 		console.info("otim" + optim + ":" + this.clockTimings[optim]);
-			// 	}
-			// 	console.info("fps:" + this.fps + " ratio:" + ld.ratio + " count:" + ld.count);
-			// 	console.info("del:" + ld.del + " targetFrameTime:" + this.targetFrameTime + " mindel:" + this.mindel);
-			// 	console.info("intex:" + ld.intex + " opos:" + ld.opos);
-			// 	this.dumpRequested = false;
-			// 	ld.intex = 0;
-			// }
+				j = 300;
+				sleep = 1;
+
+				let time = Date.now();
+
+				if (this.timings[i] === 0) {
+					j = k1;
+					sleep = lastSleep;
+				} else if (time > this.timings[i]) {
+					j = ((2560 * this.targetFrameTime) / (time - this.timings[i])) | 0;
+				}
+
+				if (j < 25) {
+					j = 25;
+				}
+
+				if (j > 256) {
+					j = 256;
+					sleep = (this.targetFrameTime - ((time - this.timings[i]) / 10)) | 0;
+				}
+
+				if (sleep < this.threadSleep2) {
+					sleep = this.threadSleep2;
+				}
+//			}
+
+			await this.sleep(sleep);
+
+			this.timings[i] = time;
+			i = (i + 1) % 10;
+
+			if (sleep > 1) {
+				for (let j2 = 0; j2 < 10; j2++) {
+					if (this.timings[j2] !== 0) {
+						this.timings[j2] += sleep;
+					}
+				}
+			}
+
+			let k2 = 0;
+			while (i1 < 256) {
+				await this.handleInputs();
+				i1 += j;
+			}
+			this.interlaceTimer--;
+			if (this.dumpRequested || this.showFps && this.targetFrameTime > 0)
+				this.fps = (1000*j) / (this.targetFrameTime << 8) | 0;
+			i1 &= 0xff;
+			this.draw();
+
+			this.mouseScrollDelta = 0;
+			if (this.dumpRequested) {
+				console.info("ntime:" + time);
+				for (let i2 = 0; i2 < 10; i2++) {
+					let optim = (i - i2 - 1 + 20) % 10;
+					console.info("otim" + optim + ":" + this.timings[optim]);
+				}
+				console.info("fps:" + this.fps + " ratio:" + j + " count:" + i1);
+				console.info("del:" + sleep + " targetFrameTime:" + this.targetFrameTime + " mindel:" + this.threadSleep);
+				console.info("opos:" + i);
+				this.dumpRequested = false;
+			}
 		}
 	}
 
@@ -580,7 +647,7 @@ class GameShell {
 			this.graphics.setColor(new Color(255, 255, 255));
 		}
 		
-		this.drawString(this.graphics, statusText, Font.TIMES_ROMAN.withConfig(FontStyle.BOLD, 15), j + 138, k + 12);
+		this.drawString(this.graphics, statusText, Font.TIMES.withConfig(FontStyle.BOLD, 15), j + 138, k + 12);
 	}
 	
 	drawString(g, s, font, i, j) {

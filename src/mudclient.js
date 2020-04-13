@@ -436,7 +436,7 @@ class mudclient extends GameConnection {
 		this.showAppearanceChange = false;
 		this.shopSelectedItemIndex = -1;
 		this.shopSelectedItemType = -2;
-		this.projectileMaxRange = 40;
+		this.projectileFactor = 40;
 		this.npcs = [];
 		this.npcs.length = this.npcsMax;
 		this.npcs.fill(null);
@@ -772,17 +772,15 @@ class mudclient extends GameConnection {
 		}
 
 		for (let invIdx = 0; invIdx < this.inventoryItemsCount; invIdx++) {
-			if (this.bankItemCount >= this.bankItemsMax) {
+			if (this.bankItemCount >= this.bankItemsMax)
 				break;
-			}
 
 			let invId = this.inventoryItemId[invIdx];
 			let hasItemInInv = false;
 
 			for (let bankidx = 0; bankidx < this.bankItemCount; bankidx++) {
-				if (this.bankItems[bankidx] !== invId) {
+				if (this.bankItems[bankidx] !== invId)
 					continue;
-				}
 
 				hasItemInInv = true;
 				break;
@@ -1895,7 +1893,7 @@ class mudclient extends GameConnection {
 				let waypointDelta = curStep - pathIdx;
 				if (waypointDelta < 1)
 					waypointDelta += 10;
-				let stepSize = Math.max(4, (waypointDelta-1) * 4);
+				let stepSize = Math.max(1, waypointDelta-1) * 4;
 				let newDir = -1;
 
 				if (Math.abs(character.waypointsX[pathIdx] - character.currentX) > this.tileSize * 3 ||
@@ -3084,7 +3082,7 @@ class mudclient extends GameConnection {
 			this.receivedMessages[this.receivedMessagesCount++] = character.message;
 		}
 
-		if (character.animationCurrent === 8 || character.animationCurrent === 9 || character.combatTimer !== 0) {
+		if (character.isFighting() || character.combatTimer !== 0) {
 			if (character.combatTimer > 0) {
 				let relX = x;
 
@@ -4177,50 +4175,50 @@ class mudclient extends GameConnection {
 			this.actionBubbleItem[this.itemsAboveHeadCount++] = character.bubbleItem;
 		}
 
-		if (character.animationCurrent === 8 || character.animationCurrent === 9 || character.combatTimer !== 0) {
+		if (character.isFighting() || character.combatTimer !== 0) {
 			if (character.combatTimer > 0) {
-				let i3 = x;
-
+				// TODO: Wrong, really Y
+				let healthX = x;
 				if (character.animationCurrent === 8) {
-					i3 -= (20 * ty) / 100 | 0;
+					healthX -= (20 * ty) /100|0;
 				} else if (character.animationCurrent === 9) {
-					i3 += (20 * ty) / 100 | 0;
+					healthX += (20 * ty) /100|0;
 				}
 
-				let i4 = (character.healthCurrent * 30) / character.healthMax | 0;
-
-				this.healthBarX[this.healthBarCount] = i3 + ((w / 2) | 0);
+				this.healthBarX[this.healthBarCount] = healthX + (w>>1);
 				this.healthBarY[this.healthBarCount] = y;
-				this.healthBarMissing[this.healthBarCount++] = i4;
-			}
+				this.healthBarMissing[this.healthBarCount++] = (character.healthCurrent * 30) / character.healthMax | 0;
 
-			if (character.combatTimer > 150) {
-				let j3 = x;
+				if (character.combatTimer > 150) {
+					// TODO: Wrong, really Y
+					let splatX = x;
+					if (character.animationCurrent === 8) {
+						splatX -= (10 * ty) / 100 | 0;
+					} else if (character.animationCurrent === 9) {
+						splatX += (10 * ty) / 100 | 0;
+					}
 
-				if (character.animationCurrent === 8) {
-					j3 -= (10 * ty) / 100 | 0;
-				} else if (character.animationCurrent === 9) {
-					j3 += (10 * ty) / 100 | 0;
+					this.surface.drawSpriteID(splatX + (w>>1) - 12, y + (h>>1) - 12, this.spriteMedia + 11);
+					this.surface.drawStringCenter(character.damageTaken.toString(), (splatX + (w>>1)) - 1, y + (h>>1) + 5, 3, 0xffffff);
 				}
-
-				this.surface.drawSpriteID((j3 + ((w / 2) | 0)) - 12, (y + ((h / 2) | 0)) - 12, this.spriteMedia + 11);
-				this.surface.drawStringCenter(character.damageTaken.toString(), (j3 + ((w / 2) | 0)) - 1, y + ((h / 2) | 0) + 5, 3, 0xffffff);
 			}
 		}
 
 		if (character.skullVisible === 1 && character.bubbleTimeout === 0) {
-			let k3 = tx + x + ((w / 2) | 0);
+			// TODO: Wrong, really Y
+			let skullX = tx + x + (w/2|0);
 
 			if (character.animationCurrent === 8) {
-				k3 -= (20 * ty) / 100 | 0;
+				skullX -= (20 * ty) /100|0;
 			} else if (character.animationCurrent === 9) {
-				k3 += (20 * ty) / 100 | 0;
+				skullX += (20 * ty) /100|0;
 			}
 
 			let j4 = (16 * ty) / 100 | 0;
-			let l4 = (16 * ty) / 100 | 0;
-
-			this.surface._spriteClipping_from5(k3 - ((j4 / 2) | 0), y - ((l4 / 2) | 0) - (((10 * ty) / 100) | 0), j4, l4, this.spriteMedia + 13);
+//			let l4 = (16 * ty) / 100 | 0;
+			let length = ((16 * ty) / 100 | 0);
+			let middle = length>>1;
+			this.surface._spriteClipping_from5(skullX - middle, y - middle - (length/2.5|0), length, length, this.spriteMedia + 13);
 		}
 	}
 
@@ -4281,8 +4279,8 @@ class mudclient extends GameConnection {
 	drawChatMessageTabs() {
 		this.surface.drawSpriteID(0, this.gameHeight - 4, this.spriteMedia + 23);
 
+/*
 		let col = Surface.rgbToLong(200, 200, 255);
-
 		if (this.messageTabSelected === 0) {
 			col = Surface.rgbToLong(255, 200, 50);
 		}
@@ -4290,8 +4288,9 @@ class mudclient extends GameConnection {
 		if (this.messageTabFlashAll % 30 > 15) {
 			col = Surface.rgbToLong(255, 50, 50);
 		}
-
-		this.surface.drawStringCenter('All messages', 54, this.gameHeight + 6, 0, col);
+*/
+		this.surface.drawStringCenter('All messages', 54, this.gameHeight + 6, 0, this.messageTabFlashAll % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 0 ? 0xFFC832 : 0xC8C8FF));
+/*
 		col = Surface.rgbToLong(200, 200, 255);
 
 		if (this.messageTabSelected === 1) {
@@ -4301,8 +4300,9 @@ class mudclient extends GameConnection {
 		if (this.messageTabFlashHistory % 30 > 15) {
 			col = Surface.rgbToLong(255, 50, 50);
 		}
-
-		this.surface.drawStringCenter('Chat history', 155, this.gameHeight + 6, 0, col);
+*/
+		this.surface.drawStringCenter('Chat history', 155, this.gameHeight + 6, 0, this.messageTabFlashHistory % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 1 ? 0xFFC832 : 0xC8C8FF));
+/*
 		col = Surface.rgbToLong(200, 200, 255);
 
 		if (this.messageTabSelected === 2) {
@@ -4312,8 +4312,10 @@ class mudclient extends GameConnection {
 		if (this.messageTabFlashQuest % 30 > 15) {
 			col = Surface.rgbToLong(255, 50, 50);
 		}
+*/
 
-		this.surface.drawStringCenter('Quest history', 255, this.gameHeight + 6, 0, col);
+		this.surface.drawStringCenter('Quest history', 255, this.gameHeight + 6, 0, this.messageTabFlashQuest % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 2 ? 0xFFC832 : 0xC8C8FF));
+/*
 		col = Surface.rgbToLong(200, 200, 255);
 
 		if (this.messageTabSelected === 3) {
@@ -4323,9 +4325,10 @@ class mudclient extends GameConnection {
 		if (this.messageTabFlashPrivate % 30 > 15) {
 			col = Surface.rgbToLong(255, 50, 50);
 		}
+*/
 
-		this.surface.drawStringCenter('Private history', 355, this.gameHeight + 6, 0, col);
-		this.surface.drawStringCenter('Report abuse', 457, this.gameHeight + 6, 0, 0xffffff);
+		this.surface.drawStringCenter('Private history', 355, this.gameHeight + 6, 0, this.messageTabFlashPrivate % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 3 ? 0xFFC832 : 0xC8C8FF));
+		this.surface.drawStringCenter('Report abuse', 457, this.gameHeight + 6, 0, 0xFFFFFF);
 	}
 
 	async startGame() {
@@ -4335,6 +4338,7 @@ class mudclient extends GameConnection {
 			let level_1 = level + 1;
 			let exp = level_1 + 300 * Math.pow(2, level_1 / 7) | 0;
 			totalExp += exp;
+			// Can we not simply rightshift by 2?
 			this.experienceArray[level] = totalExp & 0xffffffc;
 		}
 
@@ -4841,15 +4845,13 @@ class mudclient extends GameConnection {
 		if (this.isSleeping) {
 			this.surface.fadeToBlack();
 
-			if (Math.random() < 0.14999999999999999) {
+			if (Math.random() <= 0.15)
 				this.surface.drawStringCenter('ZZZ', Math.random() * 80 | 0, Math.random() * 334 | 0, 5, Math.random() * 16777215 | 0);
-			}
 
-			if (Math.random() < 0.14999999999999999) {
+			if (Math.random() <= 0.15)
 				this.surface.drawStringCenter('ZZZ', 512 - ((Math.random() * 80) | 0), Math.random() * 334 | 0, 5, Math.random() * 16777215 | 0);
-			}
 
-			this.surface.drawBox(((this.gameWidth / 2) | 0) - 100, 160, 200, 40, 0);
+			this.surface.drawBox((this.gameWidth>>1)- 100, 160, 200, 40, 0);
 			this.surface.drawStringCenter('You are sleeping', this.gameWidth / 2 | 0, 50, 7, 0xffff00);
 			this.surface.drawStringCenter('Fatigue: ' + (((this.fatigueSleeping * 100) / 750) | 0) + '%', this.gameWidth / 2 | 0, 90, 7, 0xffff00);
 			this.surface.drawStringCenter('When you want to wake up just use your', this.gameWidth / 2 | 0, 140, 5, 0xffffff);
@@ -4958,41 +4960,33 @@ class mudclient extends GameConnection {
 		this.spriteCount = 0;
 
 		for (let i = 0; i < this.playerCount; i++) {
-			let character = this.players[i];
+			let player = this.players[i];
 
-			if (character.colourBottom !== 255) {
-				let x = character.currentX;
-				let y = character.currentY;
-				let elev = -this.world.getElevation(x, y);
-				let id = this.scene.addSprite(5000 + i, x, elev, y, 145, 220, i + 10000);
+			if (player.colourBottom !== 255) {
+				let elev = -this.world.getElevation(player.currentX, player.currentY);
+				let id = this.scene.addSprite(5000 + i, player.currentX, elev, player.currentY, 145, 220, i + 10000);
 
 				this.spriteCount++;
 
-				if (character === this.localPlayer) {
+				if (player === this.localPlayer) {
 					this.scene.setLocalPlayer(id);
 				}
 
-				if (character.animationCurrent === 8) {
+				// left hand side in combat
+				if (player.animationCurrent === 8)
 					this.scene.setSpriteTranslateX(id, -30);
-				}
 
-				if (character.animationCurrent === 9) {
+				// right hand side in combat
+				if (player.animationCurrent === 9)
 					this.scene.setSpriteTranslateX(id, 30);
-				}
 			}
-		}
-
-		for (let i = 0; i < this.playerCount; i++) {
-			let player = this.players[i];
-
 			if (player.projectileRange > 0) {
 				let character = null;
 
-				if (player.attackingNpcServerIndex !== -1) {
+				if (player.attackingNpcServerIndex !== -1)
 					character = this.npcsServer[player.attackingNpcServerIndex];
-				} else if (player.attackingPlayerServerIndex !== -1) {
+				else if (player.attackingPlayerServerIndex !== -1)
 					character = this.playerServer[player.attackingPlayerServerIndex];
-				}
 
 				if (character !== null) {
 					let sx = player.currentX;
@@ -5000,10 +4994,10 @@ class mudclient extends GameConnection {
 					let selev = -this.world.getElevation(sx, sy) - 110;
 					let dx = character.currentX;
 					let dy = character.currentY;
-					let delev = -this.world.getElevation(dx, dy) - (GameData.npcHeight[character.npcId] / 2) | 0;
-					let rx = (sx * player.projectileRange + dx * (this.projectileMaxRange - player.projectileRange)) / this.projectileMaxRange | 0;
-					let rz = (selev * player.projectileRange + delev * (this.projectileMaxRange - player.projectileRange)) / this.projectileMaxRange | 0;
-					let ry = (sy * player.projectileRange + dy * (this.projectileMaxRange - player.projectileRange)) / this.projectileMaxRange | 0;
+					let delev = -this.world.getElevation(dx, dy) - (GameData.npcHeight[character.npcId] >> 1) | 0;
+					let rx = (sx * player.projectileRange + dx * (this.projectileFactor - player.projectileRange)) / this.projectileFactor | 0;
+					let rz = (selev * player.projectileRange + delev * (this.projectileFactor - player.projectileRange)) / this.projectileFactor | 0;
+					let ry = (sy * player.projectileRange + dy * (this.projectileFactor - player.projectileRange)) / this.projectileFactor | 0;
 
 					this.scene.addSprite(this.spriteProjectile + player.incomingProjectileSprite, rx, rz, ry, 32, 32, 0);
 					this.spriteCount++;
@@ -5020,13 +5014,11 @@ class mudclient extends GameConnection {
 
 			this.spriteCount++;
 
-			if (character_3.animationCurrent === 8) {
+			if (character_3.animationCurrent === 8)
 				this.scene.setSpriteTranslateX(i9, -30);
-			}
 
-			if (character_3.animationCurrent === 9) {
+			if (character_3.animationCurrent === 9)
 				this.scene.setSpriteTranslateX(i9, 30);
-			}
 		}
 
 		for (let i = 0; i < this.groundItemCount; i++) {
@@ -5057,13 +5049,15 @@ class mudclient extends GameConnection {
 		this.surface.blackScreen();
 		this.surface.interlace = this.interlace;
 
+		// basement plane flicker effect
 		if (this.lastHeightOffset === 3) {
 			// let ambienceOffset = rand(40, 43)
-			let ambienceOffset = 40 + ((Math.random() * 3) | 0);
 			// let diffusionOffset = rand(40, 47)
+			let ambienceOffset = 40 + ((Math.random() * 3) | 0);
 			let diffusionOffset = 40 + ((Math.random() * 7) | 0);
 
-			// basement plane flicker effect?
+			// light source for basement flicker is at -50,-10,50 in the world mesh
+			// Is this just arbitrary or is there a reasoning for it?  Needs investigation.
 			this.scene.createLightSource(ambienceOffset, diffusionOffset, -50, -10, -50);
 		}
 
@@ -5125,13 +5119,10 @@ class mudclient extends GameConnection {
 		this.scene.render();
 		this.drawAboveHeadStuff();
 
-		if (this.mouseClickXStep > 0) {
+		if (this.mouseClickXStep > 0)
 			this.surface.drawSpriteID(this.mouseClickXX - 8, this.mouseClickXY - 8, this.spriteMedia + 14 + (((24 - this.mouseClickXStep) / 6) | 0));
-		}
-
-		if (this.mouseClickXStep < 0) {
+		 else if (this.mouseClickXStep < 0)
 			this.surface.drawSpriteID(this.mouseClickXX - 8, this.mouseClickXY - 8, this.spriteMedia + 18 + (((24 + this.mouseClickXStep) / 6) | 0));
-		}
 
 		if (this.systemUpdate !== 0) {
 			let i6 = this.systemUpdate / 50 | 0;
@@ -5146,8 +5137,11 @@ class mudclient extends GameConnection {
 			}
 		}
 
-		if (this.showFps && this.fps > 0)
-			this.surface.drawStringCenter('FPS:' + this.fps, this.gameWidth/2, 15, 1, 0xFFFF00);
+		let dy = 8;
+		if (this.showFps && this.fps > 0) {
+			this.surface.drawStringCenter('Fps:' + this.fps, 465, this.gameHeight - dy, 1, 0xffff00);
+			dy += 20
+		}
 
 		if (!this.loadingArea) {
 			let j6 = 2203 - (this.localRegionY + this.planeHeight + this.regionY);
@@ -5159,9 +5153,9 @@ class mudclient extends GameConnection {
 			if (j6 > 0) {
 				let wildlvl = 1 + ((j6 / 6) | 0);
 
-				this.surface.drawSpriteID(453, this.gameHeight - 56, this.spriteMedia + 13);
-				this.surface.drawStringCenter('Wilderness', 465, this.gameHeight - 20, 1, 0xffff00);
-				this.surface.drawStringCenter('Level: ' + wildlvl, 465, this.gameHeight - 7, 1, 0xffff00);
+				this.surface.drawSpriteID(453, this.gameHeight - (dy+56), this.spriteMedia + 13);
+				this.surface.drawStringCenter('Wilderness', 465, this.gameHeight - (dy+20), 1, 0xffff00);
+				this.surface.drawStringCenter('Level: ' + wildlvl, 465, this.gameHeight - (dy+7), 1, 0xffff00);
 
 				if (this.showUiWildWarn === 0)
 					this.showUiWildWarn = 2;
@@ -5184,13 +5178,12 @@ class mudclient extends GameConnection {
 		this.panelGame[GamePanel.CHAT].hide(this.controlTextListQuest);
 		this.panelGame[GamePanel.CHAT].hide(this.controlTextListPrivate);
 
-		if (this.messageTabSelected === 1) {
+		if (this.messageTabSelected === 1)
 			this.panelGame[GamePanel.CHAT].show(this.controlTextListChat);
-		} else if (this.messageTabSelected === 2) {
+		else if (this.messageTabSelected === 2)
 			this.panelGame[GamePanel.CHAT].show(this.controlTextListQuest);
-		} else if (this.messageTabSelected === 3) {
+		else if (this.messageTabSelected === 3)
 			this.panelGame[GamePanel.CHAT].show(this.controlTextListPrivate);
-		}
 
 		Panel.textListEntryHeightMod = 2;
 		this.panelGame[GamePanel.CHAT].render();
@@ -5389,6 +5382,7 @@ class mudclient extends GameConnection {
 	}
 
 	draw() {
+		if (!this.surface) return;
 		if (this.errorLoadingData) {
 			let g = this.getGraphics();
 
@@ -6760,41 +6754,47 @@ class mudclient extends GameConnection {
 	}
 
 	isValidCameraAngle(i) {
-		let j = this.localPlayer.currentX / 128 | 0;
-		let k = this.localPlayer.currentY / 128 | 0;
+		// server tiles translate to mesh model tiles in multiples of 128
+		// the right shift of first 7 bits off the top of the value gives us the server coords.
+		// mesh tiles = server tiles * 128
+		let j = this.localPlayer.currentX >> 7;
+		let k = this.localPlayer.currentY >> 7;
 
+		// check within 2 tiles of our player
 		for (let l = 2; l > 0; l--) {
-			if (i === 1 && ((this.world.objectAdjacency.get(j, k - l) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j - l, k) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j - l, k - l) & 0x80) === 0x80)) {
+			// TODO: Check cache map-data loading routines and determine significance of 7th bit.
+			// I have this feeling it's the we've got a roof bit
+			// NorthWest check x,y-l;x-l,y;x-l,y-l; = toward northeast
+			if (i === 1 && ((this.world.objectAdjacency.get(j, k - l) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j - l, k) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j - l, k - l) & 0x80) === 0x80))
 				return false;
-			}
 
-			if (i === 3 && ((this.world.objectAdjacency.get(j, k + l) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j - l, k) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j - l, k + l) & 0x80) === 0x80)) {
+			// SouthWest check x,y+l;x-l,y;x-l,y+l = toward southeast
+			if (i === 3 && ((this.world.objectAdjacency.get(j, k + l) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j - l, k) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j - l, k + l) & 0x80) === 0x80))
 				return false;
-			}
 
-			if (i === 5 && ((this.world.objectAdjacency.get(j, k + l) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j + l, k) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j + l, k + l) & 0x80) === 0x80)) {
+			// SouthEast check x,y+l;x+l,y;x+l,y+l = toward southwest
+			if (i === 5 && ((this.world.objectAdjacency.get(j, k + l) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j + l, k) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j + l, k + l) & 0x80) === 0x80))
 				return false;
-			}
 
-			if (i === 7 && ((this.world.objectAdjacency.get(j, k - l) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j + l, k) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j + l, k - l) & 0x80) === 0x80)) {
+			// NorthEast check x,y-l;x+l,y;x+l,y-l toward northwest
+			if (i === 7 && ((this.world.objectAdjacency.get(j, k - l) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j + l, k) & 0x80) === 0x80 || (this.world.objectAdjacency.get(j + l, k - l) & 0x80) === 0x80))
 				return false;
-			}
 
-			if (i === 0 && (this.world.objectAdjacency.get(j, k - l) & 0x80) === 0x80) {
+			// North check x,y-l = north
+			if (i === 0 && (this.world.objectAdjacency.get(j, k - l) & 0x80) === 0x80)
 				return false;
-			}
 
-			if (i === 2 && (this.world.objectAdjacency.get(j - l, k) & 0x80) === 0x80) {
+			// West check x-l,y = east
+			if (i === 2 && (this.world.objectAdjacency.get(j - l, k) & 0x80) === 0x80)
 				return false;
-			}
 
-			if (i === 4 && (this.world.objectAdjacency.get(j, k + l) & 0x80) === 0x80) {
+			// South check x,y+l = south
+			if (i === 4 && (this.world.objectAdjacency.get(j, k + l) & 0x80) === 0x80)
 				return false;
-			}
 
-			if (i === 6 && (this.world.objectAdjacency.get(j + l, k) & 0x80) === 0x80) {
+			// East check x+l,y = west
+			if (i === 6 && (this.world.objectAdjacency.get(j + l, k) & 0x80) === 0x80)
 				return false;
-			}
 		}
 
 		return true;
@@ -6833,17 +6833,17 @@ class mudclient extends GameConnection {
 				this.localRegionY -= this.regionY;
 
 				// 3D landscape model coordinates location??
-				let worldX = this.localRegionX * this.tileSize + (this.tileSize/2);
-				let worldY = this.localRegionY * this.tileSize + (this.tileSize/2);
+				let meshX = (this.localRegionX * this.tileSize) + (this.tileSize/2);
+				let meshY = (this.localRegionY * this.tileSize) + (this.tileSize/2);
 				if (loadedNewSector) {
 					// Reset path upon sector reload, prevents cached waypoint 3D coords invalidation
 					this.localPlayer.waypointCurrent = 0;
 					this.localPlayer.movingStep = 0;
-					this.localPlayer.currentX = this.localPlayer.waypointsX[0] = worldX;
-					this.localPlayer.currentY = this.localPlayer.waypointsY[0] = worldY;
+					this.localPlayer.currentX = this.localPlayer.waypointsX[0] = meshX;
+					this.localPlayer.currentY = this.localPlayer.waypointsY[0] = meshY;
 				}
 	
-				this.localPlayer = this.createPlayer(this.localPlayerServerIndex, worldX, worldY, localSprite);
+				this.localPlayer = this.createPlayer(this.localPlayerServerIndex, meshX, meshY, localSprite);
 
 				let knownMobCount = Utility.getBitMask(pdata, pOffset, 8);
 				pOffset += 8;
@@ -6896,23 +6896,25 @@ class mudclient extends GameConnection {
 					let serverIndex = Utility.getBitMask(pdata, pOffset, 11);
 					pOffset += 11;
 
-					let areaX = Utility.getBitMask(pdata, pOffset, 5);
+					// force signedness through bitmasking
+					let areaX = Utility.getBitMask(pdata, pOffset, 5) & 0x1F;
 					pOffset += 5;
-					let areaY = Utility.getBitMask(pdata, pOffset, 5);
+					let areaY = Utility.getBitMask(pdata, pOffset, 5) & 0x1F;
 					pOffset += 5;
 					let direction = Utility.getBitMask(pdata, pOffset, 4);
 					pOffset += 4;
-					if (areaX > 15) {
-						areaX -= 32;
-					}
-					if (areaY > 15) {
-						areaY -= 32;
-					}
-					let worldX = (this.localRegionX + areaX) * this.tileSize + 64;
-					let worldY = (this.localRegionY + areaY) * this.tileSize + 64;
+//					if (areaX > 15) {
+//						areaX -= 32;
+//					}
+//					if (areaY > 15) {
+//						areaY -= 32;
+//					}
+					let meshX = ((this.localRegionX + areaX) * this.tileSize) + 64;
+					let meshY = ((this.localRegionY + areaY) * this.tileSize) + 64;
 
-					this.createPlayer(serverIndex, worldX, worldY, direction);
+					this.createPlayer(serverIndex, meshX, meshY, direction);
 
+					// In practice I have yet to find a reason to use this flag.  May be destined for removal.
 					let neverSeen = Utility.getBitMask(pdata, pOffset, 1) === 0;
 					pOffset++;
 
@@ -6939,47 +6941,60 @@ class mudclient extends GameConnection {
 			}
 
 			if (opcode === S_OPCODES.REGION_GROUND_ITEMS) {
-				for (let l = 1; l < psize; )
-					if (Utility.getUnsignedByte(pdata[l]) === 255) {
-						let l7 = 0;
-						let j14 = this.localRegionX + pdata[l + 1] >> 3;
-						let i19 = this.localRegionY + pdata[l + 2] >> 3;
+				for (let dataOffset = 1; dataOffset < psize; )
+					if (Utility.getUnsignedByte(pdata[dataOffset]) === 0xFF) {
+						// The target should be removed when the first byte is maxed out
+						// determine mesh coordinates from the entity location deltas
+						let deltamX = this.localRegionX + pdata[dataOffset + 1] >> 3;
+						let deltamY = this.localRegionY + pdata[dataOffset + 2] >> 3;
+						dataOffset += 3;
 
-						l += 3;
+						let savedItems = 0;
+						for (let item = 0; item < this.groundItemCount; item++) {
+							let itemDeltaX = (this.groundItemX[item] >> 3) - deltamX;
+							let itemDeltaY = (this.groundItemY[item] >> 3) - deltamY;
 
-						for (let j23 = 0; j23 < this.groundItemCount; j23++) {
-							let j26 = (this.groundItemX[j23] >> 3) - j14;
-							let j29 = (this.groundItemY[j23] >> 3) - i19;
+							if (itemDeltaX === 0 && itemDeltaY === 0) {
+								continue;
+							}
+							if (savedItems !== item) {
+								this.groundItemX[savedItems] = this.groundItemX[item];
+								this.groundItemY[savedItems] = this.groundItemY[item];
+								this.groundItemId[savedItems] = this.groundItemId[item];
+								this.groundItemZ[savedItems] = this.groundItemZ[item];
+							}
+ 							savedItems++;
 
-							if (j26 !== 0 || j29 !== 0) {
-								if (j23 !== l7) {
-									this.groundItemX[l7] = this.groundItemX[j23];
-									this.groundItemY[l7] = this.groundItemY[j23];
-									this.groundItemId[l7] = this.groundItemId[j23];
-									this.groundItemZ[l7] = this.groundItemZ[j23];
+/*
+							if (itemDeltaX !== 0 || itemDeltaY !== 0) {
+								if (item !== savedItem) {
+									this.groundItemX[savedItem] = this.groundItemX[item];
+									this.groundItemY[savedItem] = this.groundItemY[item];
+									this.groundItemId[savedItem] = this.groundItemId[item];
+									this.groundItemZ[savedItem] = this.groundItemZ[item];
 								}
 
-								l7++;
+								savedItem++;
 							}
+*/
 						}
 
-						this.groundItemCount = l7;
+						this.groundItemCount = savedItems;
 					} else {
-						let i8 = Utility.getUnsignedShort(pdata, l);
+						let itemID = Utility.getUnsignedShort(pdata, dataOffset);
+						dataOffset += 2;
 
-						l += 2;
+						let deltamX = this.localRegionX + pdata[dataOffset++];
+						let deltamY = this.localRegionY + pdata[dataOffset++];
 
-						let k14 = this.localRegionX + pdata[l++];
-						let j19 = this.localRegionY + pdata[l++];
-
-						if ((i8 & 32768) === 0) {
-							this.groundItemX[this.groundItemCount] = k14;
-							this.groundItemY[this.groundItemCount] = j19;
-							this.groundItemId[this.groundItemCount] = i8;
+						if ((itemID & 32768) === 0) {
+							this.groundItemX[this.groundItemCount] = deltamX;
+							this.groundItemY[this.groundItemCount] = deltamY;
+							this.groundItemId[this.groundItemCount] = itemID;
 							this.groundItemZ[this.groundItemCount] = 0;
 
 							for (let k23 = 0; k23 < this.objectCount; k23++) {
-								if (this.objectX[k23] !== k14 || this.objectY[k23] !== j19) {
+								if (this.objectX[k23] !== deltamX || this.objectY[k23] !== deltamY) {
 									continue;
 								}
 
@@ -6989,26 +7004,25 @@ class mudclient extends GameConnection {
 
 							this.groundItemCount++;
 						} else {
-							i8 &= 32767;
+							itemID &= 0x7FFF
 
-							let l23 = 0;
-
-							for (let k26 = 0; k26 < this.groundItemCount; k26++) {
-								if (this.groundItemX[k26] !== k14 || this.groundItemY[k26] !== j19 || this.groundItemId[k26] !== i8) {
-									if (k26 !== l23) {
-										this.groundItemX[l23] = this.groundItemX[k26];
-										this.groundItemY[l23] = this.groundItemY[k26];
-										this.groundItemId[l23] = this.groundItemId[k26];
-										this.groundItemZ[l23] = this.groundItemZ[k26];
-									}
-
-									l23++;
-								} else {
-									i8 = -123;
+							let savedItems = 0;
+							for (let item = 0; item < this.groundItemCount; item++) {
+								if (this.groundItemX[item] === deltamX && this.groundItemY[item] === deltamY && this.groundItemId[item] === itemID) {
+									itemID = -123;
+									continue
 								}
+					//			if (item === savedItems)
+					//				continue;
+								this.groundItemX[savedItems] = this.groundItemX[item];
+								this.groundItemY[savedItems] = this.groundItemY[item];
+								this.groundItemId[savedItems] = this.groundItemId[item];
+								this.groundItemZ[savedItems] = this.groundItemZ[item];
+
+								savedItems++;
 							}
 
-							this.groundItemCount = l23;
+							this.groundItemCount = savedItems;
 						}
 					}
 
@@ -7229,7 +7243,7 @@ class mudclient extends GameConnection {
 							character.incomingProjectileSprite = projectileSprite;
 							character.attackingNpcServerIndex = npcIdx;
 							character.attackingPlayerServerIndex = -1;
-							character.projectileRange = this.projectileMaxRange;
+							character.projectileRange = this.projectileFactor;
 						}
 					} else if (updateType === 4) { // new incoming projectile from player
 						let projectileSprite = Utility.getUnsignedShort(pdata, offset);
@@ -7244,7 +7258,7 @@ class mudclient extends GameConnection {
 							character.incomingProjectileSprite = projectileSprite;
 							character.attackingPlayerServerIndex = playerIdx;
 							character.attackingNpcServerIndex = -1;
-							character.projectileRange = this.projectileMaxRange;
+							character.projectileRange = this.projectileFactor;
 						}
 					} else if (updateType === 5) {
 						if (character !== null) {
@@ -8804,7 +8818,7 @@ class mudclient extends GameConnection {
 	}
 
 	async handleInputs() {
-		if (this.errorLoadingData || this.runtimeException || this.errorLoadingCodebase)
+		if (this.errorLoadingData || this.runtimeException || this.errorLoadingCodebase || !this.surface)
 			return;
 
 		try {
@@ -8812,7 +8826,7 @@ class mudclient extends GameConnection {
 
 			if (this.gameState === GameState.LOGIN) {
 				// idle frame count, reset upon any user input or login screen
-//				this.mouseActionTimeout = 0;
+				//this.mouseActionTimeout = 0;
 				await this.handleLoginScreenInput();
 			}
 
@@ -8848,6 +8862,9 @@ class mudclient extends GameConnection {
 			this.worldFullTimeout--;
 
 		if (this.welcomeState === WelcomeState.WELCOME) {
+			if (!this.panelLogin[WelcomeState.WELCOME]) {
+				return;
+			}
 			this.panelLogin[WelcomeState.WELCOME].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
 			
 			if (this.panelLogin[WelcomeState.WELCOME].isClicked(this.controlWelcomeNewuser)) {
@@ -8874,6 +8891,9 @@ class mudclient extends GameConnection {
 				this.welcomeState = WelcomeState.EXISTING_USER;
 			}
 		} else if (this.welcomeState === WelcomeState.NEW_USER) {
+			if (!this.panelLogin[WelcomeState.NEW_USER]) {
+				return;
+			}
 			this.panelLogin[WelcomeState.NEW_USER].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
 
 			if (this.panelLogin[WelcomeState.NEW_USER].isClicked(this.controlRegisterCancel)) {
@@ -8927,6 +8947,9 @@ class mudclient extends GameConnection {
 				return;
 			}
 		} else if (this.welcomeState === WelcomeState.EXISTING_USER) {
+			if (!this.panelLogin[WelcomeState.EXISTING_USER]) {
+				return;
+			}
 			this.panelLogin[WelcomeState.EXISTING_USER].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
 
 			if (this.panelLogin[WelcomeState.EXISTING_USER].isClicked(this.controlLoginCancel)) {

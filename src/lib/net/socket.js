@@ -51,7 +51,7 @@ class Socket {
     
     connect() {
         return new Promise((resolve, reject) => {
-            this.client = new WebSocket(`ws://${this.host}:${this.port}`, 'binary');
+            this.client = new WebSocket(`wss://${this.host}:${this.port}`, 'binary');
             this.client.binaryType = 'arraybuffer';
             
             const onError = err => {

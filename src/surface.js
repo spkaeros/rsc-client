@@ -430,7 +430,7 @@ class Surface {
         colours[0] = 0xff00ff;
 
         for (let i = 0; i < colourCount - 1; i++) {
-            colours[i + 1] = ((0xFF << 24) | (indexData[indexOff] & 0xff) << 16) | ((indexData[indexOff + 1] & 0xff) << 8) | (indexData[indexOff + 2] & 0xff);
+            colours[i + 1] = ((indexData[indexOff] & 0xff) << 16) | ((indexData[indexOff + 1] & 0xff) << 8) | (indexData[indexOff + 2] & 0xff);
             indexOff += 3;
         }
 
