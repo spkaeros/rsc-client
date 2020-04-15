@@ -1,38 +1,8 @@
 class Socket {
-    // newReader(asFunc) {
-    //     return new Promise((resolve, reject) => {
-    //         const onClose = () => {
-    //             this.client.removeEventListener('error', onError);
-    //             this.client.removeEventListener('message', onNextMessage);
-    //             this.client.removeEventListener('close', onClose);
-    //             this.close();
-    //             resolve(-1);
-    //         };
-    //         const onError = err => {
-    //             this.client.removeEventListener('close', onClose);
-    //             this.client.removeEventListener('message', onNextMessage);
-    //             this.client.removeEventListener('error', onError);
-    //             this.close();
-    //             reject(err);
-    //         };
-    //         const onNextMessage = () => {
-    //             this.client.removeEventListener('error', onError);
-    //             this.client.removeEventListener('close', onClose);
-    //             this.client.removeEventListener('message', onNextMessage);
-    //             Promise.resolve().then(async () => {
-    //                 resolve(await asFunc());
-    //             });
-    //         };
-    //
-    //         this.client.addEventListener('error', onError);
-    //         this.client.addEventListener('close', onClose);
-    //         this.client.addEventListener('message', onNextMessage);
-    //     });
-    // }
-    
-    constructor(host, port) {
+    constructor(host, port, transportLayerSecurity = true) {
         this.host = host;
         this.port = port;
+        this.protocol = transportLayerSecurity ? 'wss' : 'ws';
 
         this.client = null;
         this.connected = false;
@@ -51,7 +21,7 @@ class Socket {
     
     connect() {
         return new Promise((resolve, reject) => {
-            this.client = new WebSocket(`wss://${this.host}:${this.port}`, 'binary');
+            this.client = new WebSocket(`${this.protocol}://${this.host}:${this.port}`, 'binary');
             this.client.binaryType = 'arraybuffer';
             
             const onError = err => {

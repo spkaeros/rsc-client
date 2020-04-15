@@ -64,7 +64,7 @@ class GameConnection extends GameShell {
 			}
 			
 			this.showLoginScreenStatus('Please wait...', 'creating new account...');
-			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port), this);
+			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port, this.transportLayerSecurity), this);
 			this.clientStream.readTicksMax = 1000;
 			
 			this.clientStream.newPacket(C_OPCODES.REGISTER);
@@ -74,7 +74,7 @@ class GameConnection extends GameShell {
 			this.clientStream.flushPacket();
 			let response = await this.clientStream.readStream();
 			
-			console.log('registration response: ' + response);
+			console.log('newplayer response: ' + response);
 			this.clientStream.closeStream();
 			switch(response) {
 			case 2: // success
@@ -112,6 +112,9 @@ class GameConnection extends GameShell {
 				return;
 			case 16: // switch to members server
 				this.showLoginScreenStatus('Please login to a members server', 'to access member-only features');
+				return;
+			case 19: // Username or password length was out of bounds
+				this.showLoginScreenStatus('Bad username/password', 'Please check your input and try again');
 				return;
 			}
 			this.showLoginScreenStatus('Error unable to create user.', 'Unrecognised response code');
@@ -163,7 +166,7 @@ class GameConnection extends GameShell {
 				this.clientStream.closeStream();
 			}
 
-			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port), this);
+			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port, this.transportLayerSecurity), this);
 			this.clientStream.readTicksMax = 1000;
 
 			// let l = Utility.usernameToHash(u);
@@ -200,111 +203,90 @@ class GameConnection extends GameShell {
 
 			let resp = await this.clientStream.readStream();
 			console.log('login response:' + resp);
-			if (resp === 25 || resp === 24) {
+			switch ((resp&~64)) {
+			case 25:
+			case 24:
+				this.autoLoginTimeout = 0;
 				this.moderatorLevel = 1;
-				this.autoLoginTimeout = 0;
 				this.resetGame();
 				return;
-			}
-			if (resp === 0) {
+			case 0:
+				this.autoLoginTimeout = 0;
 				this.moderatorLevel = 0;
-				this.autoLoginTimeout = 0;
 				this.resetGame();
 				return;
-			}
-			if (resp === 1) {
+			case 1:
 				this.autoLoginTimeout = 0;
 				return;
-			}
-			if (reconnecting) {
-				u = '';
-				p = '';
-				this.resetLoginVars();
-				return;
-			}
-			this.clientStream.closeStream();
-			if (resp === -1) {
+			case -1:
 				this.showLoginScreenStatus('Error unable to login.', 'Server timed out');
-				return;
-			}
-			if (resp === 3) {
+				break;
+			case 3:
 				this.showLoginScreenStatus('Invalid username or password.', 'Try again, or create a new account');
-				return;
-			}
-			if (resp === 4) {
+				break;
+			case 4:
 				this.showLoginScreenStatus('That username is already logged in.', 'Wait 60 seconds then retry');
-				return;
-			}
-			if (resp === 5) {
+				break;
+			case 5:
 				this.showLoginScreenStatus('The client has been updated.', 'Please reload this page');
-				return;
-			}
-			if (resp === 6) {
+				break;
+			case 6:
 				this.showLoginScreenStatus('You may only use 1 character at once.', 'Your ip-address is already in use');
-				return;
-			}
-			if (resp === 7) {
+				break;
+			case 7:
 				this.showLoginScreenStatus('Login attempts exceeded!', 'Please try again in 5 minutes');
-				return;
-			}
-			if (resp === 8) {
+				break;
+			case 8:
 				this.showLoginScreenStatus('Error unable to login.', 'Server rejected session');
-				return;
-			}
-			if (resp === 9) {
+				break;
+			case 9:
 				this.showLoginScreenStatus('Error unable to login.', 'Loginserver rejected session');
-				return;
-			}
-			if (resp === 10) {
+				break;
+			case 10:
 				this.showLoginScreenStatus('That username is already in use.', 'Wait 60 seconds then retry');
-				return;
-			}
-			if (resp === 11) {
+				break;
+			case 11:
 				this.showLoginScreenStatus('Account temporarily disabled.', 'Check your message inbox for details');
-				return;
-			}
-			if (resp === 12) {
+				break;
+			case 12:
 				this.showLoginScreenStatus('Account permanently disabled.', 'Check your message inbox for details');
-				return;
-			}
-			if (resp === 14) {
+				break;
+			case 14:
 				this.showLoginScreenStatus('Sorry! This world is currently full.', 'Please try a different world');
 				this.worldFullTimeout = 1500;
-				return;
-			}
-			if (resp === 15) {
+				break;
+			case 15:
 				this.showLoginScreenStatus('You need a members account', 'to login to this world');
-				return;
-			}
-			if (resp === 16) {
+				break;
+			case 16:
 				this.showLoginScreenStatus('Error - no reply from loginserver.', 'Please try again');
-				return;
-			}
-			if (resp === 17) {
+				break;
+			case 17:
 				this.showLoginScreenStatus('Error - failed to decode profile.', 'Contact customer support');
-				return;
-			}
-			if (resp === 18) {
+				break;
+			case 18:
 				this.showLoginScreenStatus('Account suspected stolen.', 'Press \'recover a locked account\' on front page.');
-				return;
-			}
-			if (resp === 20) {
+				break;
+			case 20:
 				this.showLoginScreenStatus('Error - loginserver mismatch', 'Please try a different world');
-				return;
-			}
-			if (resp === 21) {
+				break;
+			case 21:
 				this.showLoginScreenStatus('Unable to login.', 'That is not an RS-Classic account');
-				return;
-			}
-			if (resp === 22) {
+				break;
+			case 22:
 				this.showLoginScreenStatus('Password suspected stolen.', 'Press \'change your password\' on front page.');
-				return;
+				break;
+			default:
+				this.showLoginScreenStatus('Error unable to login.', 'Unrecognised response code');
+				break;
 			}
-			this.showLoginScreenStatus('Error unable to login.', 'Unrecognised response code');
+			if (resp&64 !== 64) {
+				this.clientStream.closeStream();
+			}
+			return;
 		} catch (e) {
 			console.error(e);
 		}
-		
 		if (this.autoLoginTimeout > 0) {
 			await sleep(5000);
 			this.autoLoginTimeout--;
@@ -339,7 +321,7 @@ class GameConnection extends GameShell {
 	
 	async lostConnection() {
 		try {
-			throw new Error('');
+			throw new Error('Lost connection - forcing reconnect');
 		} catch (e) {
 			console.log('Lost connection');
 			console.error(e);

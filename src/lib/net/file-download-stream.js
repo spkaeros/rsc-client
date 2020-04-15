@@ -15,7 +15,7 @@ class FileDownloadStream {
             this.xhr.onerror = e => reject(e);
 
             this.xhr.onload = () => {
-                if (!/^2/.test(this.xhr.status)) {
+                if (this.xhr.status === 2) {
                     reject(new Error(`unable to download ${this.url}. status code = ${this.xhr.status}`));
                 } else {
                     resolve(new Int8Array(this.xhr.response));
