@@ -667,7 +667,7 @@ class GameShell {
 	}
 	
 	async readDataFile(file, description, percent) {
-		file = './data204/' + file;
+		file = './static/cache/' + file;
 		
 		
 		this.updateLoadingStatus(percent, 'Loading ' + description + ' - 0%');
