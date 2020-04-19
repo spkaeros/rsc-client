@@ -484,7 +484,7 @@ class GameShell {
 					j = k1;
 					sleep = lastSleep;
 				} else if (time > this.timings[i]) {
-					j = ((2560 * this.targetFrameTime) / (time - this.timings[i])) | 0;
+					j = (((2560 * this.targetFrameTime) / (time - this.timings[i]))) | 0;
 				}
 
 				if (j < 25) {

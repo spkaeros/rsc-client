@@ -28,7 +28,8 @@ class Utility {
 	}
 
 	static getUnsignedLong(buff, off) {
-		return Long.fromInt(Utility.getUnsignedInt(buff, off) & 0xffffffff).shl(32).or(Long.fromInt(Utility.getUnsignedInt(buff, off + 4) & 0xffffffff));
+//		return Long.fromInt(Utility.getUnsignedInt(buff, off) & 0xffffffff).shl(32).or(Long.fromInt(Utility.getUnsignedInt(buff, off + 4) & 0xffffffff));
+		return new Long(Utility.getUnsignedInt(buff, off) & 0xffffffff, Utility.getUnsignedInt(buff, off + 4) & 0xffffffff);
 	}
 
 	static recoveryToHash(answer) {
@@ -51,7 +52,7 @@ class Utility {
 
 	static getSignedShort(abyte0, i) {
 		let j = Utility.getUnsignedByte(abyte0[i]) << 8 | Utility.getUnsignedByte(abyte0[i + 1]) | 0;
-		if (j > 32767)
+		if (j > 0x7FFF)
 			j -= 0x10000;
 
 		return j;
@@ -129,7 +130,7 @@ class Utility {
 
 	static hashToUsername(hash) {
 		if (hash.lessThan(0))
-			return 'invalidName';
+			return 'invalid_name';
 		let username = '';
 
 		while (!hash.eq(0)) {

@@ -28,12 +28,15 @@
   "homepage": "https://github.com/2003scape/rsc-client#readme",
   "devDependencies": {
     "alawmulaw": "^5.0.2",
-    "browserify": "^16.5.0",
-    "eslint": "^6.4.0",
+    "browserify": "^16.5.1",
+    "eslint": "^6.8.0",
     "long": "^4.0.0",
-    "ndarray": "^1.0.18",
+    "ndarray": "^1.0.19",
     "sleep-promise": "^8.0.1",
     "st": "^1.2.2",
-    "tinyify": "^2.5.1"
+    "tinyify": "^2.5.2"
+  },
+  "dependencies": {
+    "canvas": "^2.6.1"
   }
 }

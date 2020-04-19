@@ -2,6 +2,7 @@ class GameBuffer {
 	constructor(buffer) {
 		this.buffer = buffer;
 		this.offset = 0;
+		this.decoder = new TextDecoder('utf8');
 	}
 
 	putByte(i) {
@@ -53,7 +54,7 @@ class GameBuffer {
 		if (this.offset > this.buffer.length)
 			this.offset = this.buffer.length;
 
-		return new TextDecoder().decode(this.buffer.slice(this.offset-len, this.offset));
+		return this.decoder.decode(this.buffer.slice(this.offset-len, this.offset));
 	}
 }
 

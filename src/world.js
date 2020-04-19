@@ -487,13 +487,13 @@ class World {
         }
     }
 
-    method404(x, y, k, l) {
-        if (x < 1 || y < 1 || x + k >= this.regionWidth || y + l >= this.regionHeight) {
+    method404(x, y, width, height) {
+        if (x < 1 || y < 1 || x + width >= this.regionWidth || y + height >= this.regionHeight) {
             return;
         }
 
-        for (let xx = x; xx <= x + k; xx++) {
-            for (let yy = y; yy <= y + l; yy++) {
+        for (let xx = x; xx <= x + width; xx++) {
+            for (let yy = y; yy <= y + height; yy++) {
                 if ((this.getObjectAdjacency(xx, yy) & 0x63) !== 0 || (this.getObjectAdjacency(xx - 1, yy) & 0x59) !== 0 || (this.getObjectAdjacency(xx, yy - 1) & 0x56) !== 0 || (this.getObjectAdjacency(xx - 1, yy - 1) & 0x6c) !== 0) {
                     this.method425(xx, yy, 35);
                 } else {
@@ -941,6 +941,7 @@ class World {
                     let l14 = 0;
 
                     if (plane === 1 || plane === 2) {
+                    	// Set default ground colors to transparent on upper levels
                         colour = World.colourTransparent;
                         colour_1 = World.colourTransparent;
                         colour_2 = World.colourTransparent;
@@ -948,15 +949,18 @@ class World {
     
                     let overlayIndex = this.getOverlayID(lx, ly, plane);
                     if (overlayIndex > 0) {
+                    	// We are dealing with a tile that has an overlay
                         let overlay = GameData.overlays[overlayIndex - 1];
                         let tileType = this.getTileType(lx, ly, plane);
 
                         colour = colour_1 = GameData.tileDecoration[overlayIndex - 1];
 
+						// bridge is 4
                         if (overlay === 4) {
                             colour = 1;
                             colour_1 = 1;
 
+							// some other type of bridge idk
                             if (overlayIndex === 12) {
                                 colour = 31;
                                 colour_1 = 31;
@@ -964,6 +968,7 @@ class World {
                         }
 
                         if (overlay === 5) {
+                        	// If stone floor overlay and a diagonal wall are on this tile
                             if (this.getWallDiagonal(lx, ly) > 0 && this.getWallDiagonal(lx, ly) < 24000) {
                                 if (this.getOverlayID(lx - 1, ly, plane, colour_2) !== World.colourTransparent && this.getOverlayID(lx, ly - 1, plane, colour_2) !== World.colourTransparent) {
                                     colour = this.getOverlayID(lx - 1, ly, plane, colour_2);
@@ -980,6 +985,7 @@ class World {
                                 }
                             }
                         } else if (overlay !== 2 || this.getWallDiagonal(lx, ly) > 0 && this.getWallDiagonal(lx, ly) < 24000) {
+                        	// if overlay isn't water, or stone floor, and a diagonal wall is on this tile
                             if (this.getTileType(lx - 1, ly, plane) !== tileType && this.getTileType(lx, ly - 1, plane) !== tileType) {
                                 colour = colour_2;
                                 l14 = 0;
@@ -994,12 +1000,14 @@ class World {
                                 l14 = 1;
                             }
                         }
-                        
+
+                        // TODO: figure more out on tileAdjacent it's basically unknown right now to me.
                         if (GameData.tileAdjacent[overlayIndex - 1] !== 0) {
                             const adjacency = this.objectAdjacency.get(lx, ly);
                             this.objectAdjacency.set(lx, ly, adjacency | 0x40);
                         }
 
+						// Water set full block
                         if (GameData.overlays[overlayIndex - 1] === 2) {
                             const adjacency = this.objectAdjacency.get(lx, ly);
                             this.objectAdjacency.set(lx, ly, adjacency | 0x80);
@@ -1179,6 +1187,7 @@ class World {
             for (let k2 = 0; k2 < 95; k2++) {
                 let k3 = this.getWallEastWest(i2, k2);
 
+                // bits 1 and 4 are for vertical walls
                 if (k3 > 0 && (GameData.wallObjectInvisible[k3 - 1] === 0 || this.aBoolean592)) {
                     this.method422(this.parentModel, k3 - 1, i2, k2, i2 + 1, k2);
 
@@ -1198,6 +1207,7 @@ class World {
 
                 k3 = this.getWallNorthSouth(i2, k2);
 
+                // bits 2 and 8 are for horizontal walls
                 if (k3 > 0 && (GameData.wallObjectInvisible[k3 - 1] === 0 || this.aBoolean592)) {
                     this.method422(this.parentModel, k3 - 1, i2, k2, i2, k2 + 1);
 
@@ -1214,6 +1224,7 @@ class World {
                         this.surface.drawLineVert(i2 * 3, k2 * 3, 3, k1);
                     }
                 }
+                // bits 16 and 32 are for diag walls
 
                 k3 = this.getWallDiagonal(i2, k2);
 
