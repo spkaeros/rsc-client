@@ -17,6 +17,9 @@ EngineState.INITIALIZE_DATA = new EngineState("Downloading and setting up all th
 EngineState.RUNNING = new EngineState("Engine clock is ticking");
 EngineState.SHUTDOWN = new EngineState("Engine is shutting down");
 
+const ModifierKeyNames = ['Control', 'Shift', 'Alt', 'CapsLock', 'OS', 'Delete', 'Insert', 'Tab', 'Unidentified', 'AudioVolumeMute', 'AudioVolumeUp', 'AudioVolumeDown',
+		'MediaTrackPrevious', 'MediaPlay', 'MediaTrackNext', 'BrowserSearch', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']
+
 class GameShell {
 	constructor(canvas) {
 		this._canvas = canvas;
@@ -62,6 +65,7 @@ class GameShell {
 		this.hasRefererLogoNotUsed = false;
 		this.loadingProgessText = 'Loading';
 		this.showFps = false;
+		this.debug = false;
 		this.keyLeft = false;
 		this.keyRight = false;
 		this.keyUp = false;
@@ -137,28 +141,17 @@ class GameShell {
 	}
 
     keyPressed(e) {
-		if (e.key === 'Control') {
-			return;
-		}
-		if (this.gameState === GameState.LOGIN && this.panelLogin !== null && this.panelLogin[this.welcomeState] !== null) {
+		if (this.gameState === GameState.LOGIN && this.panelLogin && this.panelLogin[this.welcomeState]) {
+			for (let name of ModifierKeyNames) {
+				if (e.key === name) {
+					return true;
+				}
+			}
+
 			this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
 			e.preventDefault();
 			return;
-
         }
-
-        if (e.key === 'Escape') {
-            // this.drawWelcomeNotification = false;
-            // this.drawBankPanel = false;
-            // this.drawShopPanel = false;
-            // this.drawTradePanel = false;
-            // this.drawDuelPanel = false;
-            this.abuseReportWindow = 0;
-            this.contactsInputFormIndex = 0;
-            e.preventDefault();
-            return;
-        }
-
         if (this.gameState === GameState.WORLD) {
             if (this.showAppearanceChange && this.panelGame[GamePanel.APPEARANCE] !== null) {
                 // TODO: Need this?  No text input fields to speak of
@@ -166,11 +159,11 @@ class GameShell {
                 e.preventDefault();
                 return;
             }
-			if (this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
+			if (this.dialogItemInput === 0 && this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
                 if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     if (this.lastLogIdx >= this.lastLog.length - 1) {
-                        this.showMessage("End of chat history buffer; press down to navigate forward.", 3);
+                        this.showMessage("End of chat history", 3);
                         return
                     }
                     this.lastLogIdx += 1;
@@ -193,84 +186,100 @@ class GameShell {
         }
 
         switch (e.which) {
-            case 37:
-                this.keyLeft = true;
-                e.preventDefault();
-                break;
-            // case 38:
-            // 	this.keyUp = true;
-            // 	e.preventDefault();
-            // 	break;
-            case 39:
-                this.keyRight = true;
-                e.preventDefault();
-                break;
-            // case 40:
-            // 	this.keyDown = true;
-            // 	e.preventDefault();
-            // 	break;
-            case 32:
-                this.keySpace = true;
-                e.preventDefault();
-                break;
-            case 36:
-                this.keyHome = true;
-                e.preventDefault();
-                break;
-            case 33:
-                this.keyUp = true;
-                e.preventDefault();
-                break;
-            case 34:
-                this.keyDown = true;
-                e.preventDefault();
-                break;
-            case 112:
-                this.interlace = !this.interlace;
-                e.preventDefault();
-                break;
-            case 113:
-                this.options.showRoofs = !this.options.showRoofs;
-                e.preventDefault();
-                break;
-            case 114:
-            	// this.dumpRequested = true;
-            	this.showFps = !this.showFps;
-            	break;
-            case 115:
-            	// this.dumpRequested = true;
-            	this.dumpRequested = true;
-            	break;
-            case 13:
-                if (this.inputTextCurrent.length > 0) {
-                    this.inputTextFinal = this.inputTextCurrent;
-                }
-                if (this.inputPmCurrent.length > 0) {
-                    this.inputPmFinal = this.inputPmCurrent;
-                }
-                e.preventDefault();
-                break;
-            case 8:
-                if (this.inputTextCurrent.length > 0) {
-                    this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
-                }
+        case 27:
+			this.drawWelcomeNotification = false;
+			this.drawBankPanel = false;
+			this.drawShopPanel = false;
+			this.drawTradePanel = false;
+			this.drawDuelPanel = false;
+			this.showDialogSocialInput = 0;
+			this.dialogItemInput = 0;
+			this.abuseReportWindow = 0;
+			this.contactsInputFormIndex = 0;
+			e.preventDefault();
+			break;
 
-                if (this.inputPmCurrent.length > 0) {
-                    this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
-                }
-                e.preventDefault();
-                break;
-            default:
-                if (this.inputTextCurrent.length < 20) {
-                    this.inputTextCurrent += e.key;
-                }
+		case 37:
+			this.keyLeft = true;
+			e.preventDefault();
+			break;
+		// case 38:
+		// 	this.keyUp = true;
+		// 	e.preventDefault();
+		// 	break;
+		case 39:
+			this.keyRight = true;
+			e.preventDefault();
+			break;
+		// case 40:
+		// 	this.keyDown = true;
+		// 	e.preventDefault();
+		// 	break;
+		case 32:
+			this.keySpace = true;
+			e.preventDefault();
+			break;
+		case 36:
+			this.keyHome = true;
+			e.preventDefault();
+			break;
+		case 33:
+			this.keyUp = true;
+			e.preventDefault();
+			break;
+		case 34:
+			this.keyDown = true;
+			e.preventDefault();
+			break;
+		case 112:
+			this.interlace = !this.interlace;
+			e.preventDefault();
+			break;
+		case 113:
+			this.options.showRoofs = !this.options.showRoofs;
+			e.preventDefault();
+			break;
+		case 114:
+			// this.dumpRequested = true;
+			this.showFps = !this.showFps;
+			break;
+		case 115:
+			// this.dumpRequested = true;
+			this.dumpRequested = true;
+			break;
+		case 116:
+			// this.dumpRequested = true;
+			this.debug = !this.debug;
+			break;
+		case 13:
+			if (this.inputTextCurrent.length > 0)
+				this.inputTextFinal = this.inputTextCurrent;
+			if (this.inputPmCurrent.length > 0)
+				this.inputPmFinal = this.inputPmCurrent;
+			e.preventDefault();
+			break;
+		case 8:
+			if (this.inputTextCurrent.length > 0)
+				this.inputTextCurrent = this.inputTextCurrent.substring(0, this.inputTextCurrent.length - 1);
+			if (this.inputPmCurrent.length > 0)
+				this.inputPmCurrent = this.inputPmCurrent.substring(0, this.inputPmCurrent.length - 1);
+			e.preventDefault();
+			break;
+		default:
+			for (let name of ModifierKeyNames) {
+				if (e.key === name) {
+					return true;
+				}
+			}
 
-                if (this.inputPmCurrent.length < 80) {
-                    this.inputPmCurrent += e.key;
-                }
-                e.preventDefault();
-                break;
+			if (this.inputTextCurrent.length < 20)
+				this.inputTextCurrent += e.key;
+			if (this.inputPmCurrent.length < 80)
+				this.inputPmCurrent += e.key;
+			e.preventDefault();
+			break;
         }
+
         return false;
     }
 
