@@ -105,6 +105,7 @@ class mudclient extends GameConnection {
 		this.appearanceHeadType = 0;
 		this.appearanceSkinColour = 0;
 		this.showDialogSocialInput = 0;
+		this.dialogItemInput = 0;
 		this.anInt707 = 0;
 		this.deathScreenTimeout = 0;
 		this.cameraRotationY = 0;
@@ -3004,7 +3005,7 @@ class mudclient extends GameConnection {
 
 	drawNpc(x, y, w, h, id, tx, ty) {
 		let character = this.npcs[id];
-		let l1 = (character.animationCurrent + (this.cameraRotation + 16) >> 0x20) & 7;
+		let l1 = (character.animationCurrent + (this.cameraRotation + 16) / 32) & 7;
 		let flag = false;
 		let i2 = l1;
 
@@ -3237,11 +3238,11 @@ class mudclient extends GameConnection {
 		//let x = 256 - dialogWidth / 2;
 		//let y = 170 - dialogHeight / 2;
 
-		this.surface.drawBox(x, y, 408, 12, 192);
-		this.surface.drawBoxAlpha(x, y + 12, 408, 17, 0x989898, 160);
-		this.surface.drawBoxAlpha(x, y + 29, 8, 204, 0x989898, 160);
-		this.surface.drawBoxAlpha(x + 399, y + 29, 9, 204, 0x989898, 160);
-		this.surface.drawBoxAlpha(x, y + 233, 408, 47, 0x989898, 160);
+		this.surface.drawBox(x, y, dialogWidth, 12, 0xC0);
+		this.surface.drawBoxAlpha(x, y + 12, dialogWidth, 17, 0x989898, 0xA0);
+		this.surface.drawBoxAlpha(x, y + 29, 8, 204, 0x989898, 0xA0);
+		this.surface.drawBoxAlpha(x + (dialogWidth-9), y + 29, 9, 204, 0x989898, 0xA0);
+		this.surface.drawBoxAlpha(x, y + 233, dialogWidth, 47, 0x989898, 0xA0);
 		this.surface.drawString('Bank', x + 1, y + 10, 1, 0xffffff);
 
 		let xOff = 50;
@@ -3323,7 +3324,7 @@ class mudclient extends GameConnection {
 				let startX = x + 7 + column * 49;
 				let startY = y + 28 + row * 34;
 				// draw bank slot
-				this.surface.drawBoxAlpha(startX, startY, 49, 34, this.bankSelectedItemSlot === slot ? 0xFF0000 : 0xD0D0D0, 160);
+				this.surface.drawBoxAlpha(startX, startY, 49, 34, this.bankSelectedItemSlot === slot ? 0xFF0000 : 0xD0D0D0, 0xA0);
 				// draw bank slot border
 				this.surface.drawBoxEdge(startX, startY, 50, 35, 0);
 
@@ -3334,7 +3335,7 @@ class mudclient extends GameConnection {
 					let mouseX = this.mouseX - (((this.gameWidth / 2) | 0) - ((dialogWidth / 2) | 0));
 					let mouseY = this.mouseY - (((this.gameHeight / 2) | 0) - ((dialogHeight / 2) | 0));
 
-					if (this.mouseButtonClick !== 0 && mouseX < startX && mouseX > startX-49 && mouseY < startY + 34 && mouseY > startY) {
+					if (this.mouseButtonClick !== 0 && this.dialogItemInput === 0 && mouseX < startX && mouseX > startX-49 && mouseY < startY + 34 && mouseY > startY) {
 						this.mouseButtonClick = 0;
 						this.bankSelectedItem = this.bankItems[slot];
 						this.bankSelectedItemSlot = slot;
@@ -3347,10 +3348,12 @@ class mudclient extends GameConnection {
 
 		this.surface.drawStringRight('Close window', x + 406, y + 10, 1, colour);
 
-		if (this.mouseButtonClick !== 0 && (this.mouseY < 12 || this.mouseY >= 280 || this.mouseX >= 408)) {
+		if (this.mouseButtonClick !== 0 && (this.mouseY < 12 || this.mouseY >= 280 || this.mouseX >= 475)) {
 			this.clientStream.newPacket(C_OPCODES.BANK_CLOSE);
 			this.clientStream.sendPacket();
 			this.showDialogBank = false;
+			if (this.dialogItemInput === 2 || this.dialogItemInput === 1)
+				this.dialogItemInput = 0;
 			return;
 		}
 
@@ -3386,10 +3389,10 @@ class mudclient extends GameConnection {
 				let textWidth = 30;
 				let minY = y + 238;
 				let maxY = minY + textHeight;
-				let minX = x + 190;
+				let minX = x + 230;
 				let maxX = minX + textWidth;
 
-				if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
+				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
 					colour = 0xff0000;
 					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 						this.mouseButtonClick = 0;
@@ -3397,7 +3400,7 @@ class mudclient extends GameConnection {
 						let slot = this.bankItems[this.bankSelectedItemSlot];
 						this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
 						this.clientStream.putShort(slot);
-						this.clientStream.putShort(1);
+						this.clientStream.putInt(1);
 						this.clientStream.putInt(0x12345678);
 						this.clientStream.sendPacket();
 					}
@@ -3406,12 +3409,9 @@ class mudclient extends GameConnection {
 				minX += textWidth;
 				maxX += textWidth;
 
-				//this.surface.drawString('One', x + 222, y + 248, 1, colour);
 				if (itemCount >= 5) {
 					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-	//				if (this.mouseX >= x + 250 && this.mouseY >= y + 238 && this.mouseX < x + 280 && this.mouseY <= y + 249) {
+					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
 						colour = 0xff0000;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
@@ -3419,7 +3419,7 @@ class mudclient extends GameConnection {
 							let slot = this.bankItems[this.bankSelectedItemSlot];
 							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
 							this.clientStream.putShort(slot);
-							this.clientStream.putShort(5);
+							this.clientStream.putInt(5);
 							this.clientStream.putInt(0x12345678);
 							this.clientStream.sendPacket();
 						}
@@ -3428,14 +3428,11 @@ class mudclient extends GameConnection {
 					minX += textWidth;
 					maxX += textWidth;
 
-//					this.surface.drawString('Five', x + 252, y + 248, 1, colour);
 				}
 
-				if (itemCount >= 25) {
+				if (itemCount >= 10) {
 					colour = 0xffffff;
-
-//					if (this.mouseX >= x + 280 && this.mouseY >= y + 238 && this.mouseX < x + 305 && this.mouseY <= y + 249) {
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
+					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
 						colour = 0xff0000;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
@@ -3443,47 +3440,19 @@ class mudclient extends GameConnection {
 							let slot = this.bankItems[this.bankSelectedItemSlot];
 							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
 							this.clientStream.putShort(slot);
-							this.clientStream.putShort(25);
+							this.clientStream.putInt(10);
 							this.clientStream.putInt(0x12345678);
 							this.clientStream.sendPacket();
 						}
 					}
-					this.surface.drawString('25', minX, maxY, 1, colour);
-					minX += textWidth-5;
-					maxX += textWidth-5;
-
-//					this.surface.drawString('25', x + 282, y + 248, 1, colour);
-				}
-
-				if (itemCount >= 100) {
-					colour = 0xffffff;
-
-//					if (this.mouseX >= x + 305 && this.mouseY >= y + 238 && this.mouseX < x + 335 && this.mouseY <= y + 249) {
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-						colour = 0xff0000;
-						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
-							this.mouseButtonClick = 0;
-							
-							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-							this.clientStream.putShort(slot);
-							this.clientStream.putShort(100);
-							this.clientStream.putInt(0x12345678);
-							this.clientStream.sendPacket();
-						}
-					}
-					this.surface.drawString('100', minX, maxY, 1, colour);
+					this.surface.drawString('10', minX, maxY, 1, colour);
 					minX += textWidth;
 					maxX += textWidth;
-
-			//		this.surface.drawString('100', x + 307, y + 248, 1, colour);
 				}
 
-				if (itemCount >= 500) {
+				if (itemCount >= 50) {
 					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-//					if (this.mouseX >= x + 335 && this.mouseY >= y + 238 && this.mouseX < x + 368 && this.mouseY <= y + 249) {
+					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
 						colour = 0xff0000;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
@@ -3491,65 +3460,46 @@ class mudclient extends GameConnection {
 							let slot = this.bankItems[this.bankSelectedItemSlot];
 							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
 							this.clientStream.putShort(slot);
-							this.clientStream.putShort(500);
+							this.clientStream.putInt(50);
 							this.clientStream.putInt(0x12345678);
 							this.clientStream.sendPacket();
 						}
 					}
-					this.surface.drawString('500', minX, maxY, 1, colour);
-					minX += textWidth+3;
-					maxX += textWidth+3;
-
-				//	this.surface.drawString('500', x + 337, y + 248, 1, colour);
-				}
-
-				if (itemCount >= 2500) {
-					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-//					if (this.mouseX >= x + 370 && this.mouseY >= y + 238 && this.mouseX < x + 400 && this.mouseY <= y + 249) {
-						colour = 0xff0000;
-						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
-							this.mouseButtonClick = 0;
-							
-							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-							this.clientStream.putShort(slot);
-							this.clientStream.putShort(2500);
-							this.clientStream.putInt(0x12345678);
-							this.clientStream.sendPacket();
-						}
-					}
-					this.surface.drawString('2500', minX, maxY, 1, colour);
+					this.surface.drawString('50', minX, maxY, 1, colour);
 					minX += textWidth;
 					maxX += textWidth;
-
-					//this.surface.drawString('2500', x + 370, y + 248, 1, colour);
 				}
+				colour = 0xffffff;
 
-				if (itemCount >= 2) {
-					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-//					if (this.mouseX >= x + 370 && this.mouseY >= y + 238 && this.mouseX < x + 400 && this.mouseY <= y + 249) {
-						colour = 0xff0000;
-						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
-							this.mouseButtonClick = 0;
-/*							
-							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-							this.clientStream.putShort(slot);
-							this.clientStream.putShort(2500);
-							this.clientStream.putInt(0x12345678);
-							this.clientStream.sendPacket();
-*/
-						}
+				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
+					colour = 0xff0000;
+					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
+						this.mouseButtonClick = 0;
+						this.dialogItemInput = 1;
 					}
-					this.surface.drawString('X', minX, maxY, 1, colour);
-					minX += textWidth;
-					maxX += textWidth;
-
 				}
+				this.surface.drawString('X', minX+2, maxY, 1, colour);
+				minX += textWidth;
+				maxX += textWidth;
+
+				colour = 0xffffff;
+
+				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
+					colour = 0xff0000;
+					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
+						this.mouseButtonClick = 0;
+						
+						let slot = this.bankItems[this.bankSelectedItemSlot];
+						this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
+						this.clientStream.putShort(slot);
+						this.clientStream.putInt(itemCount);
+						this.clientStream.putInt(0x12345678);
+						this.clientStream.sendPacket();
+					}
+				}
+				this.surface.drawString('All', minX, maxY, 1, colour);
+				minX += textWidth;
+				maxX += textWidth;
 			}
 
 			if (this.getInventoryCount(itemType) > 0) {
@@ -3557,11 +3507,11 @@ class mudclient extends GameConnection {
 				colour = 0xffffff;
 				let textHeight = 11;
 				let textWidth = 30;
-				let minY = y + 263;
+				let minY = y + 262;
 				let maxY = minY + textHeight;
-				let minX = x + 220;
+				let minX = x + 230;
 				let maxX = minX + textWidth;
-				if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
+				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
 					colour = 0xff0000;
 					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 						this.mouseButtonClick = 0;
@@ -3569,21 +3519,19 @@ class mudclient extends GameConnection {
 						let slot = this.bankItems[this.bankSelectedItemSlot];
 						this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
 						this.clientStream.putShort(slot);
-						this.clientStream.putShort(1);
+						this.clientStream.putInt(1);
 						this.clientStream.putInt(0x87654321);
 						this.clientStream.sendPacket();
 					}
 				}
+				this.surface.drawString('One', minX, maxY, 1, colour);
+
 				minX += textWidth;
 				maxX += textWidth;
 
-				this.surface.drawString('One', x + 222, y + 273, 1, colour);
-
 				if (this.getInventoryCount(itemType) >= 5) {
 					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-//					if (this.mouseX >= x + 250 && this.mouseY >= y + 263 && this.mouseX < x + 280 && this.mouseY <= y + 274) {
+					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
 						colour = 0xff0000;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
@@ -3591,22 +3539,19 @@ class mudclient extends GameConnection {
 							let slot = this.bankItems[this.bankSelectedItemSlot];
 							this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
 							this.clientStream.putShort(slot);
-							this.clientStream.putShort(5);
+							this.clientStream.putInt(5);
 							this.clientStream.putInt(0x87654321);
 							this.clientStream.sendPacket();
 						}
 					}
+					this.surface.drawString('Five', minX, maxY, 1, colour);
 					minX += textWidth;
 					maxX += textWidth;
-
-					this.surface.drawString('Five', x + 252, y + 273, 1, colour);
 				}
 
-				if (this.getInventoryCount(itemType) >= 25) {
+				if (this.getInventoryCount(itemType) >= 10) {
 					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-//					if (this.mouseX >= x + 280 && this.mouseY >= y + 263 && this.mouseX < x + 305 && this.mouseY <= y + 274) {
+					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
 						colour = 0xff0000;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
@@ -3614,22 +3559,19 @@ class mudclient extends GameConnection {
 							let slot = this.bankItems[this.bankSelectedItemSlot];
 							this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
 							this.clientStream.putShort(slot);
-							this.clientStream.putShort(25);
+							this.clientStream.putInt(10);
 							this.clientStream.putInt(0x87654321);
 							this.clientStream.sendPacket();
 						}
 					}
+					this.surface.drawString('10', minX, maxY, 1, colour);
 					minX += textWidth;
 					maxX += textWidth;
-
-					this.surface.drawString('25', x + 282, y + 273, 1, colour);
 				}
 
-				if (this.getInventoryCount(itemType) >= 100) {
+				if (this.getInventoryCount(itemType) >= 50) {
 					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-//					if (this.mouseX >= x + 305 && this.mouseY >= y + 263 && this.mouseX < x + 335 && this.mouseY <= y + 274) {
+					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
 						colour = 0xff0000;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
@@ -3637,63 +3579,100 @@ class mudclient extends GameConnection {
 							let slot = this.bankItems[this.bankSelectedItemSlot];
 							this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
 							this.clientStream.putShort(slot);
-							this.clientStream.putShort(100);
+							this.clientStream.putInt(50);
 							this.clientStream.putInt(0x87654321);
 							this.clientStream.sendPacket();
 						}
 					}
+					this.surface.drawString('50', minX, maxY, 1, colour);
 					minX += textWidth;
 					maxX += textWidth;
-
-					this.surface.drawString('100', x + 307, y + 273, 1, colour);
 				}
 
-				if (this.getInventoryCount(itemType) >= 500) {
-					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-//					if (this.mouseX >= x + 335 && this.mouseY >= y + 263 && this.mouseX < x + 368 && this.mouseY <= y + 274) {
-						colour = 0xff0000;
-						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
-							this.mouseButtonClick = 0;
-							
-							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
-							this.clientStream.putShort(slot);
-							this.clientStream.putShort(500);
-							this.clientStream.putInt(0x87654321);
-							this.clientStream.sendPacket();
-						}
+				colour = 0xffffff;
+				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
+					colour = 0xff0000;
+					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
+						this.mouseButtonClick = 0;
+						this.dialogItemInput = 2;
 					}
-					minX += textWidth;
-					maxX += textWidth;
-
-					this.surface.drawString('500', x + 337, y + 273, 1, colour);
 				}
+				this.surface.drawString('X', minX+2, maxY, 1, colour);
+				minX += textWidth;
+				maxX += textWidth;
 
-				if (this.getInventoryCount(itemType) >= 2500) {
-					colour = 0xffffff;
-
-					if (this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-//					if (this.mouseX >= x + 370 && this.mouseY >= y + 263 && this.mouseX < x + 400 && this.mouseY <= y + 274) {
-						colour = 0xff0000;
-						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
-							this.mouseButtonClick = 0;
-							
-							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
-							this.clientStream.putShort(slot);
-							this.clientStream.putShort(2500);
-							this.clientStream.putInt(0x87654321);
-							this.clientStream.sendPacket();
-						}
+				colour = 0xffffff;
+				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
+					colour = 0xff0000;
+					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
+						this.mouseButtonClick = 0;
+						
+						let slot = this.bankItems[this.bankSelectedItemSlot];
+						this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
+						this.clientStream.putShort(slot);
+						this.clientStream.putInt(this.getInventoryCount(itemType));
+						this.clientStream.putInt(0x87654321);
+						this.clientStream.sendPacket();
 					}
-					minX += textWidth;
-					maxX += textWidth;
-
-					this.surface.drawString('2500', x + 370, y + 273, 1, colour);
-		
 				}
+				this.surface.drawString('All', minX, maxY, 1, colour);
+				minX += textWidth;
+				maxX += textWidth;
+
+			}
+		}
+		if (this.dialogItemInput === 2 || this.dialogItemInput === 1) {
+			let y = 145;
+			this.surface.drawBox(106, y, 300, 70, 0);
+			this.surface.drawBoxEdge(106, y, 300, 70, 0xffffff);
+			y += 20;
+
+			let textColor = 0xFFFFFF;
+			if (this.mouseX > 236 && this.mouseX < 276 && this.mouseY > 193 && this.mouseY < 213)
+				textColor = 0xFFFF00;
+			this.surface.drawStringCenter('Cancel', 256, 208, 1, textColor);
+			if (this.mouseButtonClick !== 0 && (textColor !== 0xFFFFFF || this.mouseX < 106 || this.mouseY < 145 || this.mouseX > 406 || this.mouseY > 215 ||textColor !== 0xFFFFFF)) {
+				this.mouseButtonClick = 0;
+				this.dialogItemInput = 0;
+				return;
+			}
+
+
+			if (this.dialogItemInput === 1) {
+				this.surface.drawStringCenter('Enter amount to withdraw', 256, y, 4, 0xffffff);
+			} else if (this.dialogItemInput === 2) {
+				this.surface.drawStringCenter('Enter amount to deposit', 256, y, 4, 0xffffff);
+			}
+			y += 20;
+			this.surface.drawStringCenter(this.inputTextCurrent + '*', 256, y, 4, 0xffffff);
+
+			// This gets set by our keyboard event handler when the user presses enter 
+			if (this.inputTextFinal.length > 0) {
+				let text = this.inputTextFinal.trim();
+				this.inputTextCurrent = '';
+				this.inputTextFinal = '';
+				if (text.length <= 0) {
+					return;
+				}
+				let max = this.dialogItemInput === 1 ? this.bankItemsCount[this.bankSelectedItemSlot] : this.getInventoryCount(this.bankItems[this.bankSelectedItemSlot]);
+				let amount = Math.max(0, Math.min(max, Number(text)));
+
+				if (this.dialogItemInput === 1) {
+					let slot = this.bankItems[this.bankSelectedItemSlot];
+					this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
+					this.clientStream.putShort(slot);
+					this.clientStream.putInt(amount);
+					this.clientStream.putInt(0x12345678);
+					this.clientStream.sendPacket();
+				} else if (this.dialogItemInput === 2) {
+					let slot = this.bankItems[this.bankSelectedItemSlot];
+					this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
+					this.clientStream.putShort(slot);
+					this.clientStream.putInt(amount);
+					this.clientStream.putInt(0x87654321);
+					this.clientStream.sendPacket();
+				}
+				this.dialogItemInput = 0;
 			}
 		}
 	}
@@ -5216,8 +5195,10 @@ class mudclient extends GameConnection {
 		}
 
 		let dy = 8;
+		if (this.debug)
+			this.surface.drawStringCenter(this.mouseX + ',' + this.mouseY, 256, 15, 1, 0xffff00);
 		if (this.showFps && this.fps > 0) {
-			this.surface.drawStringCenter('Fps:' + this.fps, 465, this.gameHeight - dy, 1, 0xffff00);
+			this.surface.drawStringCenter('FPS:' + this.fps, 465, this.gameHeight - dy, 1, 0xffff00);
 			dy += 20
 		}
 
