@@ -43,7 +43,9 @@ class GameBuffer {
 	}
 
 	getUnsignedLong() {
-		return new Long(this.getUnsignedInt(), this.getUnsignedInt());
+		let high = this.getUnsignedInt();
+		let low = this.getUnsignedInt();
+		return new Long(low, high, true);
 	}
 
 	getString(len = 0) {

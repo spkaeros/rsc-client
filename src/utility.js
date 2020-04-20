@@ -28,8 +28,8 @@ class Utility {
 	}
 
 	static getUnsignedLong(buff, off) {
-//		return Long.fromInt(Utility.getUnsignedInt(buff, off) & 0xffffffff).shl(32).or(Long.fromInt(Utility.getUnsignedInt(buff, off + 4) & 0xffffffff));
-		return new Long(Utility.getUnsignedInt(buff, off) & 0xffffffff, Utility.getUnsignedInt(buff, off + 4) & 0xffffffff);
+//		return Long.fromInt(Utility.getUnsignedInt(buff, off)).shl(32).or(Long.fromInt(Utility.getUnsignedInt(buff, off + 4) & 0xffffffff));
+		return new Long(Utility.getUnsignedInt(buff, off + 4), Utility.getUnsignedInt(buff, off), true);
 	}
 
 	static recoveryToHash(answer) {

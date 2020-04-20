@@ -180,8 +180,10 @@ class Packet {
 	
 	// Reads a big-endian unsigned long integer (uint64) from the network buffer and returns it.
 	async getLong() {
+		let high = await this.getInt();
+		let low = await this.getInt();
 //		return Long.fromInt(await this.getInt()).shiftLeft(32).or(Long.fromInt(await this.getInt()));
-		return new Long(await this.getInt(), await this.getInt());
+		return new Long(low, high, true);
 	}
 	
 	// Queues up a C-string (null-terminated char array) into the current output packet buffer.
