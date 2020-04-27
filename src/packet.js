@@ -182,7 +182,6 @@ class Packet {
 	async getLong() {
 		let high = await this.getInt();
 		let low = await this.getInt();
-//		return Long.fromInt(await this.getInt()).shiftLeft(32).or(Long.fromInt(await this.getInt()));
 		return new Long(low, high, true);
 	}
 	
@@ -199,7 +198,7 @@ class Packet {
 
 	// Queues up an unsigned byte into the current output packet buffer.
 	putByte(i) {
-		this.packetData[this.packetEnd++] = i & 0xFF;
+		this.packetData[this.packetEnd++] = i;
 	}
 	
 	// Queues up a big-endian unsigned short integer (uint16) into the current output packet buffer.
@@ -223,8 +222,10 @@ class Packet {
 	// Queues up an array of unsigned bytes into the current output packet buffer.
 	// offset and len are optional, and default to offset=0, len=src.length
 	putBytes(src, offset = 0, len = src.length) {
-		for (let c of src.slice(offset, offset+len)) {
-			this.putByte(c)
+		for (let i = 0; i < len; i++) {
+			if (offset+i > src.length)
+				break;
+			this.packetData[this.packetEnd++] = src[offset+i];
 		}
 	}
 

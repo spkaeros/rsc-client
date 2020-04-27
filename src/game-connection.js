@@ -1,3 +1,4 @@
+
 const C_OPCODES = require('./opcodes/client');
 const VERSION = require('./version.json');
 const {decodeString} = require('./chat-message');
@@ -5,6 +6,7 @@ const ClientStream = require('./client-stream');
 const Color = require('./lib/graphics/color');
 const Font = require('./lib/graphics/font');
 const GameShell = require('./game-shell');
+const GameBuffer = require('./game-buffer');
 const Long = require('long');
 
 const {FontStyle} = require('./lib/graphics/fontStyle')
@@ -145,7 +147,7 @@ class GameConnection extends GameShell {
 
 		try {
 			this.username = u;
-			u = Utility.formatAndTruncate(u, 12);
+			u = Utility.formatAndTruncate(u, 20);
 			
 			this.password = p;
 			p = Utility.formatAndTruncate(p, 20);
@@ -169,36 +171,23 @@ class GameConnection extends GameShell {
 			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port, this.transportLayerSecurity), this);
 			this.clientStream.readTicksMax = 1000;
 
-			// let l = Utility.usernameToHash(u);
-			//
-			// this.clientStream.newPacket(C_OPCODES.SESSION);
-			// this.clientStream.putByte(l.shiftRight(16).and(31).toInt());
-			// this.clientStream.flushPacket();
-			//
-			// let sessId = await this.clientStream.getLong();
-			// this.sessionID = sessId;
-			//
-			// if (sessId.equals(0)) {
-			//     this.showLoginScreenStatus('Login server offline.', 'Please try again in a few mins');
-			//     return;
-			// }
-			//
-			// console.log('Verb: Session id: ' + sessId);
-			// let rand = new Uint32Array(4); crypto.getRandomValues(rand);
-			// this.clientStream.putByte(0); // limit30
-			//
-			// this.clientStream.putByte(10);
-			// this.clientStream.putInt(randArr[0]);
-			// this.clientStream.putInt(randArr[1]);
-			// this.clientStream.putInt(randArr[2]);
-			// this.clientStream.putInt(randArr[3]);
-			// this.clientStream.putInt(0); // uuid
+			let randArr = new Uint32Array(4);
+			crypto.getRandomValues(randArr);
+			let rsaBlock = new GameBuffer(new Uint8Array(256));
+			rsaBlock.putInt(randArr[0]);
+			rsaBlock.putInt(randArr[1]);
+			rsaBlock.putInt(randArr[2]);
+			rsaBlock.putInt(randArr[3]);
+			rsaBlock.putCredentials(u, p);
+			
+			// TODO: XTEA block over the username, placed directly after the RSA block I believe
 
 			this.clientStream.newPacket(C_OPCODES.LOGIN);
 			this.clientStream.putBool(reconnecting);
 			this.clientStream.putShort(VERSION.CLIENT);
-			this.clientStream.putLong(Utility.encodeBase37(u));
-			this.clientStream.putString(p);
+			let rsaData = rsaBlock.getCryptoBuffer().value;
+			this.clientStream.putByte(rsaData.length);
+			this.clientStream.putBytes(rsaData);
 			this.clientStream.flushPacket();
 
 			let resp = await this.clientStream.readStream();
