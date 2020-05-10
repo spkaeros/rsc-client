@@ -1872,7 +1872,7 @@ class mudclient extends GameConnection {
 			let character = this.players[i];
 
 			if (!character) {
-				console.log('null character at ', i, this.playerCount);
+				console.log('null player at ', i, this.playerCount);
 				return;
 			}
 
@@ -1884,63 +1884,8 @@ class mudclient extends GameConnection {
 				character.combatTimer--;
 			if (character.projectileRange > 0)
 				character.projectileRange--;
-
-			let curStep = (character.waypointCurrent + 1) % 10;
-			if (character.movingStep !== curStep) {
-				let pathIdx = character.movingStep;
-				let waypointDelta = curStep - pathIdx;
-				if (waypointDelta < 1)
-					waypointDelta += 10;
-				let stepSize = Math.max(1, waypointDelta-1) * 4;
-				let newDir = -1;
-
-				if (Math.abs(character.waypointsX[pathIdx] - character.currentX) > this.tileSize * 3 ||
-						Math.abs(character.waypointsY[pathIdx] - character.currentY) > this.tileSize * 3 ||
-						waypointDelta > 8) {
-					// server suddenly jumped them far away
-					// Would appear weird to run to match coords of server, so just teleport.
-					character.currentX = character.waypointsX[pathIdx];
-					character.currentY = character.waypointsY[pathIdx];
-				} else {
-					let deltaX = character.currentX - character.waypointsX[pathIdx];
-					let deltaY = character.currentY - character.waypointsY[pathIdx];
-					if (deltaX !== 0) {
-						character.stepCount++;
-						if (deltaX > 0) {
-							newDir = 6; // e
-							character.currentX -= stepSize;
-						} else {
-							newDir = 2; // w
-							character.currentX += stepSize;
-						}
-						// within 1 step of our target, we can safely place mob at target
-						if (Math.abs(character.currentX - character.waypointsX[pathIdx]) < stepSize)
-							character.currentX = character.waypointsX[pathIdx];
-					}
-					if (deltaY !== 0) {
-						character.stepCount++;
-						if (deltaY < 0) {
-							character.currentY += stepSize;
-							newDir = (newDir === -1) ? 4 : (newDir === 2) ? 3 : 5; // ne
-						} else {
-							character.currentY -= stepSize;
-							newDir = (newDir === -1) ? 0 : (newDir === 2) ? 1 : 7; // sw
-						}
-
-						// within 1 step of our target, we can safely place mob at target
-						if (Math.abs(character.currentY - character.waypointsY[pathIdx]) < stepSize)
-							character.currentY = character.waypointsY[pathIdx];
-					}
-				}
-
-				if (newDir !== -1)
-					character.animationCurrent = newDir;
-
-				if (character.currentX === character.waypointsX[pathIdx] && character.currentY === character.waypointsY[pathIdx])
-					character.movingStep = (pathIdx + 1) % 10;
-			} else {
-				character.animationCurrent = character.animationNext;
-			}
+				
+			character.traversePath();
 		}
 
 		for (let j = 0; j < this.npcCount; j++) {
@@ -1957,88 +1902,10 @@ class mudclient extends GameConnection {
 				character_1.bubbleTimeout--;
 			if (character_1.combatTimer > 0)
 				character_1.combatTimer--;
-				
-			let j1 = (character_1.waypointCurrent + 1) % 10;
-
-			if (character_1.movingStep !== j1) {
-				let i3 = -1;
-				let k4 = character_1.movingStep;
-				let k5;
-
-				if (k4 < j1) {
-					k5 = j1 - k4;
-				} else {
-					k5 = (10 + j1) - k4;
-				}
-
-				let l5 = 4;
-
-				if (k5 > 2) {
-					l5 = (k5 - 1) * 4;
-				}
-
-				if (character_1.waypointsX[k4] - character_1.currentX > this.tileSize * 3 || character_1.waypointsY[k4] - character_1.currentY > this.tileSize * 3 || character_1.waypointsX[k4] - character_1.currentX < -this.tileSize * 3 || character_1.waypointsY[k4] - character_1.currentY < -this.tileSize * 3 || k5 > 8) {
-					character_1.currentX = character_1.waypointsX[k4];
-					character_1.currentY = character_1.waypointsY[k4];
-				} else {
-					if (character_1.currentX < character_1.waypointsX[k4]) {
-						character_1.currentX += l5;
-						character_1.stepCount++;
-						i3 = 2;
-					} else if (character_1.currentX > character_1.waypointsX[k4]) {
-						character_1.currentX -= l5;
-						character_1.stepCount++;
-						i3 = 6;
-					}
-
-					if (character_1.currentX - character_1.waypointsX[k4] < l5 && character_1.currentX - character_1.waypointsX[k4] > -l5) {
-						character_1.currentX = character_1.waypointsX[k4];
-					}
-
-					if (character_1.currentY < character_1.waypointsY[k4]) {
-						character_1.currentY += l5;
-						character_1.stepCount++;
-
-						if (i3 === -1) {
-							i3 = 4;
-						} else if (i3 === 2) {
-							i3 = 3;
-						} else {
-							i3 = 5;
-						}
-					} else if (character_1.currentY > character_1.waypointsY[k4]) {
-						character_1.currentY -= l5;
-						character_1.stepCount++;
-
-						if (i3 === -1) {
-							i3 = 0;
-						} else if (i3 === 2) {
-							i3 = 1;
-						} else {
-							i3 = 7;
-						}
-					}
-
-					if (character_1.currentY - character_1.waypointsY[k4] < l5 && character_1.currentY - character_1.waypointsY[k4] > -l5) {
-						character_1.currentY = character_1.waypointsY[k4];
-					}
-				}
-
-				if (i3 !== -1) {
-					character_1.animationCurrent = i3;
-				}
-
-				if (character_1.currentX === character_1.waypointsX[k4] && character_1.currentY === character_1.waypointsY[k4]) {
-					character_1.movingStep = (k4 + 1) % 10;
-				}
-			} else {
-				character_1.animationCurrent = character_1.animationNext;
-
-				if (character_1.npcId === 43) {
-					// giant bats have to flap at a frequency 2x humans frequency
-					character_1.stepCount++;
-				}
-			}
+			character_1.traversePath();
+			// giant bats have to flap 2x for every 1 human step
+			if (character_1.npcId === 43)
+				character_1.stepCount++;
 		}
 
 		if (this.showUiTab !== 2) {
@@ -2993,7 +2860,7 @@ class mudclient extends GameConnection {
 		}
 
 		for (let j = 0; j < this.optionMenuCount; j++) {
-			let k = 0xFFFF;
+			let k = 0x00FFFF;
 
 			if (this.mouseX < this.surface.textWidth(this.optionMenuEntry[j], 1) && this.mouseY > j * 12 && this.mouseY < 12 + j * 12) {
 				k = 0xFF0000;
@@ -3165,18 +3032,18 @@ class mudclient extends GameConnection {
 		}
 
 		let character = this.npcsServer[serverIndex];
-		let foundNpc = false;
+		let exists = false;
 
 		for (let i = 0; i < this.npcCacheCount; i++) {
 			if (this.npcsCache[i].serverIndex !== serverIndex) {
 				continue;
 			}
 
-			foundNpc = true;
+			exists = true;
 			break;
 		}
 
-		if (foundNpc) {
+		if (exists) {
 			character.npcId = type;
 			character.animationNext = sprite;
 			let waypointIdx = character.waypointCurrent;
@@ -3378,9 +3245,11 @@ class mudclient extends GameConnection {
 		if (itemType !== -1) {
 			let itemCount = this.bankItemsCount[this.bankSelectedItemSlot];
 
+/*
 			if (GameData.itemStackable[itemType] === 1 && itemCount > 1) {
 				itemCount = 1;
 			}
+*/
 
 			if (itemCount > 0) {
 				this.surface.drawString('Withdraw ' + GameData.itemName[itemType], x + 2, y + 248, 1, 0xffffff);
@@ -4045,6 +3914,7 @@ class mudclient extends GameConnection {
 					this.world.removeObject2(objx, objy, objid);
 
 					if (objid === 74) {
+						// spin windmill
 						gameModel.translate(0, -480, 0);
 					}
 				}

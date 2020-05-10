@@ -114,7 +114,7 @@ class Packet {
 		// separate the two halves of the length represented as a short
 		let littleEnd = length & 0xFF;
 		// if length is >= 160 or 0b10100000, we put an indicator
-		let bigEnd = ((160 + length) >> 8) & 0xFF;
+		let bigEnd = (160 + (length >> 8)) & 0xFF;
 
 		// Jagex `smart` length encoding: <= 160 saves us using one byte out of the payload
 		// Why 160?  seems so arbitrary

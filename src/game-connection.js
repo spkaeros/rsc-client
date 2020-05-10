@@ -173,7 +173,7 @@ class GameConnection extends GameShell {
 
 			let randArr = new Uint32Array(4);
 			crypto.getRandomValues(randArr);
-			let rsaBlock = new GameBuffer(new Uint8Array(256));
+			let rsaBlock = new GameBuffer(new Uint8Array(1024));
 			rsaBlock.putInt(randArr[0]);
 			rsaBlock.putInt(randArr[1]);
 			rsaBlock.putInt(randArr[2]);
@@ -186,7 +186,7 @@ class GameConnection extends GameShell {
 			this.clientStream.putBool(reconnecting);
 			this.clientStream.putShort(VERSION.CLIENT);
 			let rsaData = rsaBlock.getCryptoBuffer().value;
-			this.clientStream.putByte(rsaData.length);
+			this.clientStream.putShort(rsaData.length);
 			this.clientStream.putBytes(rsaData);
 			this.clientStream.flushPacket();
 
