@@ -37,6 +37,7 @@
     "tinyify": "^2.5.2"
   },
   "dependencies": {
+    "big-integer": "^1.6.48",
     "canvas": "^2.6.1"
   }
 }
