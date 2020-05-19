@@ -1,4 +1,3 @@
-
 const C_OPCODES = require('./opcodes/client');
 const VERSION = require('./version.json');
 const {decodeString} = require('./chat-message');
@@ -66,7 +65,7 @@ class GameConnection extends GameShell {
 			}
 			
 			this.showLoginScreenStatus('Please wait...', 'creating new account...');
-			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port, this.transportLayerSecurity), this);
+			this.clientStream = new ClientStream(await this.createSocket((window.location.protocol == "https:" ? "wss" : "ws") + "://" + window.location.hostname, this.port), this);
 			this.clientStream.readTicksMax = 1000;
 			
 			this.clientStream.newPacket(C_OPCODES.REGISTER);
@@ -168,7 +167,7 @@ class GameConnection extends GameShell {
 				this.clientStream.closeStream();
 			}
 
-			this.clientStream = new ClientStream(await this.createSocket(this.server, this.port, this.transportLayerSecurity), this);
+			this.clientStream = new ClientStream(await this.createSocket((window.location.protocol == "https:" ? "wss" : "ws") + "://" + window.location.hostname, this.port), this);
 			this.clientStream.readTicksMax = 1000;
 
 			let randArr = new Uint32Array(4);
@@ -323,17 +322,16 @@ class GameConnection extends GameShell {
 	drawTextBox(s, s1) {
 		let g = this.getGraphics();
 		let font = Font.HELVETICA.withConfig(FontStyle.BOLD, 15);
-		let w = this.width;
-		let h = this.height;
+		let w = this.width2;
+		let h = this.height2;
 		g.setColor(Color.black);
-		g.fillRect((this.width >> 1 | 0) - 140, (this.height >> 1 | 0) - 25, 280, 50);
+		g.fillRect((w/2|0) - 140, (h/2|0) - 25, 280, 50);
 		
 		g.setColor(Color.white);
-		g.drawRect((this.width >> 1 | 0) - 140, (this.height >> 1 | 0) - 25, 280, 50);
+		g.drawRect((w/2|0) - 140, (h/2|0) - 25, 280, 50);
 		
-		this.drawString(g, s, font, this.width >> 1 | 0, ((h / 2) | 0) - 10);
-		
-		this.drawString(g, s1, font, this.width >> 1 | 0, ((h / 2) | 0) + 10);
+		this.drawString(g, s, font, w/2|0, (h/2|0) - 10);
+		this.drawString(g, s1, font, w/2|0, (h/2|0) + 10);
 	}
 	
 	async checkConnection() {
@@ -350,7 +348,7 @@ class GameConnection extends GameShell {
 		}
 		
 		try {
-			this.clientStream.writePacket(20);
+			this.clientStream.tickWriter();
 		} catch (e) {
 			await this.lostConnection();
 			return;

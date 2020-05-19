@@ -1,7 +1,8 @@
 const Long = require('long');
+const Timer = require('./timer');
 
 function toCharArray(s) {
-	let a = new Uint16Array(s.length);
+	let a = new Uint8Array(s.length);
 	for (let i = 0; i < s.length; i += 1) {
 		a[i] = s.charCodeAt(i);
 	}
@@ -13,19 +14,17 @@ class Packet {
 		this.readTicksCount = 0;
 		this.readTicksMax = 0;
 		this.packetStart = 0;
-		this.packetData = null;
-		this.bufferSize = 0;
-		this.writeTicksCount = 0;
-		this.writeTicksMax = 0;
-		
-		this.packetEnd = 3;
 		// 24575 is maximum encodable byte length with the Jagex protocol (+3 for header/opcode)
 		// the limitation is in the header encoding.  Length is encoded conditionally,
 		// and one branch subtracts 160 from the first byte (big-endian), before the shift resulting in
 		// a range of up to 24320, add 255 to this and you get 24575, our maximum encodable smart length.
 		this.packetMaxLength = 24578;
+		this.packetData = new Int8Array(this.packetMaxLength);
+		this.bufferSize = 0;
+		this.packetEnd = 3;
 		this.socketException = false;
 		this.socketExceptionMessage = '';
+		this.writer = new Timer(20);
 	}
 	
 	async readBytes(len, buff) {
@@ -45,14 +44,13 @@ class Packet {
 			// otherwise the 1st byte has the frame size and second byte contains the last byte of the frame
 			if (this.bufferSize === 0 && this.availableStream() >= 2) {
 				this.bufferSize = await this.readStream();
-				if (this.bufferSize >= 0xA0) {
-					this.bufferSize = (this.bufferSize - 0xA0) << 8 | await this.readStream();
-				}
+				if (this.bufferSize >= 160)
+					this.bufferSize = (this.bufferSize - 160) << 8 | await this.readStream();
 			}
 			// frame
 			if (this.bufferSize > 0 && this.availableStream() >= this.bufferSize) {
-				let frameBufferSize = this.bufferSize;
-				if (frameBufferSize > 0) {
+				let size = this.bufferSize;
+				if (size > 0) {
 					if (this.bufferSize < 0xA0) {
 						this.bufferSize -= 1;
 						buff[this.bufferSize] = await this.readStream() & 0xFF
@@ -61,7 +59,7 @@ class Packet {
 				}
 				
 				this.bufferSize = this.readTicksCount = 0;
-				return frameBufferSize;
+				return size;
 			}
 		} catch (e) {
 			this.socketException = true;
@@ -76,31 +74,37 @@ class Packet {
 	}
 
 	resetOutgoingBuffer() {
-		// Subtract what we've flushed to stream from what we have pending encoding
+		// Subtract the flushed payload bytes from the payload size
 		this.packetEnd -= this.packetStart;
-		// start of array
+		// reset header caret
 		this.packetStart = 0;
 		// header is 2 bytes, opcode is 1 bytes, total of 3 for an initial end caret position
 //		this.packetEnd = 3;
 	}
 
-	// TODO: Rename writePacket to something flush
-	// Flushes the output buffer once in every flushRate frames
-	writePacket(flushRate) {
+	// Increments the timer 
+	tickWriter() {
+		// Check to see if something went horribly wrong with our socket
 		if (this.socketException) {
 			this.socketException = false;
 			this.resetOutgoingBuffer();
 
-			throw Error(this.socketExceptionMessage);
+			throw new Error(this.socketExceptionMessage);
+			return;
 		}
-		this.writeTicksMax = flushRate;
-		if (++this.writeTicksCount >= this.writeTicksMax && this.packetStart > 0) {
-			// This will only send up to the last formatted packet-
-			// I foresee possible problems losing mid-construct packets
-			this.writeStreamBytes(this.packetData, 0, this.packetStart);
-			this.writeTicksCount = 0;
-			this.resetOutgoingBuffer();
+		this.writer.tick(() => {
+			this.flushWriter();
+		});
+	}
+
+	flushWriter() {
+		if (this.packetStart <= 0) {
+			// No data to flush, we need to try again next tick
+			this.writer.tickCount = 19;
+			return;
 		}
+		this.writeStreamBytes(this.packetData, 0, this.packetStart);
+		this.resetOutgoingBuffer();
 	}
 
 	// TODO:Rename sendPacket to something like encodePacket or just encode
@@ -111,20 +115,17 @@ class Packet {
 		// length is just the end carets position minus the start carets position,
 		// minus the headers length (2 bytes)
 		let length = this.packetEnd - this.packetStart - 2;
-		// separate the two halves of the length represented as a short
-		let littleEnd = length & 0xFF;
-		// if length is >= 160 or 0b10100000, we put an indicator
-		let bigEnd = (160 + (length >> 8)) & 0xFF;
 
 		// Jagex `smart` length encoding: <= 160 saves us using one byte out of the payload
 		// Why 160?  seems so arbitrary
 		if (length >= 160) {
-			this.packetData[this.packetStart] = bigEnd;
-			this.packetData[this.packetStart + 1] = littleEnd;
+			// if length is >= 160 or 0b10100000, we encode it as a 2-byte integer
+			this.packetData[this.packetStart] = (160 + (length >> 8)) & 0xFF;
+			this.packetData[this.packetStart + 1] = length & 0xFF;
 		} else {
-			this.packetData[this.packetStart] = littleEnd;
+			this.packetData[this.packetStart] = length & 0xFF;
 			this.packetEnd--;
-			// signedness of payload byte is not relevant here so do no masking 
+			// the procedures that wrote this data decide if it gets masked
 			this.packetData[this.packetStart + 1] = this.packetData[this.packetEnd];
 		}
 		
@@ -141,20 +142,19 @@ class Packet {
 	}
 	
 	newPacket(i) {
-		if (this.packetStart > (((this.packetMaxLength * 4) / 5) | 0)) {
+		if (this.packetStart > (this.packetMaxLength * 4 / 5) | 0) {
 			try {
 				// TODO: Add checks to ensure no flushes mid-packet construction?
 				// In practice, client uses one thread this should not happen right?
-				this.writePacket(0);
+				this.tickWriter();
 			} catch (e) {
 				this.socketExceptionMessage = e.message;
 				this.socketException = true;
 			}
 		}
 		
-		if (!this.packetData) {
+		if (!this.packetData)
 			this.packetData = new Int8Array(this.packetMaxLength);
-		}
 		
 		this.packetData[this.packetStart + 2] = i & 0xFF;
 		// set end caret to the buffer position directly following header bytes and opcode
@@ -222,17 +222,17 @@ class Packet {
 	// Queues up an array of unsigned bytes into the current output packet buffer.
 	// offset and len are optional, and default to offset=0, len=src.length
 	putBytes(src, offset = 0, len = src.length) {
-		for (let i = 0; i < len; i++) {
-			if (offset+i > src.length)
+		for (let i = offset; i < offset+len; i++) {
+			if (i > src.length)
 				break;
-			this.packetData[this.packetEnd++] = src[offset+i];
+			this.packetData[this.packetEnd++] = src[i];
 		}
 	}
 
 	// Flushes the outgoing packet buffer contents to the underlying socket connection.
 	flushPacket() {
 		this.sendPacket();
-		this.writePacket(0);
+		this.flushWriter();
 	}
 }
 
