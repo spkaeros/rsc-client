@@ -15,27 +15,29 @@ class Utility {
 		return new FileDownloadStream(s);
 	}
 
+	static getBoolean(b) {
+		return Utility.getUnsignedByte(b) === 0;
+	}
 	static getUnsignedByte(byte0) {
-		return byte0 & 0xff;
+		return byte0 & 0xFF;
 	}
 
-	static getUnsignedShort(abyte0, i) {
-		return (abyte0[i] & 0xFF) << 8 | abyte0[i + 1] & 0xFF;
+	static getUnsignedShort(data, off) {
+		return (Utility.getUnsignedByte(data[off]) << 8 | Utility.getUnsignedByte(data[off + 1]));
 	}
 
-	static getUnsignedInt(abyte0, i) {
-		return (abyte0[i] & 0xff) << 24 | (abyte0[i + 1] & 0xff) << 16 | (abyte0[i + 2] & 0xff) << 8 | abyte0[i + 3] & 0xff;
+	static getUnsignedInt(data, off) {
+		return (Utility.getUnsignedShort(data, off) << 16 | Utility.getUnsignedShort(data, off+2));
 	}
 
-	static getUnsignedLong(buff, off) {
-//		return Long.fromInt(Utility.getUnsignedInt(buff, off)).shl(32).or(Long.fromInt(Utility.getUnsignedInt(buff, off + 4) & 0xffffffff));
-		return new Long(Utility.getUnsignedInt(buff, off + 4), Utility.getUnsignedInt(buff, off), true);
+	static getUnsignedLong(data, off) {
+		return new Long(Utility.getUnsignedInt(data, off + 4), Utility.getUnsignedInt(data, off), true);
 	}
 
 	static recoveryToHash(answer) {
 		answer = answer.toLowerCase().trim();
 
-		let hash = Long.fromInt(0);
+		let hash = new Long(0);
 		let index = 0;
 		for (let i = 0; i < answer.length; i++) {
 			let rune = answer.charCodeAt(i);
@@ -50,35 +52,39 @@ class Utility {
 	}
 
 
-	static getSignedShort(abyte0, i) {
-		let j = Utility.getUnsignedByte(abyte0[i]) << 8 | Utility.getUnsignedByte(abyte0[i + 1]) | 0;
-		if (j > 0x7FFF)
-			j -= 0x10000;
+	static getSignedShort(data, off) {
+		let j = Utility.getUnsignedShort(data, off);
+		// mimic 16-bit signed integer behavior
+		if (j >= 0x8000)
+			return j-0x10000;
 
 		return j;
 	}
 
-	static getSmart08_32(abyte0, i) {
-		if ((abyte0[i] & 0xff) < 0x80)
-			return abyte0[i];
+	static getSmart08_32(data, off) {
+		let one = Utility.getUnsignedByte(data[off]);
+		// Check if we need to read the rest of the data
+		if (one < 0x80)
+			return one;
 
-		return (abyte0[i] & 0xff) - 0x80 << 24 | (abyte0[i + 1] & 0xff) << 16 | (abyte0[i + 2] & 0xff) << 8 | abyte0[i + 3] & 0xff;
+		one -= 0x80;
+		return one << 24 | Utility.getUnsignedByte(data[off + 1]) << 16 | Utility.getUnsignedByte(data[off + 2]) << 8 | Utility.getUnsignedByte(data[off + 3]);
 	}
 
-	static getBitMask(buff, off, len) {
+	static getBitMask(data, off, len) {
 		let k = off >> 3;
 		let l = 8 - (off & 7);
 		let i1 = 0;
 
 		for (; len > l; l = 8) {
-			i1 += (buff[k++] & bitmasks[l]) << len - l;
+			i1 += (data[k++] & bitmasks[l]) << len - l;
 			len -= l;
 		}
 
 		if (len === l)
-			i1 += buff[k] & bitmasks[l];
+			i1 += data[k] & bitmasks[l];
 		else
-			i1 += buff[k] >> l - len & bitmasks[len];
+			i1 += data[k] >> l - len & bitmasks[len];
 
 		return i1;
 	}
@@ -97,7 +103,7 @@ class Utility {
 	}
 
 	static uint32ToIpAddress(i) {
-		return (i >> 24 & 0xff) + '.' + (i >> 16 & 0xff) + '.' + (i >> 8 & 0xff) + '.' + (i & 0xff);
+		return (i >> 24 & 0xFF) + '.' + (i >> 16 & 0xFF) + '.' + (i >> 8 & 0xFF) + '.' + (i & 0xFF);
 	}
 
 	static encodeBase37(s) {
@@ -114,7 +120,7 @@ class Utility {
 		}
 		username = username.trim();
 
-		let hash = Long.fromInt(0);
+		let hash = new Long(0);
 		for (let i = 0; i < username.length; i++) {
 			let rune = username.charCodeAt(i);
 			hash = hash.mul(37);
@@ -136,7 +142,18 @@ class Utility {
 		while (!hash.eq(0)) {
 			let i = hash.mod(37).toInt();
 			hash = hash.div(37);
+			let afterSpace = hash.mod(37).equals(0);
+			let next = ' ';
 
+			if (i > 0) {
+				if (i < 27)
+					next = String.fromCharCode((i + (afterSpace ? C_BIG_A : C_A)) - 1);
+				else
+					next = String.fromCharCode((i + C_0) - 27);
+			}
+			username = next + username;
+
+/*
 			if (i === 0) {
 				username = ' ' + username;
 			} else if (i < 27) {
@@ -146,6 +163,7 @@ class Utility {
 					username = String.fromCharCode((i + 97) - 1) + username;
 			} else
 				username = String.fromCharCode((i + 48) - 27) + username;
+*/
 		}
 
 		return username;
@@ -201,7 +219,7 @@ class Utility {
 	}
 
 	static unpackData(filename, i, archiveData, fileData) {
-		let numEntries = (archiveData[0] & 0xff) << 8 | archiveData[1] & 0xff;
+		let numEntries = (archiveData[0] & 0xFF) << 8 | archiveData[1] & 0xFF;
 		let wantedHash = 0;
 		filename = filename.toUpperCase();
 		for (let l = 0; l < filename.length; l++)
@@ -235,13 +253,9 @@ class Utility {
 	}
 }
 
-Utility.aBoolean546 = false;
-const bitmasks = new Int32Array([
-	0x0, 0x1, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff, 0x1ff,
-	0x3ff, 0x7ff, 0xfff, 0x1fff, 0x3fff, 0x7fff, 0xffff, 0x1ffff, 0x3ffff, 0x7ffff,
-	0xfffff, 0x1fffff, 0x3fffff, 0x7fffff, 0xffffff, 0x1ffffff, 0x3ffffff, 0x7ffffff, 0xfffffff, 0x1fffffff,
-	0x3fffffff, 0x7fffffff, -1
-]);
+const bitmasks = new Int32Array(64);
+for (let i in bitmasks)
+	bitmasks[i] = (1<<i)-1;
 
 class WelcomeState extends Enum {}
 WelcomeState.WELCOME = new WelcomeState('Welcome view');

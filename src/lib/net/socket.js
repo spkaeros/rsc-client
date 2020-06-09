@@ -1,8 +1,7 @@
 class Socket {
-    constructor(host, port, transportLayerSecurity = true) {
+    constructor(host, port) {
         this.host = host;
         this.port = port;
-        this.protocol = transportLayerSecurity ? 'wss' : 'ws';
 
         this.client = null;
         this.connected = false;
@@ -21,7 +20,7 @@ class Socket {
     
     connect() {
         return new Promise((resolve, reject) => {
-            this.client = new WebSocket(`${this.protocol}://${this.host}:${this.port}`, 'binary');
+            this.client = new WebSocket(`${this.host}:${this.port}`, 'binary');
             this.client.binaryType = 'arraybuffer';
             
             const onError = err => {

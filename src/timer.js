@@ -14,7 +14,11 @@ class Timer {
 
 	async tick(callback) {
 		if (++this.tickCount >= this.tickThreshold) {
-			await callback();
+			try {
+				await callback();
+			} catch(exception) {
+				throw exception;
+			}
 			this.tickCount = 0;
 		}
 	}

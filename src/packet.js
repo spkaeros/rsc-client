@@ -92,6 +92,7 @@ class Packet {
 			throw new Error(this.socketExceptionMessage);
 			return;
 		}
+		// TODO: Can this be done by simply passing in the method directly?
 		this.writer.tick(() => {
 			this.flushWriter();
 		});

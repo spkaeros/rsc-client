@@ -159,7 +159,7 @@ class GameShell {
                 e.preventDefault();
                 return;
             }
-			if (this.dialogItemInput === 0 && this.showDialogSocialInput === 0 && this.showDialogReportAbuseStep === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
+			if (this.dialogItemInput === 0 && this.contactsInputCtx === 0 && this.reportAbuseState === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
                 if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     if (this.lastLogIdx >= this.lastLog.length - 1) {
@@ -188,11 +188,11 @@ class GameShell {
         switch (e.which) {
         case 27:
 			this.drawWelcomeNotification = false;
-			this.drawBankPanel = false;
-			this.drawShopPanel = false;
-			this.drawTradePanel = false;
-			this.drawDuelPanel = false;
-			this.showDialogSocialInput = 0;
+			this.bankVisible = false;
+			this.shopVisible = false;
+			this.tradeConfigVisible = false;
+			this.duelConfigVisible = false;
+			this.contactsInputCtx = 0;
 			this.dialogItemInput = 0;
 			this.abuseReportWindow = 0;
 			this.contactsInputFormIndex = 0;
