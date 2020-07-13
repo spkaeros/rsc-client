@@ -5014,7 +5014,7 @@ export default class mudclient extends GameConnection {
 		let dy = 8;
 		if (this.debug) {
 			this.surface.drawStringCenter(`Mouse:${this.mouseX},${this.mouseY}`, 256, 15, 1, 0xffff00);
-			this.surface.drawStringCenter(`Player:${this.localRegionX + this.localPlayer.currentX},${this.localRegionY + this.localPlayer.currentY}`, 256, 30, 1, 0xffff00);
+			this.surface.drawStringCenter(`Player:${this.localPlayer.currentX + this.regionX},${this.localPlayer.currentY + this.regionY}`, 256, 30, 1, 0xffff00);
 		}
 		if (this.showFps && this.fps > 0) {
 			this.surface.drawStringCenter('FPS:' + this.fps, 465, this.gameHeight - dy, 1, 0xffff00);
@@ -5232,18 +5232,20 @@ label0:
 		}
 
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceAccept)) {
-			let p = new Packet(C_OPCODES.APPEARANCE);
-			p.startAccess();
-			p.putByte(this.appearanceHeadGender);
-			p.putByte(this.appearanceHeadType);
-			p.putByte(this.appearanceBodyGender);
-			p.putByte(this.appearance2Colour);
-			p.putByte(this.appearanceHairColour);
-			p.putByte(this.appearanceTopColour);
-			p.putByte(this.appearanceBottomColour);
-			p.putByte(this.appearanceSkinColour);
-			p.stopAccess();
-			this.clientStream.add(p);
+			// let p = new Packet(C_OPCODES.APPEARANCE);
+			// p.startAccess();
+			// p.putByte(this.appearanceHeadGender);
+			// p.putByte(this.appearanceHeadType);
+			// p.putByte(this.appearanceBodyGender);
+			// p.putByte(this.appearance2Colour);
+			// p.putByte(this.appearanceHairColour);
+			// p.putByte(this.appearanceTopColour);
+			// p.putByte(this.appearanceBottomColour);
+			// p.putByte(this.appearanceSkinColour);
+			// p.stopAccess();
+			// this.clientStream.add(p);
+			this.clientStream.send(Ops.CHANGE_APPEARANCE(this.appearanceHeadGender, this.appearanceHeadType, this.appearanceBodyGender,
+					this.appearance2Colour, this.appearanceHairColour, this.appearanceTopColour, this.appearanceBottomColour, this.appearanceSkinColour));
 			this.surface.blackScreen();
 			this.showAppearanceChange = false;
 		}
@@ -5274,7 +5276,7 @@ label0:
 			return;
 		}
 
-		if (this.runtimeException) {
+		if (this.initException) {
 			let g1 = this.getGraphics();
 
 			g1.setColor(Color.BLACK);
@@ -5290,38 +5292,41 @@ label0:
 			return;
 		}
 
-		if (this.runtimeException) {
-			this.clearResources();
-			let g1 = this.getGraphics();
-
-			g1.setColor(Color.BLACK);
-			g1.fillRect(0, 0, this.gameWidth, this.gameHeight);
-
-			g1.setFont(Font.HELVETICA.bold(20));
-			g1.setColor(Color.WHITE);
-			g1.drawString('Error - out of memory!', 50, 50);
-			g1.drawString('Close ALL unnecessary programs', 50, 100);
-			g1.drawString('and windows before loading the game', 50, 150);
-			g1.drawString('RuneScape needs about 48meg of spare RAM', 50, 200);
-
-			this.setTargetFps(1);
-			return;
-		}
+		// if (this.runtimeException) {
+			// this.clearResources();
+			// let g1 = this.getGraphics();
+// 
+			// g1.setColor(Color.BLACK);
+			// g1.fillRect(0, 0, this.gameWidth, this.gameHeight);
+// 
+			// g1.setFont(Font.HELVETICA.bold(20));
+			// g1.setColor(Color.WHITE);
+			// g1.drawString('Error - out of memory!', 50, 50);
+			// g1.drawString('Close ALL unnecessary programs', 50, 100);
+			// g1.drawString('and windows before loading the game', 50, 150);
+			// g1.drawString('RuneScape needs about 48meg of spare RAM', 50, 200);
+// 
+			// this.setTargetFps(1);
+			// return;
+		// }
 
 		try {
-			if (this.gameState === GameStates.LOGIN) {
+			switch (this.gameState) {
+			case GameStates.LOGIN:
 				this.surface.worldVisible = false;
 				this.drawLoginScreens();
-			}
-
-			if (this.gameState === GameStates.WORLD) {
+				break;
+			case GameStates.WORLD:
 				this.surface.worldVisible = true;
 				this.drawGame();
+				break;
+			default:
+				return;
 			}
 		} catch (e) {
+			this.runtimeException = e;
 			this.clearResources();
 			console.error(e);
-			this.runtimeException = e;
 		}
 	}
 
@@ -5333,7 +5338,7 @@ label0:
 			this.audioPlayer.stopPlayer();
 	}
 
-	drawDuelConfirmationPanel() {
+	renderConfirmDuel() {
 		let dialogX = 22;
 		let dialogY = 36;
 
@@ -5403,25 +5408,16 @@ label0:
 			this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, 0xffff00);
 		}
 
-		if (this.mouseButtonClick === 1) {
-			if (this.mouseX < dialogX || this.mouseY < dialogY || this.mouseX > dialogX + 468 || this.mouseY > dialogY + 262) {
-				this.duelConfirmVisible = false;
-				this.clientStream.queue(Ops.DECLINE_TRADE);
-				// this.clientStream.newPacket(C_OPCODES.TRADE_DECLINE);
-				// this.clientStream.sendPacket();
-			}
-
+		if (this.isClicking()) {
 			if (this.mouseX >= (dialogX + 118) - 35 && this.mouseX <= dialogX + 118 + 70 && this.mouseY >= dialogY + 238 && this.mouseY <= dialogY + 238 + 21) {
 				this.duelAccepted = true;
-				this.clientStream.newPacket(C_OPCODES.DUEL_CONFIRM_ACCEPT);
-				this.clientStream.sendPacket();
+				this.clientStream.queue(Ops.ACCEPT_DUEL_TWO)
 			}
 
-			if (this.mouseX >= (dialogX + 352) - 35 && this.mouseX <= dialogX + 353 + 70 && this.mouseY >= dialogY + 238 && this.mouseY <= dialogY + 238 + 21) {
+			if ((this.mouseX >= (dialogX + 352) - 35 && this.mouseX <= dialogX + 353 + 70 && this.mouseY >= dialogY + 238 && this.mouseY <= dialogY + 238 + 21) ||
+					(this.mouseX < dialogX || this.mouseY < dialogY || this.mouseX > dialogX + 468 || this.mouseY > dialogY + 262)) {
 				this.duelConfirmVisible = false;
 				this.clientStream.queue(Ops.DECLINE_DUEL);
-				// this.clientStream.newPacket(C_OPCODES.DUEL_DECLINE);
-				// this.clientStream.sendPacket();
 			}
 
 			this.mouseButtonClick = 0;
@@ -5458,7 +5454,7 @@ label0:
 		let abyte0 = await this.readDataFile('models' + VERSION.MODELS + '.jag', '3d models', 60);
 
 		if (!abyte0) {
-			this.runtimeException = new GameException("Error loading 3d models!\n\n" + e.message, true);
+			this.initException = new GameException("Error loading 3d models!\n\n" + e.message, true);
 			return;
 		}
 
@@ -5522,19 +5518,19 @@ label0:
 		i += 18;
 		this.surface.drawStringCenter('Name: ' + this.inputTextCurrent + '*', 256, i, 4, 0xffffff);
 		if (this.moderatorLevel > 0)
-			this.surface.drawStringCenter(`Moderator option: Mute player for 48 hours: ${this.reportAbuseMute ? 'ON' : 'OFF'}>`, 256, 207, 1, (this.reportAbuseMute ? 0xFF8000 : 0xFFFFFF));
+			this.surface.drawStringCenter(`Moderator option: Mute player for 48 hours: ${this.reportAbuseMute ? 'ON' : 'OFF'}>`, 256, 207, 1, (this.reportAbuseMute ? 0xFF8000 : Color.WHITE.toRGB()));
 
 		i = 222;
-		let j = 0xFFFFFF;
+		let j = Color.WHITE.toRGB();
 		if (this.mouseX > 196 && this.mouseX < 316 && this.mouseY > i - 13 && this.mouseY < i + 2)
-			j = 0xFFFF00;
+			j = Color.YELLOW.toRGB();
 		this.surface.drawStringCenter('Click here to cancel', 256, i, 1, j);
 		if (this.mouseButtonClick === 1) {
 			if (this.moderatorLevel > 0 && this.mouseX > 106 && this.mouseX < 406 && this.mouseY > 194 && this.mouseY < 209) {
 				this.reportAbuseMute = !this.reportAbuseMute;
 				this.mouseButtonClick = 0;
 				return;
-			} else if (j !== 0xFFFFFF || this.mouseX < 56 || this.mouseX > 456 || this.mouseY < 130 || this.mouseY > 230) {
+			} else if (j !== Color.WHITE.toRGB() || this.mouseX < 56 || this.mouseX > 456 || this.mouseY < 130 || this.mouseY > 230) {
 				this.mouseButtonClick = 0;
 				this.reportAbuseState = 0;
 				return;
@@ -8167,7 +8163,6 @@ updateLoop:
 							s = '@gr3@';
 						else if (combatDelta > 9)
 							s = '@gre@';
-						s = ' ' + s + '(level-' + this.players[idx].level + ')';
 						let combatDifferential = ` ${s}(level-${this.players[idx].level})`;
 
 						if (this.selectedSpell >= 0) {

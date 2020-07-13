@@ -122,7 +122,7 @@ class Ops {
 		return p;
 	}
 	static REPORT_ABUSE(name, offenceType, action) {
-		let p = new Packet(C_OPCODES.REPORT_ABUSE);
+		let p = new Packet(OPS.REPORT_ABUSE);
 		p.startAccess();
 		p.putLong(Utility.usernameToHash(name));
 		p.putByte(offenceType);
@@ -130,14 +130,33 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+	
+	static CHANGE_APPEARANCE(gender, headType, bodyType, legType, hairColor, bodyColor, legColor, skinColor) {
+		let p = new Packet(OPS.APPEARANCE);
+		p.startAccess();
+		p.putByte(this.appearanceHeadGender);
+		p.putByte(this.appearanceHeadType);
+		p.putByte(this.appearanceBodyGender);
+		p.putByte(this.appearance2Colour);
+		p.putByte(this.appearanceHairColour);
+		p.putByte(this.appearanceTopColour);
+		p.putByte(this.appearanceBottomColour);
+		p.putByte(this.appearanceSkinColour);
+		p.stopAccess();
+		return p;
+	}
+
 }
 
 Ops.DISCONNECT = Packet.bare(OPS.CLOSE_CONNECTION);
 Ops.PING = Packet.bare(OPS.PING);
 Ops.CLOSE_BANK = Packet.bare(OPS.BANK_CLOSE);
 Ops.DECLINE_DUEL = Packet.bare(OPS.DUEL_DECLINE);
+Ops.ACCEPT_DUEL_ONE = Packet.bare(OPS.DUEL_ACCEPT);
+Ops.ACCEPT_DUEL_TWO = Packet.bare(OPS.DUEL_CONFIRM_ACCEPT);
 Ops.DECLINE_TRADE = Packet.bare(OPS.TRADE_DECLINE);
 Ops.ACCEPT_TRADE_ONE = Packet.bare(OPS.TRADE_ACCEPT);
 Ops.ACCEPT_TRADE_TWO = Packet.bare(OPS.TRADE_CONFIRM_ACCEPT);
+
 
 export { Ops as default };

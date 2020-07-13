@@ -33,9 +33,8 @@ class GameCharacter {
         this.waypointCurrent = 0;
         this.targetWaypoint = 0;
         this.message = void 0;
+        this.bubble = void 0;
         this.messageTimeout = 0;
-        this.bubbleItem = 0;
-        this.bubbleTimeout = 0;
         this.damageTaken = 0;
         this.healthCurrent = 0;
         this.healthMax = 0;
@@ -173,7 +172,6 @@ class GameCharacter {
 	}
 
 	set hash(hash) {
-		// this._name = Utility.hashToUsername(hash);
 		this._hash = hash;
 		this._name = Utility.hashToUsername(hash);
 	}
