@@ -878,12 +878,10 @@
     canvas = document.createElement('canvas');
     ctx = canvas.getContext('2d');
     imageData = ctx.createImageData(this.header.width, this.header.height);
-
     canvas.width = this.header.width;
     canvas.height = this.header.height;
 
     ctx.putImageData(this.getImageData(imageData), 0, 0);
-
     return canvas;
   };
 

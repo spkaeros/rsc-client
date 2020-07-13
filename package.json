@@ -1,16 +1,15 @@
 {
   "name": "rsc-client",
-  "version": "1.0.0",
-  "description": "runescape classic web client",
-  "main": "./src/mudclient.js",
+  "version": "0.1.0",
+  "description": "rusty runescape classic web client",
+  "main": "./index.js",
   "scripts": {
-    "build-dev": "browserify index.js > dist/index.bundle.js",
-    "build": "browserify -p tinyify index.js > dist/index.bundle.min.js",
-    "start": "st -p 1337 -d dist"
+    "pack": "webpack -p",
+    "serve": "webpack-dev-server"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/2003scape/rsc-client.git"
+    "url": "git+https://github.com/spkaeros/rsc-client.git"
   },
   "keywords": [
     "runescape",
@@ -21,23 +20,25 @@
     "game"
   ],
   "author": "2003Scape Team",
-  "license": "AGPL-3.0+",
+  "collaborators": [
+    "Zach Knight <zach.knight@protonmail.com>"
+  ],
+  "license": "Unlicense AND AGPL-3.",
   "bugs": {
-    "url": "https://github.com/2003scape/rsc-client/issues"
+    "url": "https://github.com/spkaeros/rsc-client/issues"
   },
-  "homepage": "https://github.com/2003scape/rsc-client#readme",
+  "homepage": "https://github.com/spkaeros/rsc-client#readme",
   "devDependencies": {
     "alawmulaw": "^5.0.2",
-    "browserify": "^16.5.1",
-    "eslint": "^6.8.0",
-    "long": "^4.0.0",
-    "ndarray": "^1.0.19",
-    "sleep-promise": "^8.0.1",
-    "st": "^1.2.2",
-    "tinyify": "^2.5.2"
-  },
-  "dependencies": {
+    "binaryen": "^94.0.0",
     "big-integer": "^1.6.48",
-    "canvas": "^2.6.1"
+    "ndarray": "^1.0.19",
+    "text-encoding": "^0.7.0",
+    "html-webpack-plugin": "^3.2.0",
+    "@wasm-tool/wasm-pack-plugin": "1.0.1",
+    "webpack": "^4.29.4",
+    "webpack-cli": "^3.1.1",
+    "webpack-dev-server": "^3.1.0",
+    "import-size": "^1.0.2"
   }
 }

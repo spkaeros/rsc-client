@@ -1,5 +1,5 @@
-const Font = require('./font');
-const Color = require('./color');
+import {Font} from './font';
+import {Color} from './color';
 
 class Graphics {
     constructor(canvas) {
@@ -41,4 +41,4 @@ class Graphics {
     }
 }
 
-module.exports = Graphics;
+export { Graphics as default };

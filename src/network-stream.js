@@ -1,6 +1,6 @@
-const Packet = require('./packet');
+import Packet from './packet';
 
-class ClientStream extends Packet {
+class NetworkStream extends Packet {
     constructor(socket) {
         super();
         this.closing = false;
@@ -12,40 +12,35 @@ class ClientStream extends Packet {
         this.closing = true;
         this.socket.close();
         this.closed = true;
-        // this.socket = null;
     }
 
     async readStream() {
-        if (this.closing) {
+        if (this.closed)
             return 0;
-        }
 
-        return await this.socket.read();
+        return await this.socket.readByte();
     } 
 
     availableStream() {
-        if (this.closing) {
+        if (this.closed)
             return 0;
-        }
 
         return this.socket.available();
     }
 
     async readStreamBytes(len, off, buff) {
-        if (this.closing) {
+        if (this.closed)
             return;
-        }
 
         await this.socket.readBytes(buff, off, len);
     }
 
     writeStreamBytes(buff, off, len) {
-        if (this.closing) {
+        if (this.closing || this.closed)
             return;
-        }
 
         this.socket.write(buff, off, len);
     }
 }
 
-module.exports = ClientStream;
+export { NetworkStream as default };

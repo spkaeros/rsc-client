@@ -1,5 +1,5 @@
-const {Utility} = require('./utility');
-const ndarray = require('ndarray');
+import ndarray from 'ndarray';
+import {Utility} from './utility';
 
 class GameData {
 	static getModelIndex(s) {
@@ -543,4 +543,4 @@ GameData.dataInteger = null;
 GameData.stringOffset = 0;
 GameData.offset = 0;
 
-module.exports = GameData;
+export { GameData as default };

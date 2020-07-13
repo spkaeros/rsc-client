@@ -1,9 +1,7 @@
-let count = 0;
-
-class Enum {
+export default class Enum {
 	constructor(name) {
 		this.name = name;
-		this.ordinal = count++;
+		this.ordinal = Enum.id++;
 	}
 	
 	toNumber() {
@@ -15,4 +13,11 @@ class Enum {
 	}
 }
 
-module.exports = {Enum};
+Object.defineProperty(Enum, "id", {
+	get: () => {
+		return Enum._id;
+	},
+	set: (i) => {
+		Enum._id = i;
+	},
+});

@@ -1,5 +1,5 @@
-const PCMPlayer = require('./lib/pcm-player');
-const { mulaw } = require('alawmulaw');
+import PCMPlayer from './lib/pcm-player';
+import { mulaw } from 'alawmulaw';
 
 class StreamAudioPlayer {
     constructor() {
@@ -20,4 +20,4 @@ class StreamAudioPlayer {
     }
 }
 
-module.exports = StreamAudioPlayer;
+export { StreamAudioPlayer as default };

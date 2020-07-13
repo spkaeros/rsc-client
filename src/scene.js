@@ -1,6 +1,5 @@
-let Polygon = require('./polygon');
-let Scanline = require('./scanline');
-let Long = require('long');
+import Polygon from './polygon';
+import Scanline from './scanline';
 
 const COLOUR_TRANSPARENT = 12345678;
 
@@ -12,7 +11,7 @@ class Scene {
         this.textureColoursUsed = null;
         this.textureColourList = null;
         this.textureDimension = null;
-        this.textureLoadedNumber = null;
+        this.textureCacheIndices = null;
         this.texturePixels = null;
         this.textureBackTransparent = null;
         this.textureColours64 = null;
@@ -48,14 +47,12 @@ class Scene {
         this.fogZFalloff = 20;
         this.fogZDistance = 10;
         this.wideBand = false;
-        this.aDouble387 = 1.1000000000000001;
-        this.anInt388 = 1;
+        // this.aDouble387 = 1.1000000000000001;
+        // this.anInt388 = 1;
         this.mousePickingActive = false;
         this.mousePickedMax = 100;
-        this.mousePickedModels = [];
-        this.mousePickedModels.length = this.mousePickedMax;
-        this.mousePickedModels.fill(null);
-        this.mousePickedFaces = new Int32Array(this.mousePickedMax);
+        this.mousePickedModels = new Array(this.mousePickedMax);
+        this.mousePickedFaces = new Uint32Array(this.mousePickedMax);
         this.width = 512;
         this.clipX = 256;
         this.clipY = 192;
@@ -98,9 +95,9 @@ class Scene {
         this.spriteY = new Int32Array(k);
         this.spriteTranslateX = new Int32Array(k);
 
-        if (this.aByteArray434 === null) {
-            this.aByteArray434 = new Int8Array(17691);
-        }
+        // if (this.aByteArray434 === null) {
+            // this.aByteArray434 = new Int8Array(17691);
+        // }
 
         this.cameraX = 0;
         this.cameraY = 0;
@@ -3207,16 +3204,16 @@ class Scene {
         this.textureColourList.length = count;
         this.textureColourList.fill(null);
         this.textureDimension = new Int32Array(count);
-        this.textureLoadedNumber = [];
-        this.textureLoadedNumber.length = count;
-        this.textureLoadedNumber.fill(null);
-        this.textureBackTransparent = new Int8Array(count);
+        this.textureCacheIndices = new Uint32Array(count);
+        // this.textureCacheIndices.length = count;
+        // this.textureCacheIndices.fill(null);
+        this.textureBackTransparent = new Array(count);
         this.texturePixels = [];
         this.texturePixels.length = count;
         this.texturePixels.fill(null);
-        Scene.textureCountLoaded = Long.fromInt( 0);
+        this.textureCount = 0;
 
-        for (let i = 0; i < count; i += 1) this.textureLoadedNumber.push(Long.fromInt( 0));
+        // for (let i = 0; i < count; i += 1) this.textureCacheIndices[i] = 0;
 
         // 64x64 rgba
         this.textureColours64 = [];
@@ -3233,7 +3230,7 @@ class Scene {
         this.textureColoursUsed[id] = usedColours;
         this.textureColourList[id] = colours;
         this.textureDimension[id] = wide128; // is 1 if the this.texture is 128+ pixels wide, 0 if <128
-        this.textureLoadedNumber[id] = Long.fromInt(0); // as in the current loaded this.texture count when its loaded
+        this.textureCacheIndices[id] = 0;
         this.textureBackTransparent[id] = false;
         this.texturePixels[id] = null;
         this.prepareTexture(id);
@@ -3244,8 +3241,8 @@ class Scene {
             return;
         }
 
-        Scene.textureCountLoaded = Scene.textureCountLoaded.add(1);
-        this.textureLoadedNumber[id] = Long.fromInt( Scene.textureCountLoaded);
+        this.textureCount = (this.textureCount+1);
+        this.textureCacheIndices[id] = this.textureCount;
 
         if (this.texturePixels[id] !== null) {
             return;
@@ -3261,12 +3258,12 @@ class Scene {
                 }
             }
 
-            let GIGALONG = Long.fromInt(1).shiftLeft(30); // almost as large as exemplar's nas storage
+            let GIGALONG = 1<<30; // almost as large as exemplar's nas storage
             let wut = 0;
 
             for (let k1 = 0; k1 < this.textureCount; k1++) {
-                if (k1 !== id && this.textureDimension[k1] === 0 && this.texturePixels[k1] !== null && this.textureLoadedNumber[k1].lessThan(GIGALONG)) {
-                    GIGALONG = this.textureLoadedNumber[k1];
+                if (k1 !== id && this.textureDimension[k1] === 0 && this.texturePixels[k1] !== null && this.textureCacheIndices[k1] < GIGALONG) {
+                    GIGALONG = this.textureCacheIndices[k1];
                     wut = k1;
                 }
             }
@@ -3287,12 +3284,12 @@ class Scene {
             }
         }
 
-        let GIGALONG = Long.fromInt(1).shiftLeft(30); // 1G 2G 3G... 4G?
+        let GIGALONG = 1<<30; // 1G 2G 3G... 4G?
         let wat = 0;
 
         for (let i2 = 0; i2 < this.textureCount; i2++) {
-            if (i2 !== id && this.textureDimension[i2] === 1 && this.texturePixels[i2] !== null && this.textureLoadedNumber[i2].lessThan(GIGALONG)) {
-                GIGALONG = this.textureLoadedNumber[i2];
+            if (i2 !== id && this.textureDimension[i2] === 1 && this.texturePixels[i2] !== null && this.textureCacheIndices[i2] < GIGALONG) {
+                GIGALONG = this.textureCacheIndices[i2];
                 wat = i2;
             }
         }
@@ -3339,9 +3336,8 @@ class Scene {
     }
 
     doSOemthingWithTheFuckinFountainFuck(id) {
-        if (this.texturePixels[id] === null) {
+        if (!this.texturePixels[id])
             return;
-        }
 
         let colours = this.texturePixels[id];
 
@@ -3814,14 +3810,12 @@ class Scene {
 }
 
 Scene.sin2048Cache = new Int32Array(2048);
+Scene.sin512Cache = new Int32Array(512);
 Scene.frustumMaxX = 0;
 Scene.frustumMinX = 0;
 Scene.frustumMaxY = 0;
 Scene.frustumMinY = 0;
 Scene.frustumFarZ = 0;
 Scene.frustumNearZ = 0;
-Scene.sin512Cache = new Int32Array(512);
-Scene.textureCountLoaded = Long.fromInt( 0);
-Scene.aByteArray434 = null;
 
-module.exports = Scene;
+export { Scene as default };

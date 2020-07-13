@@ -1,30 +1,23 @@
-const BZLib = require('./bzlib');
-const Color = require('./lib/graphics/color');
-const Font = require('./lib/graphics/font');
-const Graphics = require('./lib/graphics/graphics');
-const Socket = require('./lib/net/socket');
-const Surface = require('./surface');
-const {Utility, WelcomeState, GameState, GamePanel} = require('./utility');
-const VERSION = require('./version');
-const { TGA } = require('./lib/tga');
-const {FontStyle} = require('./lib/graphics/fontStyle');
-const {Enum} = require('./lib/enum');
-const zzz = require('sleep-promise');
-
-class EngineState extends Enum {}
-EngineState.LAUNCH = new EngineState("Launching game engine");
-EngineState.INITIALIZE_DATA = new EngineState("Downloading and setting up all the game assets");
-EngineState.RUNNING = new EngineState("Engine clock is ticking");
-EngineState.SHUTDOWN = new EngineState("Engine is shutting down");
+import BZLib from './bzlib';
+import Color from './lib/graphics/color';
+import Font from './lib/graphics/font';
+import Graphics from './lib/graphics/graphics';
+import Socket from './lib/net/socket';
+import Surface from './surface';
+import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
+import VERSION from './version';
+import { TGA } from './lib/tga';
 
 const ModifierKeyNames = ['Control', 'Shift', 'Alt', 'CapsLock', 'OS', 'Delete', 'Insert', 'Tab', 'Unidentified', 'AudioVolumeMute', 'AudioVolumeUp', 'AudioVolumeDown',
 		'MediaTrackPrevious', 'MediaPlay', 'MediaTrackNext', 'BrowserSearch', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']
 
-class GameShell {
+export default class GameShell {
 	constructor(canvas) {
+		this.engineState = EngineStates.IDLE;
+		this.welcomeState = WelcomeStates.WELCOME;
+		this.gameState = GameStates.LOGIN;
 		this._canvas = canvas;
 		this._graphics = new Graphics(this._canvas);
-		
 		this.options = {
 			middleClickCamera: false,
 			mouseWheel: false,
@@ -46,19 +39,16 @@ class GameShell {
 		this.mouseActionTimeout = 0;
 		this.panelLogin = {};
 		this.panelGame = {};
-		this.engineState = EngineState.IDLE;
-		this.gameState = GameState.LOGIN;
-		this.welcomeState = WelcomeState.WELCOME;
 		// this.logoHeaderText = null;
 		this.controlTextListAll = 0;
 		this.mouseX = 0;
 		this.mouseY = 0;
 		this.mouseButtonDown = 0;
+		this._shutdownCounter = 0;
 		this.lastMouseButtonDown = 0;
 		this.timings = [];
-		this.shutdownCounter = 0;
 		this.loadingProgressPercent = 0;
-		this.imageLogo = null;
+		this.imageLogo = void 0;
 		this.appletWidth = 512;
 		this.appletHeight = 346;
 		this.targetFrameTime = 20;
@@ -82,11 +72,11 @@ class GameShell {
 		this.inputPmFinal = '';
 		this.lastLog = [];
 		this.lastLogIdx = 0;
-		this.threadSleep2 = 1;
+		this.threadSleep = 1;
 	}
 	
 	async startApplication(width, height) {
-		this.engineState = EngineState.IDLE;
+		this.engineState = EngineStates.IDLE;
 		
 		this._canvas.width = width;
 		this._canvas.height = height;
@@ -96,27 +86,31 @@ class GameShell {
         GameShell.gameFrame = this._canvas.getContext('2d', {
             alpha: false,
             desynchronized: true,
-//            antialias: true,
+            antialias: true,
+            depth: true,
+            premultipliedAlpha: true,
+            powerPreference: 'high-performance',
         });
 
         console.log('Starting engine...');
 
-        this._canvas.addEventListener('touchstart', this.mousePressed.bind(this));
-        this._canvas.addEventListener('touchmove', this.mouseMoved.bind(this));
-        this._canvas.addEventListener('touchend', this.mouseReleased.bind(this));
+        // this._canvas.addEventListener('touchmove', this.mouseMoved.bind(this));
+        // this._canvas.addEventListener('touchstart', this.mousePressed.bind(this));
+        // this._canvas.addEventListener('touchend', this.mouseReleased.bind(this));
 
         this._canvas.addEventListener('mouseout', this.mouseOut.bind(this));
         this._canvas.addEventListener('mousedown', this.mousePressed.bind(this));
-        this._canvas.addEventListener('contextmenu', this.eventBlocker.bind(this));
-        this._canvas.addEventListener('mousemove', this.mouseMoved.bind(this));
         this._canvas.addEventListener('mouseup', this.mouseReleased.bind(this));
+        this._canvas.addEventListener('mousemove', this.mouseMoved.bind(this));
+		this._canvas.addEventListener('mousewheel', this.mouseWheel.bind(this));
 		this._canvas.addEventListener('wheel', this.mouseWheel.bind(this));
+        this._canvas.addEventListener('contextmenu', this.eventBlocker.bind(this));
 		window.addEventListener('keydown', this.keyPressed.bind(this));
 		window.addEventListener('keyup', this.keyReleased.bind(this));
-		
+
 		this.graphics = this.getGraphics();
 
-		this.engineState = EngineState.INITIALIZE_DATA;
+		this.engineState = EngineStates.INITIALIZE_DATA;
 		this.drawLoadingScreen(0, 'Loading...');
 		await this.loadFonts();
 		this.imageLogo = await this.fetchLogo();
@@ -141,49 +135,6 @@ class GameShell {
 	}
 
     keyPressed(e) {
-		if (this.gameState === GameState.LOGIN && this.panelLogin && this.panelLogin[this.welcomeState]) {
-			for (let name of ModifierKeyNames) {
-				if (e.key === name) {
-					return true;
-				}
-			}
-
-			this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
-			e.preventDefault();
-			return;
-        }
-        if (this.gameState === GameState.WORLD) {
-            if (this.showAppearanceChange && this.panelGame[GamePanel.APPEARANCE] !== null) {
-                // TODO: Need this?  No text input fields to speak of
-                this.panelGame[GamePanel.APPEARANCE].keyPress(e.which, e.key);
-                e.preventDefault();
-                return;
-            }
-			if (this.dialogItemInput === 0 && this.contactsInputCtx === 0 && this.reportAbuseState === 0 && !this.isSleeping && this.panelGame[GamePanel.CHAT]) {
-                if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    if (this.lastLogIdx >= this.lastLog.length - 1) {
-                        this.showMessage("End of chat history", 3);
-                        return
-                    }
-                    this.lastLogIdx += 1;
-                    this.panelGame[GamePanel.CHAT].updateText(this.controlTextListAll, this.lastLog[this.lastLog.length - 1 - this.lastLogIdx]);
-                    return;
-                } else if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    if (this.lastLogIdx > 0) {
-                        this.lastLogIdx -= 1;
-                        this.panelGame[GamePanel.CHAT].updateText(this.controlTextListAll, this.lastLog[this.lastLog.length - 1 - this.lastLogIdx]);
-                    } else {
-                        this.lastLogIdx = -1;
-                        this.panelGame[GamePanel.CHAT].updateText(this.controlTextListAll, '');
-                    }
-                    return;
-                }
-                this.panelGame[GamePanel.CHAT].keyPress(e.which, e.key);
-                e.preventDefault();
-            }
-        }
 
         switch (e.which) {
         case 27:
@@ -192,7 +143,7 @@ class GameShell {
 			this.shopVisible = false;
 			this.tradeConfigVisible = false;
 			this.duelConfigVisible = false;
-			this.contactsInputCtx = 0;
+			// this.c = 0;
 			this.dialogItemInput = 0;
 			this.abuseReportWindow = 0;
 			this.contactsInputFormIndex = 0;
@@ -203,18 +154,31 @@ class GameShell {
 			this.keyLeft = true;
 			e.preventDefault();
 			break;
-		// case 38:
-		// 	this.keyUp = true;
-		// 	e.preventDefault();
-		// 	break;
+		case 38:
+			e.preventDefault();
+			if (++this.lastLogIdx > this.lastLog.length-1) {
+				this.showMessage("Reached the top of chat history", 3);
+				this.lastLogIdx = this.lastLog.length-1;
+				return
+			}
+			this.panelGame[GamePanels.CHAT].setTextHandle(this.controlTextListAll, this.lastLog[this.lastLog.length - 1 - this.lastLogIdx]);
+			return;
 		case 39:
 			this.keyRight = true;
 			e.preventDefault();
 			break;
-		// case 40:
-		// 	this.keyDown = true;
-		// 	e.preventDefault();
-		// 	break;
+		case 40:
+			e.preventDefault();
+			// TODO: Maybe refactor lastLog related utilities
+			// Reached bottom of line-buffer, reset message entry
+			if (--this.lastLogIdx <= -1) {
+				this.showMessage("Reached the bottom of chat history", 3);
+				this.panelGame[GamePanels.CHAT].setTextHandle(this.controlTextListAll, '');
+				this.lastLogIdx = -1;
+				return
+			}
+			this.panelGame[GamePanels.CHAT].setTextHandle(this.controlTextListAll, this.lastLog[this.lastLog.length - 1 - this.lastLogIdx]);
+			return;
 		case 32:
 			this.keySpace = true;
 			e.preventDefault();
@@ -240,16 +204,19 @@ class GameShell {
 			e.preventDefault();
 			break;
 		case 114:
-			// this.dumpRequested = true;
 			this.showFps = !this.showFps;
+			this.debug = !this.debug;
+			this.dumpRequested = true;
 			break;
 		case 115:
-			// this.dumpRequested = true;
+			this.showFps = !this.showFps;
+			this.debug = !this.debug;
 			this.dumpRequested = true;
 			break;
 		case 116:
-			// this.dumpRequested = true;
+			this.showFps = !this.showFps;
 			this.debug = !this.debug;
+			this.dumpRequested = true;
 			break;
 		case 13:
 			if (this.inputTextCurrent.length > 0)
@@ -278,6 +245,30 @@ class GameShell {
 				this.inputPmCurrent += e.key;
 			e.preventDefault();
 			break;
+        }
+		if (this.gameState === GameStates.LOGIN && this.panelLogin && this.panelLogin[this.welcomeState]) {
+			for (let name of ModifierKeyNames) {
+				if (e.key === name) {
+					return true;
+				}
+			}
+
+			this.panelLogin[this.welcomeState].keyPress(e.which, e.key);
+			e.preventDefault();
+			return;
+        }
+        if (this.gameState === GameStates.WORLD) {
+            if (this.showAppearanceChange && this.panelGame[GamePanels.APPEARANCE]) {
+                // TODO: Need this?  No text input fields to speak of
+                this.panelGame[GamePanels.APPEARANCE].keyPress(e.which, e.key);
+                e.preventDefault();
+                return;
+            }
+			if (this.dialogItemInput === 0 && this.contactsInputCtx === 0 && this.reportAbuseState === 0 && !this.isSleeping && this.panelGame[GamePanels.CHAT]) {
+                e.preventDefault();
+                this.panelGame[GamePanels.CHAT].keyPress(e.which, e.key);
+                return;
+            }
         }
 
         return false;
@@ -325,59 +316,63 @@ class GameShell {
 	
 	mouseReleased(e) {
 		e.preventDefault();
-		this.mouseX = e.offsetX;
-		this.mouseY = e.offsetY;
-		this.mouseButtonDown = 0;
+		// this.mouseX = e.offsetX;
+		// this.mouseY = e.offsetY;
 		
-		if (e.button === 1) {
+		if (e.button === 1)
 			this.middleButtonDown = false;
-		}
+		this.mouseButtonDown = 0;
+		return false;
 	}
 	
 	mouseOut(e) {
 		e.preventDefault();
-		this.mouseX = e.offsetX;
-		this.mouseY = e.offsetY;
-		this.mouseButtonDown = 0;
-		this.middleButtonDown = false;
+		// this.mouseX = e.offsetX;
+		// this.mouseY = e.offsetY;
+		// this.mouseButtonDown = 0;
+		// this.middleButtonDown = false;
+		return false;
 	}
 	
 	mousePressed(e) {
 		e.preventDefault();
+		// this.mouseX = e.offsetX;
+		// this.mouseY = e.offsetY;
+
+		// if (this.options.middleClickCamera && e.button === 1) {
+			// this.middleButtonDown = true;
+			// this.originRotation = this.cameraRotation;
+			// this.originMouseX = this.mouseX;
+			// return false;
+		// }
 		
-		let x = e.offsetX;
-		let y = e.offsetY;
-		
-		this.mouseX = x;
-		this.mouseY = y;
-		
-		if (this.options.middleClickCamera && e.button === 1) {
-			this.middleButtonDown = true;
-			this.originRotation = this.cameraRotation;
-			this.originMouseX = this.mouseX;
-			return false;
-		}
-		
-		if(e.button === 0) {
+
+		if(e.button === 0)
 			this.mouseButtonDown = 1;
-		} else if(e.button === 2) {
+		else if(e.button === 2)
 			this.mouseButtonDown = 2;
-		} else {
+		else if (e.button === 1) {
+			this.mouseButtonDown = 3;
+			if (this.options.middleClickCamera) {
+				this.middleButtonDown = true;
+				this.originRotation = this.cameraRotation;
+				this.originMouseX = this.mouseX;
+			}
+		} else
 			return false;
-		}
 		
 		this.lastMouseButtonDown = this.mouseButtonDown;
 		this.mouseActionTimeout = 0;
-		this.handleMouseDown(this.mouseButtonDown, x, y);
-		
+		this.handleMouseDown(this.mouseButtonDown, this.mouseX, this.mouseY);
+
 		return false;
 	}
 	
+	handleMouseDown(button, x, y) {  }
+
 	mouseWheel(e) {
-		e.preventDefault();
-		if (!this.options.mouseWheel) {
+		if (!this.options.mouseWheel)
 			return;
-		}
 		
 		if (e.deltaMode === 0) {
 			// deltaMode === 0 means deltaX/deltaY is given in pixels (chrome)
@@ -391,38 +386,47 @@ class GameShell {
 	}
 	
 	start() {
-		if (this.shutdownCounter >= 0)
-			this.shutdownCounter = 0;
+		this.shutdownCounter = 0;
+	}
+
+	get shutdownCounter() {
+		return !this._shutdownCounter ? 0 : this._shutdownCounter;
+	}
+
+	set shutdownCounter(count) {
+		if (!this._shutdownCounter) {
+			this._shutdownCounter = 0;
+		} else {
+			this._shutdownCounter = count;
+		}
 	}
 	
 	stop() {
-		if (this.shutdownCounter >= 0)
-			this.shutdownCounter = 4000 / this.targetFrameTime;
+		this.shutdownCounter = 4000 / this.targetFrameTime;
 	}
 
 	async handleInputs() {}
 	async draw() {}
 
 	async sleep(ms) {
-		return new Promise(res => setTimeout(res, ms));
+		return new Promise(res => setInterval(res, ms));
 	}
 	
 	async run() {
 		await this.startGame();
-		this.engineState = EngineState.RUNNING;
+		this.engineState = EngineStates.RUNNING;
 
 		let i = 0;
 		let j = 256;
 		let sleep = 1;
 		let i1 = 0;
 
-//		this.setFrameTimes();
-
 		for (let j1 = 0; j1 < 10; j1++)
 			this.timings[j1] = Date.now();
-		while (this.shutdownCounter >= 0) {
-			if (this.shutdownCounter > 0) {
-				if (--this.shutdownCounter === 0) {
+			
+		while (this._shutdownCounter >= 0) {
+			if (this._shutdownCounter > 0) {
+				if (--this._shutdownCounter <= 0) {
 					this.clearResources();
 					return;
 				}
@@ -481,35 +485,30 @@ class GameShell {
 			this.draw();
 			this.mouseScrollDelta = 0;
 */
-				let k1 = j;
-				let lastSleep = sleep;
+			let k1 = j;
+			let lastSleep = sleep;
 
-				j = 300;
-				sleep = 1;
+			j = 300;
+			sleep = 1;
 
-				let time = Date.now();
+			let time = Date.now();
 
-				if (this.timings[i] === 0) {
-					j = k1;
-					sleep = lastSleep;
-				} else if (time > this.timings[i]) {
-					j = (((2560 * this.targetFrameTime) / (time - this.timings[i]))) | 0;
-				}
+			if (this.timings[i] === 0) {
+				j = k1;
+				sleep = lastSleep;
+			} else if (time > this.timings[i])
+				j = Math.floor(((2560 * this.targetFrameTime) / (time - this.timings[i])));
 
-				if (j < 25) {
-					j = 25;
-				}
+			if (j < 25)
+				j = 25;
 
-				if (j > 256) {
-					j = 256;
-					sleep = (this.targetFrameTime - ((time - this.timings[i]) / 10)) | 0;
-				}
+			if (j > 256) {
+				j = 256;
+				sleep = this.targetFrameTime - Math.floor((time - this.timings[i]) / 10);
+			}
 
-				if (sleep < this.threadSleep2) {
-					sleep = this.threadSleep2;
-				}
-//			}
-
+			if (sleep < this.threadSleep)
+				sleep = this.threadSleep;
 			await this.sleep(sleep);
 
 			this.timings[i] = time;
@@ -531,7 +530,7 @@ class GameShell {
 			this.interlaceTimer--;
 			if (this.dumpRequested || this.showFps && this.targetFrameTime > 0)
 				this.fps = (1000*j) / (this.targetFrameTime << 8) | 0;
-			i1 &= 0xff;
+			i1 &= 0xFF;
 			this.draw();
 
 			this.mouseScrollDelta = 0;
@@ -553,10 +552,9 @@ class GameShell {
 		this.paint(g);
 	}
 	
-	// eslint-disable-next-line no-unused-vars
 	paint(g) {
-		if (this.engineState.toNumber() < EngineState.RUNNING.toNumber()) {
-			if (this.imageLogo !== null) {
+		if (this.engineState.toNumber() < EngineStates.RUNNING.toNumber()) {
+			if (this.imageLogo) {
 				this.drawLoadingScreen(this.loadingProgressPercent, this.loadingProgessText);
 			}
 		}
@@ -564,19 +562,17 @@ class GameShell {
 	
 	async fetchLogo() {
 		let buff = await this.readDataFile('jagex.jag', 'ZlackCode library', 0);
-		if (buff === null) {
-			return null;
-		}
+		if (!buff)
+			return void 0;
 		
 		return this.createImage(Utility.loadData('logo.tga', 0, buff))
 	}
 	
 	async loadFonts() {
-		let buff = await this.readDataFile(`fonts${VERSION.FONTS}.jag`, 'Game fonts', 5);
-		
-		if (buff === null) {
+		let buff = await this.readDataFile(`fonts` + VERSION.FONTS + `.jag`, 'Game fonts', 5);
+		if (!buff)
 			return;
-		}
+
 		Surface.createFont(Utility.loadData('h11p.jf', 0, buff), 0);
 		Surface.createFont(Utility.loadData('h12b.jf', 0, buff), 1);
 		Surface.createFont(Utility.loadData('h12p.jf', 0, buff), 2);
@@ -588,43 +584,43 @@ class GameShell {
 	}
 	
 	drawLoadingScreen(percent, text) {
-		let midX = ((this.appletWidth - 281) / 2) | 0;
-		let midY = ((this.appletHeight - 148) / 2) | 0;
-		
+		if(!this.graphics)
+			return;
+
+		let midX = Math.floor((this.appletWidth - 281) / 2);
+		let midY = Math.floor((this.appletHeight - 148) / 2);
+
 		this.graphics.setColor(Color.black);
 		this.graphics.fillRect(0, 0, this.appletWidth, this.appletHeight);
 		
 		if (!this.hasRefererLogoNotUsed) {
-			if (this.imageLogo !== null) {
+			if (this.imageLogo)
 				this.graphics.drawImage(this.imageLogo, midX, midY);
-			}
-			this.graphics.setColor(new Color(132, 132, 132));
-		} else {
-			
-			this.graphics.setColor(new Color(220, 0, 0));
-		}
+			this.graphics.setColor(Color.SHADOW_GRAY);
+		} else
+			this.graphics.setColor(new Color(0xDC, 0x00, 0x00));
+
 		midX += 2;
 		midY += 90;
 		this.loadingProgessText = text;
 		this.loadingProgressPercent = percent;
 		this.graphics.drawRect(midX - 2, midY - 2, 280, 23);
-		this.graphics.fillRect(midX, midY, (277 * percent) / 100 | 0, 20);
+		this.graphics.fillRect(midX, midY, Math.floor((277 * percent) / 100), 20);
+		
+		if (!this.hasRefererLogoNotUsed)
+			this.graphics.setColor(Color.SILVER);
+		else
+			this.graphics.setColor(Color.WHITE);
+		this.drawString(this.graphics, this.loadingProgessText, Font.HELVETICA.withSize(12), midX + 138, midY + 12);
 		
 		if (!this.hasRefererLogoNotUsed) {
-			this.graphics.setColor(new Color(198, 198, 198));
-		} else {
-			this.graphics.setColor(new Color(255, 255, 255));
-		}
-		this.drawString(this.graphics, this.loadingProgessText, Font.HELVETICA.withConfig(FontStyle.NORMAL, 12), midX + 138, midY + 12);
-		
-		if (!this.hasRefererLogoNotUsed) {
-			this.drawString(this.graphics, 'Powered by RSCGo, a free and open source software project', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 35);
-			this.drawString(this.graphics, '\u00a92019-2020 Zach Knight, and the 2003scape team', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 49);
+			this.drawString(this.graphics, 'Powered by RSCGo, a free and open source software project', Font.HELVETICA.bold(13), midX + 138, midY + 35);
+			this.drawString(this.graphics, '\u00a92019-2020 Zach Knight, and the 2003scape team', Font.HELVETICA.bold(13), midX + 138, midY + 49);
 			// this.drawString(this.graphics, 'Created by JAGeX - visit www.jagex.com', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 35); // midY + 30
 			// this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY + 49); // midY + 44
 		} else {
-			this.graphics.setColor(new Color(132, 132, 152));
-			this.drawString(this.graphics, '\u00a92019-2020 Zach Knight, and the 2003scape team', Font.HELVETICA.withConfig(FontStyle.BOLD, 13), midX + 138, midY - 20);
+			this.graphics.setColor(new Color(0x84, 0x84, 0x98));
+			this.drawString(this.graphics, '\u00a92019-2020 Zach Knight, and the 2003scape team', Font.HELVETICA.bold(13), midX + 138, midY - 20);
 			// this.drawString(this.graphics, '\u00a92001-2002 Andrew Gower and Jagex Ltd', Font.HELVETICA.withConfig(FontStyle.NORMAL, 12), midX + 138, this.appletHeight - 20);
 		}
 		// not sure where this would have been used. maybe to indicate a special client?
@@ -635,28 +631,28 @@ class GameShell {
 	}
 	
 	updateLoadingStatus(curPercent, statusText) {
+		if (!this.graphics)
+			return;
 		this.loadingProgressPercent = curPercent;
 		this.loadingProgessText = statusText;
-		let j = ((this.appletWidth - 281) / 2) | 0;
-		let k = ((this.appletHeight - 148) / 2) | 0;
+		let j = Math.floor((this.appletWidth - 281) / 2);
+		let k = Math.floor((this.appletHeight - 148) / 2);
 		j += 2;
 		k += 90;
 		
 		this.graphics.setColor(new Color(132, 132, 132));
-		if (this.hasRefererLogoNotUsed) {
+		if (this.hasRefererLogoNotUsed)
 			this.graphics.setColor(new Color(220, 0, 0));
-		}
 		let l = ((277 * curPercent) / 100) | 0;
 		this.graphics.fillRect(j, k, l, 20);
 		this.graphics.setColor(Color.black);
 		this.graphics.fillRect(j + l, k, 277 - l, 20);
 		
 		this.graphics.setColor(new Color(198, 198, 198));
-		if (this.hasRefererLogoNotUsed) {
+		if (this.hasRefererLogoNotUsed)
 			this.graphics.setColor(new Color(255, 255, 255));
-		}
 		
-		this.drawString(this.graphics, statusText, Font.TIMES.withConfig(FontStyle.BOLD, 15), j + 138, k + 12);
+		this.drawString(this.graphics, statusText, Font.TIMES.bold(15), j + 138, k + 12);
 	}
 	
 	drawString(g, s, font, i, j) {
@@ -666,13 +662,7 @@ class GameShell {
 	}
 	
 	createImage(buff) {
-		let tgaImage = new TGA(buff.buffer);
-		
-		const canvas = tgaImage.getCanvas();
-		const ctx = canvas.getContext('2d');
-		const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-		
-		return imageData;
+		return new TGA(buff.buffer).getCanvas().getContext('2d').getImageData(0, 0, this._canvas.width, this._canvas.height);
 	}
 	
 	async readDataFile(file, description, percent) {
@@ -716,7 +706,6 @@ class GameShell {
 	}
 	
 	getGraphics() {
-		//return new Graphics(this.canvas);
 		return this._graphics;
 	}
 	
@@ -726,7 +715,3 @@ class GameShell {
 		return socket;
 	}
 }
-
-GameShell.gameFrame = null;
-
-module.exports = GameShell;

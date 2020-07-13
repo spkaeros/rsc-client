@@ -1,4 +1,5 @@
-const Surface = require('./surface');
+import Surface from './surface';
+
 
 class SurfaceSprite extends Surface {
     constructor(width, height, limit, component) {
@@ -32,4 +33,4 @@ class SurfaceSprite extends Surface {
     }
 }
 
-module.exports = SurfaceSprite;
+export { SurfaceSprite as default };

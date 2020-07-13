@@ -1,5 +1,5 @@
-const {Utility} = require('./utility');
-const Scene = require('./scene');
+import {Utility} from './utility';
+import Scene from './scene';
 
 const COLOUR_TRANSPARENT = 12345678;
 
@@ -1164,4 +1164,4 @@ for (let l1 = 0; l1 < 26; l1++) {
 GameModel.base64Alphabet[163] = 62;
 GameModel.base64Alphabet[36] = 63;
 
-module.exports = GameModel;
+export { GameModel as default };

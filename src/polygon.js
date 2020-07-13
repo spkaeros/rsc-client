@@ -20,4 +20,4 @@ class Polygon {
     }
 }
 
-module.exports = Polygon;
+export { Polygon as default };

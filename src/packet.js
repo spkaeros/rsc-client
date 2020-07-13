@@ -1,195 +1,278 @@
-const Long = require('long');
-const Timer = require('./timer');
+import GameException from './lib/game-exception';
+import Timer from './timer';
 
-function toCharArray(s) {
-	let a = new Uint8Array(s.length);
-	for (let i = 0; i < s.length; i += 1) {
-		a[i] = s.charCodeAt(i);
-	}
-	return a;
-}
+const txtEncoder = new TextEncoder('utf-8');
+
+const HEADER_LEN = 3;
+// 24575 is maximum encodable byte length with the Jagex protocol (+3 for header/opcode)
+const BYTES_LIMIT = 24575;
 
 class Packet {
-	constructor() {
-		this.readTicksCount = 0;
-		this.readTicksMax = 0;
-		this.packetStart = 0;
-		// 24575 is maximum encodable byte length with the Jagex protocol (+3 for header/opcode)
+	get opcode() {
+		if (!this._opcode)
+			this._opcode = 0;
+		return this._opcode;
+	}
+	
+	set opcode(op) {
+		this._opcode = op;
+	}
+
+	constructor(id = -1) {
 		// the limitation is in the header encoding.  Length is encoded conditionally,
 		// and one branch subtracts 160 from the first byte (big-endian), before the shift resulting in
 		// a range of up to 24320, add 255 to this and you get 24575, our maximum encodable smart length.
-		this.packetMaxLength = 24578;
-		this.packetData = new Int8Array(this.packetMaxLength);
-		this.bufferSize = 0;
-		this.packetEnd = 3;
-		this.socketException = false;
-		this.socketExceptionMessage = '';
-		this.writer = new Timer(20);
+		this.data = new Int8Array(BYTES_LIMIT+HEADER_LEN);
+		this.buff = new Int8Array(BYTES_LIMIT+HEADER_LEN);
+		this.readLength = 0;
+		this.writeMarker = 0;
+		this.endMarker = HEADER_LEN;
+		this.didError = false;
+		this.exceptionMessage = '';
+		this.writer = new Timer(20); // 1 write flush every 20 engine loops(.4 sec)
+		this.reader = new Timer(5); // 1 read call every 5 engine loops(.1 sec)
+		this.readTries = 0;
+		this.opcode = id;
+		this.pqueue = [];
+	}
+
+	static bare(opcode) {
+		let p = new Packet(opcode);
+		p.startAccess();
+		p.stopAccess();
+		return p;
 	}
 	
 	async readBytes(len, buff) {
 		await this.readStreamBytes(len, 0, buff);
 	}
 	
-	async readPacket(buff) {
-		try {
-			this.readTicksCount++;
-			if (this.readTicksMax > 0 && this.readTicksCount > this.readTicksMax) {
-				this.readTicksCount = 0;
-				this.socketException = true;
-				this.socketExceptionMessage = 'time-out';
-				return 0;
-			}
-			// if the first byte is >=0xA0 that means its a flag to indicate we need to decode a uint16 for frame size
-			// otherwise the 1st byte has the frame size and second byte contains the last byte of the frame
-			if (this.bufferSize === 0 && this.availableStream() >= 2) {
-				this.bufferSize = await this.readStream();
-				if (this.bufferSize >= 160)
-					this.bufferSize = (this.bufferSize - 160) << 8 | await this.readStream();
-			}
-			// frame
-			if (this.bufferSize > 0 && this.availableStream() >= this.bufferSize) {
-				let size = this.bufferSize;
-				if (size > 0) {
-					if (this.bufferSize < 0xA0) {
-						this.bufferSize -= 1;
-						buff[this.bufferSize] = await this.readStream() & 0xFF
-					}
-					await this.readBytes(this.bufferSize, buff);
+	async nextPacket() {
+		return await this.reader.tick(async () => {
+			try {
+				if (++this.readTries > 1000) {
+					this.reader.tickCount = 0;
+					this.exceptionMessage += 'time-out';
+					this.didError = true;
+					console.error('time-out');
+					return void 0;
+				}
+
+				// header
+				if (this.readLength === 0 && this.availableStream() >= 2) {
+					this.readTries = 0;
+					this.readLength = await this.getByte();
+					if (this.readLength >= 160)
+						this.readLength = ((this.readLength - 160) << 8) | await this.getByte();
+				}
+				// frame
+				if (this.readLength > 0 && this.availableStream() >= this.readLength) {
+					this.readTries = 0;
+					let readLen = this.readLength;
+					let buff = new Int8Array(readLen);
+					if (readLen < 160)
+						buff[--readLen] = await this.getByte();
+					if (readLen > 0)
+						await this.readBytes(readLen, buff);
+					this.readLength = 0;
+					this.reader.tickCount = 0;
+					this.readTries = 0;
+					return buff;
 				}
 				
-				this.bufferSize = this.readTicksCount = 0;
-				return size;
+				this.reader.tickCount = this.reader.tickThreshold - 1;
+			} catch(e) {
+				console.error(e);
+				throw e;
 			}
-		} catch (e) {
-			this.socketException = true;
-			this.socketExceptionMessage = e.message;
-		}
-		
-		return 0;
+			return void 0;
+		});
 	}
 	
 	hasPacket() {
-		return this.packetStart > 0;
-	}
-
-	resetOutgoingBuffer() {
-		// Subtract the flushed payload bytes from the payload size
-		this.packetEnd -= this.packetStart;
-		// reset header caret
-		this.packetStart = 0;
-		// header is 2 bytes, opcode is 1 bytes, total of 3 for an initial end caret position
-//		this.packetEnd = 3;
+		return this.writeMarker > 0 || this.pqueue.length > 0;
 	}
 
 	// Increments the timer 
-	tickWriter() {
-		// Check to see if something went horribly wrong with our socket
-		if (this.socketException) {
-			this.socketException = false;
-			this.resetOutgoingBuffer();
-
-			throw new Error(this.socketExceptionMessage);
-			return;
-		}
-		// TODO: Can this be done by simply passing in the method directly?
+	tick() {
 		this.writer.tick(() => {
-			this.flushWriter();
+			// Check to see if something went horribly wrong since last tick
+			if (this.didError) {
+				this.reset();
+				this.writeMarker = HEADER_LEN;
+				this.socketException = new GameException(this.exceptionMessage);
+				this.pqueue = [];
+				throw this.socketException;
+				return;
+			}
+			if (!this.hasPacket()) {
+				// No data to flush, we need to try again next tick
+				this.writer.tickCount = this.writer.tickThreshold-1;
+				return;
+			}
+			this.writer.tickCount = 0;
+			this.flush();
 		});
 	}
-
-	flushWriter() {
-		if (this.packetStart <= 0) {
-			// No data to flush, we need to try again next tick
-			this.writer.tickCount = 19;
-			return;
+	
+	// Flushes the outgoing packet buffer contents to the underlying socket connection.
+	flush() {
+		if (this.pqueue.length > 0) {
+			for (let enqueued = this.pqueue.shift(); enqueued; enqueued = this.pqueue.shift())
+				this.send(enqueued);
 		}
-		this.writeStreamBytes(this.packetData, 0, this.packetStart);
-		this.resetOutgoingBuffer();
+		if (this.writeMarker > 0) {
+			this.send(this);
+			// this.writeStreamBytes(this.data, 0, this.writeMarker);
+			this.reset();
+		}
+	}
+
+	add(p) {
+		this.pqueue.push(p);
+	}
+
+	queue(p) {
+		this.pqueue.push(p);
+	}
+
+	send(p) {
+		this.writeStreamBytes(p.data, 0, p.writeMarker);
 	}
 
 	// TODO:Rename sendPacket to something like encodePacket or just encode
 	// Prepares the current packet buffer for transmission, encoding the length and
 	// the opcode directly before the payload, and setting the start offset to the previous
 	// packets end offset.
-	sendPacket() {
+	stopAccess() {
 		// length is just the end carets position minus the start carets position,
 		// minus the headers length (2 bytes)
-		let length = this.packetEnd - this.packetStart - 2;
+		let length = this.endMarker - this.writeMarker - 2;
 
-		// Jagex `smart` length encoding: <= 160 saves us using one byte out of the payload
-		// Why 160?  seems so arbitrary
+		// Jagex `smart int` encoding: <= 160 saves us using one byte out of the payload
+		// Why 160 (base2=10100000)?  seems so arbitrary
 		if (length >= 160) {
 			// if length is >= 160 or 0b10100000, we encode it as a 2-byte integer
-			this.packetData[this.packetStart] = (160 + (length >> 8)) & 0xFF;
-			this.packetData[this.packetStart + 1] = length & 0xFF;
+			this.data[this.writeMarker] = (160 + (length >> 8)) & 0xFF;
+			this.data[this.writeMarker + 1] = length & 0xFF;
 		} else {
-			this.packetData[this.packetStart] = length & 0xFF;
-			this.packetEnd--;
+			this.data[this.writeMarker] = length & 0xFF;
+			this.endMarker--;
 			// the procedures that wrote this data decide if it gets masked
-			this.packetData[this.packetStart + 1] = this.packetData[this.packetEnd];
+			this.data[this.writeMarker + 1] = this.data[this.endMarker];
 		}
 		
 		// tracks opcode throughput in frames and bytes sent by opcode
 		// if (this.packetMaxLength <= 10000) {
-		//     let opcode = this.packetData[this.packetStart + 2] & 0xFF;
+		//     let opcode = this.data[this.writeMarker + 2] & 0xFF;
 		//
 		//     Packet.anIntArray537[opcode]++;
-		//     Packet.anIntArray541[opcode] += this.packetEnd - this.packetStart;
+		//     Packet.anIntArray541[opcode] += this.endMarker - this.writeMarker;
 		// }
 
 		// reset output packet buffer caret position
-		this.packetStart = this.packetEnd;
+		this.writeMarker = this.endMarker;
+	}
+
+	newPacket(op) {
+		this.startAccess(op);
 	}
 	
-	newPacket(i) {
-		if (this.packetStart > (this.packetMaxLength * 4 / 5) | 0) {
+	sendPacket() {
+		this.stopAccess();
+	}
+
+	startAccess(op = this.opcode) {
+		if (this.writeMarker >= Math.floor(BYTES_LIMIT*80/100)) {
 			try {
-				// TODO: Add checks to ensure no flushes mid-packet construction?
-				// In practice, client uses one thread this should not happen right?
-				this.tickWriter();
+				this.tick();
 			} catch (e) {
-				this.socketExceptionMessage = e.message;
-				this.socketException = true;
+				this.exceptionMessage = e.message;
+				this.didError = true;
+				console.log('tick()')
 			}
 		}
-		
-		if (!this.packetData)
-			this.packetData = new Int8Array(this.packetMaxLength);
-		
-		this.packetData[this.packetStart + 2] = i & 0xFF;
+
+		if (!this.data)
+			this.data = new Int8Array(BYTES_LIMIT);
+
+		this.data[this.writeMarker+2] = op & 0xFF;
+		this.endMarker = this.writeMarker + 3;
+		this.data[this.endMarker] = 0;
 		// set end caret to the buffer position directly following header bytes and opcode
-		this.packetEnd = this.packetStart + 3;
-		// Fake a payload byte to accomodate 0-byte payloads with opcodes without breaking header encoding
-		this.packetData[this.packetEnd] = 0;
+	}
+
+	reset() {
+		// Subtract the flushed payload bytes from the payload size
+		this.endMarker -= this.writeMarker;
+		// reset header caret
+		this.writeMarker = 0;
 	}
 
 	// Reads an unsigned byte (uint8) from the network buffer and returns it.
 	async getByte() {
 		return await this.readStream() & 0xFF;
 	}
-	
+
+	// Reads an unsigned byte (uint8) from the network buffer and returns it.
+	async getUByte() {
+		return await this.getByte();
+	}
+
 	// Reads a big-endian unsigned short integer (uint16) from the network buffer and returns it.
 	async getShort() {
-		return (await this.getByte() << 8) | await this.getByte();
+		return (await this.getUByte() << 8) | await this.getUByte();
 	}
 
 	// Reads a big-endian unsigned integer (uint32) from the network buffer and returns it.
 	async getInt() {
 		return (await this.getShort() << 16) | await this.getShort()
 	}
-	
+
+	async getSmart08_32() {
+		let i = await this.getByte();
+		if (i >= 128)
+			return ((i-128)<<24) | (await this.getByte() << 16) | (await this.getByte() << 8) | await this.getByte();
+		return i;
+	}
+
 	// Reads a big-endian unsigned long integer (uint64) from the network buffer and returns it.
 	async getLong() {
-		let high = await this.getInt();
-		let low = await this.getInt();
-		return new Long(low, high, true);
+		return BigInt(await this.getInt() << 32) | BigInt(await this.getInt());
+		// let high = await this.getInt();
+		// let low = await this.getInt();
+		// return new Long(low, high, true);
 	}
-	
+
 	// Queues up a C-string (null-terminated char array) into the current output packet buffer.
 	putString(s) {
-		this.putBytes(toCharArray(s));
+		this.putBytes(txtEncoder.encode(s));
 		this.putByte('\0');
+	}
+
+	putBigBuffer(b) {
+		this.putShort(b.length);
+		this.putBytes(b);
+	}
+
+	putBuffer(b) {
+		this.putByte(b.length);
+		this.putBytes(b);
+	}
+
+	// Queues up an unsigned byte into the current output packet buffer.
+	putByte(i) {
+		this.data[this.endMarker++] = i;
+	}
+	
+	// Queues up an unsigned byte into the current output packet buffer.
+	putUByte(i) {
+		this.putByte(i&0xFF);
+	}
+	
+	// Queues up a boolean value represented as a single byte (encoded as 1 for true, 0 for false)
+	putBoolean(b) {
+		this.putByte(b ? 1 : 0);
 	}
 	
 	// Queues up a boolean value represented as a single byte (encoded as 1 for true, 0 for false)
@@ -197,44 +280,125 @@ class Packet {
 		this.putByte(b ? 1 : 0);
 	}
 
-	// Queues up an unsigned byte into the current output packet buffer.
-	putByte(i) {
-		this.packetData[this.packetEnd++] = i;
-	}
-	
 	// Queues up a big-endian unsigned short integer (uint16) into the current output packet buffer.
 	putShort(i) {
-		this.putByte(i >> 8);
-		this.putByte(i);
+		this.putUByte(i >> 8);
+		this.putUByte(i);
 	}
 	
 	// Queues up a big-endian unsigned integer (uint32) into the current output packet buffer.
 	putInt(i) {
-		this.putShort(i >> 16);
+		// this.putUByte(i>>24);
+		// this.putUByte(i>>16);
+		// this.putUByte(i>>8);
+		// this.putUByte(i);
+		this.putShort(i>>16);
+		this.putShort(i);
+	}
+
+	putSmart08_64(i) {
+		if (i >= 128) {
+			this.data[this.endMarker++] = Number(((i >> 56n) + 128n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i) & 0xFFn);
+			return;
+		}
+		this.putUByte(i);
+	}
+
+	putSmart08_32(i) {
+		if (i >= 128) {
+			this.putUByte((i>>24) + 128);
+			this.putUByte(i>>16);
+			this.putUByte(i>>8);
+			this.putUByte(i);
+			return;
+		}
+		this.putUByte(i);
+	}
+
+	putSmart08_16(i) {
+		if (i >= 160) {
+			this.putUByte((i>>8) + 160);
+			this.putUByte(i);
+			return;
+		}
+		this.putUByte(i);
+	}
+
+	putSmart16_64(i) {
+		if (i >= 128) {
+			this.data[this.endMarker++] = Number(((i >> 56n) + 128n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i) & 0xFFn);
+			return;
+		}
+		this.putShort(i);
+	}
+
+	putSmart16_32(i) {
+		if (i >= 128) {
+			this.putUByte((i>>24) + 128);
+			this.putUByte(i>>16);
+			this.putUByte(i>>8);
+			this.putUByte(i);
+			return;
+		}
 		this.putShort(i);
 	}
 	
+	putSmart32_64(i) {
+		if (i >= 128) {
+			this.putUByte((i >> 56) + 128);
+			this.putUByte(i >> 48);
+			this.putUByte(i >> 40);
+			this.putUByte(i >> 32);
+			this.putUByte(i >> 24);
+			this.putUByte(i >> 16);
+			this.putUByte(i >> 8);
+			this.putUByte(i);
+			this.data[this.endMarker++] = Number(((i >> 56n) + 128n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
+			this.data[this.endMarker++] = Number((i) & 0xFFn);
+			return;
+		}
+		this.putInt(i);
+	}
+
 	// Queues up a big-endian unsigned long integer (uint64) into the current output packet buffer.
-	putLong(l) {
-		this.putInt(l.shiftRight(32).toInt());
-		this.putInt(l.toInt());
+	putLong(i) {
+		this.data[this.endMarker++] = Number((i >> 56n) & 0xFFn);
+		this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
+		this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
+		this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
+		this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
+		this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
+		this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
+		this.data[this.endMarker++] = Number((i) & 0xFFn);
 	}
 
 	// Queues up an array of unsigned bytes into the current output packet buffer.
 	// offset and len are optional, and default to offset=0, len=src.length
 	putBytes(src, offset = 0, len = src.length) {
-		for (let i = offset; i < offset+len; i++) {
-			if (i > src.length)
-				break;
-			this.packetData[this.packetEnd++] = src[i];
-		}
+		for (let i = offset; i < offset+len && i < src.length; i++)
+			this.putByte(src[i]);
 	}
 
-	// Flushes the outgoing packet buffer contents to the underlying socket connection.
-	flushPacket() {
-		this.sendPacket();
-		this.flushWriter();
-	}
 }
 
-module.exports = Packet;
+export { Packet as default }

@@ -7,4 +7,4 @@ class Scanline {
     }
 }
 
-module.exports = Scanline;
+export { Scanline as default };

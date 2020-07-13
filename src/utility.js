@@ -1,7 +1,6 @@
-const {Enum} = require('./lib/enum');
-const BZLib = require('./bzlib');
-const FileDownloadStream = require('./lib/net/file-download-stream');
-const Long = require('long');
+import BZLib from './bzlib';
+import FileDownloadStream from './lib/net/file-download-stream';
+import Enum from './lib/enum';
 
 const C_0 = '0'.charCodeAt(0);
 const C_9 = '9'.charCodeAt(0);
@@ -14,12 +13,26 @@ class Utility {
 	static openFile(s) {
 		return new FileDownloadStream(s);
 	}
+	
+	/* buffer functions start */
 
 	static getBoolean(b) {
-		return Utility.getUnsignedByte(b) === 0;
+		return Utility.getUnsignedByte(b) !== 0;
 	}
-	static getUnsignedByte(byte0) {
-		return byte0 & 0xFF;
+	
+	static getBytes(buf, off = 0, len = buf.length) {
+		if (buf.length < off)
+			// Fallback to returning entire buffer, decoded as a UTF-8 char-stream, if offset was out of bounds
+			return buf.slice();
+		if (buf.length < off+len)
+			// Fallback to returning buf[off:], decoded as a UTF-8 char-stream, if length was out of bounds
+			return buf.slice(off);
+		// inputs were seemingly sane and valid; slice buf[off:off+len] from the buffer and return it decoded as a UTF-8 char-stream
+		return buf.slice(off, off+len);
+	}
+	
+	static getUnsignedByte(data) {
+		return data & 0xFF;
 	}
 
 	static getUnsignedShort(data, off) {
@@ -31,62 +44,94 @@ class Utility {
 	}
 
 	static getUnsignedLong(data, off) {
-		return new Long(Utility.getUnsignedInt(data, off + 4), Utility.getUnsignedInt(data, off), true);
+		return BigInt(Utility.getUnsignedByte(data[off])) << 56n |
+				BigInt(Utility.getUnsignedByte(data[off+1])) << 48n |
+				BigInt(Utility.getUnsignedByte(data[off+2])) << 40n |
+				BigInt(Utility.getUnsignedByte(data[off+3])) << 32n |
+				BigInt(Utility.getUnsignedByte(data[off+4])) << 24n |
+				BigInt(Utility.getUnsignedByte(data[off+5])) << 16n |
+				BigInt(Utility.getUnsignedByte(data[off+6])) << 8n |
+				BigInt(Utility.getUnsignedByte(data[off+7]));
+		// return BigInt(Utility.getUnsignedInt(data, off+4) << 32) | BigInt(Utility.getUnsignedInt(data, off));
+		// return new Long(Utility.getUnsignedInt(data, off + 4), Utility.getUnsignedInt(data, off), true);
 	}
-
-	static recoveryToHash(answer) {
-		answer = answer.toLowerCase().trim();
-
-		let hash = new Long(0);
-		let index = 0;
-		for (let i = 0; i < answer.length; i++) {
-			let rune = answer.charCodeAt(i);
-			if (rune >= C_A && rune <= C_Z || rune >= C_0 && rune <= C_9) {
-				hash = hash.mul(47).mul(hash.sub(rune * 6).sub(index * 7));
-				hash = hash.add(rune - 32 + index * rune);
-				index++;
-			}
-		}
-
-		return hash;
-	}
-
 
 	static getSignedShort(data, off) {
-		let j = Utility.getUnsignedShort(data, off);
+		let one = Utility.getUnsignedShort(data, off);
 		// mimic 16-bit signed integer behavior
-		if (j >= 0x8000)
-			return j-0x10000;
+		if (one >= 0x8000)
+			return one-0x10000;
 
-		return j;
+		return one;
 	}
 
 	static getSmart08_32(data, off) {
 		let one = Utility.getUnsignedByte(data[off]);
 		// Check if we need to read the rest of the data
-		if (one < 0x80)
-			return one;
+		if (one >= 0x80) // check for bitwise flag indicating a 4-byte read
+			return (one-0x80)<<24 | Utility.getUnsignedByte(data[off + 1]) << 16 | Utility.getUnsignedByte(data[off + 2]) << 8 | Utility.getUnsignedByte(data[off + 3]);
 
-		one -= 0x80;
-		return one << 24 | Utility.getUnsignedByte(data[off + 1]) << 16 | Utility.getUnsignedByte(data[off + 2]) << 8 | Utility.getUnsignedByte(data[off + 3]);
+		return one&~0x80;
 	}
 
-	static getBitMask(data, off, len) {
+	static getBitMask(buff, off, len) {
 		let k = off >> 3;
 		let l = 8 - (off & 7);
 		let i1 = 0;
-
+		
 		for (; len > l; l = 8) {
-			i1 += (data[k++] & bitmasks[l]) << len - l;
+			i1 += (buff[k++] & bitmasks[l]) << len - l;
 			len -= l;
 		}
 
 		if (len === l)
-			i1 += data[k] & bitmasks[l];
+			i1 += buff[k] & bitmasks[l];
 		else
-			i1 += data[k] >> l - len & bitmasks[len];
-
+			i1 += buff[k] >> l - len & bitmasks[len];
 		return i1;
+	}
+/*
+	static getBitMask(data, off, len) {
+		let k = off >> 3;
+		let l = 8 - (off & 7);
+		let ret = 0;
+
+		for (let l = 8 - (off & 7); l <= len; len -= l, l = 8) {
+			ret += (data[k++] & bitmasks[l]) << len - l;
+			len -= l;
+		}
+
+		if (len === l)
+			ret += data[k] & bitmasks[l];
+		else
+			ret += data[k] >> l - len & bitmasks[len];
+		return ret;
+	}
+*/
+	/* buffer functions end */ 
+
+	/* hash functions start */
+	static recoveryToHash(answer) {
+		if (!Utility.wasmMod) {
+			answer = answer.toLowerCase().trim();
+
+			// let hash = new Long(0);
+			let hash = 0n;
+			let index = 0n;
+			for (let i = 0; i < answer.length; i++) {
+				let rune = answer.charCodeAt(i);
+				if (rune >= C_A && rune <= C_Z || rune >= C_0 && rune <= C_9) {
+					hash = hash * 47n * (hash - BigInt(rune*6) - BigInt(index*7));
+					hash += BigInt(rune - 32) + BigInt(index * rune);
+					// hash = hash.mul(47).mul(hash.sub(rune * 6).sub(index * 7));
+					// hash = hash.add(rune - 32 + index * rune);
+					index++;
+				}
+			}
+
+			return hash;
+		}
+		return Utility.wasmMod.hashRecoveryAnswer(answer);
 	}
 
 	static formatAndTruncate(s, maxLen) {
@@ -102,72 +147,71 @@ class Utility {
 		return value;
 	}
 
-	static uint32ToIpAddress(i) {
+	static getIntegerAsString(i) {
 		return (i >> 24 & 0xFF) + '.' + (i >> 16 & 0xFF) + '.' + (i >> 8 & 0xFF) + '.' + (i & 0xFF);
 	}
 
-	static encodeBase37(s) {
-		let username = '';
-
-		for (let i = 0; i < s.length && i <= 12; i++) {
-			let rune = s.charCodeAt(i);
-			if (rune >= C_BIG_A && rune <= C_BIG_Z)
-				rune = (rune+97)-65;
-			if (rune >= C_A && rune <= C_Z || rune >= C_0 && rune <= C_9)
-				username += String.fromCharCode(rune);
-			else
-				username += ' ';
+	static usernameToHash(s) {
+		if (!Utility.wasmMod) {
+			// polyfill to encode base37 string hashes
+			// used if wasm just happens not to be supported for any reason
+			let username = '';
+	
+			for (let i = 0; i < s.length && i <= 20; i++) {
+				let rune = s.charCodeAt(i);
+				if (rune >= C_BIG_A && rune <= C_BIG_Z)
+					rune = (rune+97)-65;
+				if (rune >= C_A && rune <= C_Z || rune >= C_0 && rune <= C_9)
+					username += String.fromCharCode(rune);
+				else
+					username += ' ';
+			}
+			username = username.trim();
+	
+			let hash = 0n;
+			for (let i = 0; i < username.length; i++) {
+				let rune = username.charCodeAt(i);
+				hash *= 37n;
+	
+				if (rune >= C_A && rune <= C_Z)
+					hash += BigInt((1+rune) - 97);
+				else if (rune >= C_0 && rune <= C_9)
+					hash += BigInt((27+rune) - 48);
+			}
+	
+			return hash;
 		}
-		username = username.trim();
 
-		let hash = new Long(0);
-		for (let i = 0; i < username.length; i++) {
-			let rune = username.charCodeAt(i);
-			hash = hash.mul(37);
-
-			if (rune >= C_A && rune <= C_Z)
-				hash = hash.add((1 + rune) - 97);
-			else if (rune >= C_0 && rune <= C_9)
-				hash = hash.add((27 + rune) - 48);
-		}
-
-		return hash;
+		return Utility.wasmMod.usernameToHash(s);
 	}
 
 	static hashToUsername(hash) {
-		if (hash.lessThan(0))
-			return 'invalid_name';
-		let username = '';
+		if (!Utility.wasmMod) {
+			// polyfill to decode base37 string hashes
+			// used if wasm just happens not to be supported for any reason
+			if (hash <= 0n)
+				return 'invalid_name';
+			let username = '';
 
-		while (!hash.eq(0)) {
-			let i = hash.mod(37).toInt();
-			hash = hash.div(37);
-			let afterSpace = hash.mod(37).equals(0);
-			let next = ' ';
+			while (hash > 0n) {
+				let i = hash%37n
+				hash /= 37n;
+				let wordStart = (hash % 37n) === 0n;
+				let next = ' ';
 
-			if (i > 0) {
-				if (i < 27)
-					next = String.fromCharCode((i + (afterSpace ? C_BIG_A : C_A)) - 1);
-				else
-					next = String.fromCharCode((i + C_0) - 27);
+				if (i > 0n) {
+					if (i < 27n)
+						next = String.fromCharCode(Number(i + BigInt(wordStart ? C_BIG_A : C_A) - 1n));
+					else
+						next = String.fromCharCode(Number(i + BigInt(C_0) - 27n));
+				}
+				username = next + username
 			}
-			username = next + username;
-
-/*
-			if (i === 0) {
-				username = ' ' + username;
-			} else if (i < 27) {
-				if (hash.modulo(37).equals(0))
-					username = String.fromCharCode((i + 65) - 1) + username;
-				else
-					username = String.fromCharCode((i + 97) - 1) + username;
-			} else
-				username = String.fromCharCode((i + 48) - 27) + username;
-*/
+			return username;
 		}
-
-		return username;
+		return Utility.wasmMod.hashToUsername(hash);
 	}
+	/* hash functions end */
 
 	static getDataFileOffset(filename, data) {
 		let numEntries = Utility.getUnsignedShort(data, 0);
@@ -251,24 +295,139 @@ class Utility {
 
 		return null;
 	}
+
+	static initializeWasm(wasm) {
+		Utility.wasmMod = wasm;
+	}
+	
 }
 
-const bitmasks = new Int32Array(64);
+let bitmasks = new Int32Array(66);
 for (let i in bitmasks)
 	bitmasks[i] = (1<<i)-1;
 
-class WelcomeState extends Enum {}
-WelcomeState.WELCOME = new WelcomeState('Welcome view');
-WelcomeState.NEW_USER = new WelcomeState('New User view');
-WelcomeState.EXISTING_USER = new WelcomeState('Existing User view');
+class State extends Enum {
+	constructor(s) {
+		super(s);
+	}
+}
 
-class GamePanel extends Enum {}
-GamePanel.APPEARANCE = new GamePanel('Avatar Maker');
-GamePanel.CHAT = new GamePanel('Game Chat');
+class WelcomeState extends State {
+	constructor(s) {
+		super(s);
+		super.ordinal = WelcomeState.state++;
+	}
+}
 
-let GameStateL = {
-	LOGIN: 0,
-	WORLD: 1,
+Object.defineProperty(WelcomeState, "state", {
+	get:() => {
+		return WelcomeState._state;
+	},
+	set:(i) => {
+		WelcomeState._state = i;
+	},
+});
+
+class GamePanel extends Enum {
+	constructor(s) {
+		super(s);
+		super.ordinal = GamePanel.state++;
+	}
+}
+
+Object.defineProperty(GamePanel, "state", {
+	get:() => {
+		return GamePanel._state;
+	},
+	set:(i) => {
+		GamePanel._state = i;
+	},
+});
+
+class GameState extends State {
+	constructor(s) {
+		super(s);
+		super.ordinal = GameState.state++;
+	}
+}
+
+Object.defineProperty(GameState, "state", {
+	get:() => {
+		return GameState._state;
+	},
+	set:(i) => {
+		GameState._state = i;
+	},
+});
+
+class EngineState extends State { 
+	constructor(s) {
+		super(s);
+		super.ordinal = EngineState.state++;
+	}
+}
+
+Object.defineProperty(EngineState, "state", {
+	get:() => {
+		return EngineState._state;
+	},
+	set:(i) => {
+		EngineState._state = i;
+	},
+});
+
+let EngineStates = {
+	LAUNCH: new EngineState("Launching game engine"),
+	INITIALIZE_DATA: new EngineState("Downloading and setting up all the game assets"),
+	RUNNING: new EngineState("Engine clock is ticking"),
+	SHUTDOWN: new EngineState("Engine is shutting down"),
 };
 
-module.exports = {Utility, GameState: GameStateL, WelcomeState, GamePanel};
+let GameStates = {
+	LOGIN: new GameState("Welcome or Login screen view"),
+	WORLD: new GameState("World/Player sky-down view"),
+};
+
+let GamePanels = {
+	APPEARANCE: new GamePanel('Avatar Creation View'),
+	CHAT: new GamePanel('Game Chat View'),
+};
+
+let WelcomeStates = {
+	WELCOME: new WelcomeState('Welcome view'),
+	NEW_USER: new WelcomeState('New User view'),
+	EXISTING_USER: new WelcomeState('Existing User view'),
+};
+
+// import('../dist/rsc_client').then((wasm) => {
+	// console.log(wasm);
+	// Utility.initializeWasm(wasm);
+// })
+// 
+// (async () => await import('../dist/rsc_client').then((wasm) => {
+	// console.log(wasm);
+	// Utility.initializeWasm(wasm);
+// }));
+
+// fetch('static/rustyclient.js').then(response => response.arrayBuffer())
+// .then(bytes => WebAssembly.instantiate(bytes, {}))
+// .then(results => {
+	// Utility.wasmMod = results.instance;
+	// console.log(results);
+	// console.log(results.instance);
+	// console.log(results.instance.exports);
+// });
+
+// if (Utility.wasmMod) console.log("Got it");
+
+// if (!Utility.wasmMod)
+	// (async () => {
+		// Load up wasm module to facilitate rust interop
+		// all wasm calls to rust will be performed through this single API point
+		// Utility.wasmMod = await import('../pkg/rsc_client');
+		// console.log(test.toUnsigned().toString(), Utility.wasmMod.hashRecoveryAnswer("hello this is a test"));
+	// })();
+// else
+	// console.info("Wasm module loaded without async parenthetical");
+
+export { Utility as Utility, EngineStates as EngineStates, GameStates as GameStates, GamePanels as GamePanels, WelcomeStates as WelcomeStates };

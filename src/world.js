@@ -1,8 +1,8 @@
-const GameData = require('./game-data');
-const Scene = require('./scene');
-const GameModel = require('./game-model');
-const {Utility} = require('./utility');
-const ndarray = require('ndarray');
+import GameData from './game-data';
+import Scene from './scene';
+import GameModel from './game-model';
+import {Utility} from './utility';
+import ndarray from 'ndarray';
 
 const OBJECT_MAPS_START = 48000;
 class World {
@@ -740,6 +740,7 @@ class World {
                 }
             }
 
+			// x-1,y
             if (x > 0 && this.routeVia.get(x - 1, y) === 0 && (this.objectAdjacency.get(x - 1, y) & 0b1111000) === 0) {
                 routeX[writePtr] = x - 1;
                 routeY[writePtr] = y;
@@ -747,6 +748,7 @@ class World {
                 this.routeVia.set(x - 1, y, 2);
             }
 
+			// 8, x+1,y
             if (x < 95 && this.routeVia.get(x + 1, y) === 0 && (this.objectAdjacency.get(x + 1, y) & 0b1110010) === 0) {
                 routeX[writePtr] = x + 1;
                 routeY[writePtr] = y;
@@ -754,6 +756,7 @@ class World {
                 this.routeVia.set(x + 1, y, 8);
             }
 
+			// 1, x,y-1
             if (y > 0 && this.routeVia.get(x, y - 1) === 0 && (this.objectAdjacency.get(x, y - 1) & 0b1110100) === 0) {
                 routeX[writePtr] = x;
                 routeY[writePtr] = y - 1;
@@ -761,6 +764,7 @@ class World {
                 this.routeVia.set(x, y - 1, 1);
             }
 
+			// 4, x,y+1
             if (y < 95 && this.routeVia.get(x, y + 1) === 0 && (this.objectAdjacency.get(x, y + 1) & 0b1110001) === 0) {
                 routeX[writePtr] = x;
                 routeY[writePtr] = y + 1;
@@ -768,6 +772,7 @@ class World {
                 this.routeVia.set(x, y + 1, 4);
             }
 
+			// 2|1, x,y-1 x-1,y x-1,y-1
             if (x > 0 && y > 0 && (this.objectAdjacency.get(x, y - 1) & 0b1110100) === 0 && (this.objectAdjacency.get(x - 1, y) & 0b1111000) === 0 && (this.objectAdjacency.get(x - 1, y - 1) & 0b1111100) === 0 && this.routeVia.get(x - 1, y - 1) === 0) {
                 routeX[writePtr] = x - 1;
                 routeY[writePtr] = y - 1;
@@ -775,6 +780,7 @@ class World {
                 this.routeVia.set(x - 1, y - 1, 3);
             }
 
+			// 8|1, x,y-1, x+1,y, x+1,y-1
             if (x < 95 && y > 0 && (this.objectAdjacency.get(x, y - 1) & 0b1110100) === 0 && (this.objectAdjacency.get(x + 1, y) & 0b1110010) === 0 && (this.objectAdjacency.get(x + 1, y - 1) & 0b1110110) === 0 && this.routeVia.get(x + 1, y - 1) === 0) {
                 routeX[writePtr] = x + 1;
                 routeY[writePtr] = y - 1;
@@ -782,6 +788,7 @@ class World {
                 this.routeVia.set(x + 1, y - 1, 9);
             }
 
+			// 4|2, x,y+1 x-1,y x-1,y+1
             if (x > 0 && y < 95 && (this.objectAdjacency.get(x, y + 1) & 0b1110001) === 0 && (this.objectAdjacency.get(x - 1, y) & 0b1111000) === 0 && (this.objectAdjacency.get(x - 1, y + 1) & 0b1111001) === 0 && this.routeVia.get(x - 1, y + 1) === 0) {
                 routeX[writePtr] = x - 1;
                 routeY[writePtr] = y + 1;
@@ -789,6 +796,7 @@ class World {
                 this.routeVia.set(x - 1, y + 1, 6);
             }
 
+			// 8|4, x,y+1, x+1,y x+1,y+1
             if (x < 95 && y < 95 && (this.objectAdjacency.get(x, y + 1) & 0b1110001) === 0 && (this.objectAdjacency.get(x + 1, y) & 0b1110010) === 0 && (this.objectAdjacency.get(x + 1,y + 1) & 0b1110011) === 0 && this.routeVia.get(x + 1, y + 1) === 0) {
                 routeX[writePtr] = x + 1;
                 routeY[writePtr] = y + 1;
@@ -879,9 +887,8 @@ class World {
         this.decodeSector(l, i1, plane, 3);
         this.fillEmptySectorsAndBorder();
 
-        if (this.parentModel === null) {
-            this.parentModel = GameModel._from7(18688, 18688, true, true, false, false, true);
-        }
+        if (this.parentModel === null)
+            this.parentModel = GameModel._from7(0x4900, 0x4900, true, true, false, false, true);
 
         if (flag) {
             this.surface.blackScreen();
@@ -895,7 +902,7 @@ class World {
             let gameModel = this.parentModel;
             gameModel.clear();
     
-            // for each tile, we offset the ambient lighting, to make the world seem less fake??
+            // for each tile, we offset the ambience, to make the world seem less fake??
             // the tile vectors new ambience will be set to (256 - (rand(-5, 5)*4)
             for (let x = 0; x < this.regionWidth; x++) for (let y = 0; y < this.regionHeight; y++) {
                 let z = -this.getTerrainHeight(x, y);
@@ -1867,4 +1874,4 @@ class World {
 
 World.colourTransparent = 12345678;
 
-module.exports = World;
+export { World as default };

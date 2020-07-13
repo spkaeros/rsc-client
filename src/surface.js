@@ -1,4 +1,5 @@
-const {Utility} = require('./utility');
+import {Utility} from './utility';
+import Color from './lib/graphics/color';
 
 const C_0 = '0'.charCodeAt(0);
 const C_9 = '9'.charCodeAt(0);
@@ -15,19 +16,19 @@ function fixPixel(pixel) {
 
 class Surface {
     constructor(width, height, limit, component) {
-        this.image = null;
-        this.landscapeColours = null;
-        this.anIntArray340 = null;
-        this.anIntArray341 = null;
-        this.anIntArray342 = null;
-        this.anIntArray343 = null;
-        this.anIntArray344 = null;
-        this.anIntArray345 = null;
+        this.image = void 0;
+        this.landscapeColours = void 0;
+        this.anIntArray340 = void 0;
+        this.anIntArray341 = void 0;
+        this.anIntArray342 = void 0;
+        this.anIntArray343 = void 0;
+        this.anIntArray344 = void 0;
+        this.anIntArray345 = void 0;
         this.boundsTopY = 0;
         this.boundsTopX = 0;
 
         this.interlace = false;
-        this.loggedIn = false;
+        this.worldVisible = false;
         this.boundsBottomY = height;
         this.boundsBottomX = width;
         this.width1 = this.width2 = width;
@@ -35,15 +36,15 @@ class Surface {
         this.area = width * height;
         this.pixels = new Int32Array(width * height);
 
-        this.surfacePixels = [];
-        this.surfacePixels.length = limit;
-        this.surfacePixels.fill(null);
-        this.spriteColoursUsed = [];
-        this.spriteColoursUsed.length = limit;
-        this.spriteColoursUsed.fill(null);
-        this.spriteColourList = [];
-        this.spriteColourList.length = limit;
-        this.spriteColourList.fill(null);
+        this.surfacePixels = new Array(limit);
+        // this.surfacePixels.length = limit;
+        // this.surfacePixels.fill(void 0);
+        this.spriteColoursUsed = new Array(limit);
+        // this.spriteColoursUsed.length = limit;
+        // this.spriteColoursUsed.fill(void 0);
+        this.spritePalettes = new Array(limit);
+        // this.spritePalettes.length = limit;
+        // this.spritePalettes.fill(void 0);
         this.spriteTranslate = new Int8Array(limit);
         this.spriteWidth = new Int32Array(limit);
         this.spriteHeight = new Int32Array(limit);
@@ -60,7 +61,8 @@ class Surface {
     }
 
     static rgbToLong(red, green, blue) {
-        return (red << 16) + (green << 8) + blue;
+    	return new Color(red, green, blue, 0x0).toRGB();
+        // return (red << 16) | (green << 8) | blue;
     }
 
     static createFont(bytes, id) {
@@ -409,11 +411,11 @@ class Surface {
 
     clear() {
         for (let i = 0; i < this.surfacePixels.length; i++) {
-            this.surfacePixels[i] = null;
+            this.surfacePixels[i] = void 0;
             this.spriteWidth[i] = 0;
             this.spriteHeight[i] = 0;
-            this.spriteColoursUsed[i] = null;
-            this.spriteColourList[i] = null;
+            this.spriteColoursUsed[i] = void 0;
+            this.spritePalettes[i] = void 0;
         }
     }
 
@@ -449,10 +451,10 @@ class Surface {
             let size = this.spriteWidth[id] * this.spriteHeight[id];
 
             this.spriteColoursUsed[id] = new Int8Array(size);
-            this.spriteColourList[id] = colours;
+            this.spritePalettes[id] = colours;
             this.spriteWidthFull[id] = fullWidth;
             this.spriteHeightFull[id] = fullHeight;
-            this.surfacePixels[id] = null;
+            this.surfacePixels[id] = void 0;
             this.spriteTranslate[id] = false;
 
             if (this.spriteTranslateX[id] !== 0 || this.spriteTranslateY[id] !== 0) {
@@ -528,10 +530,11 @@ class Surface {
     drawWorld(spriteId) {
         let spriteSize = this.spriteWidth[spriteId] * this.spriteHeight[spriteId];
         let spritePixels = this.surfacePixels[spriteId];
-        let ai1 = new Int32Array(32768);
+        let ai1 = new Int32Array(0x8000);
 
         for (let k = 0; k < spriteSize; k++) {
             let l = spritePixels[k];
+            // f800 is bits 12-16, f80000 is bits 20-24, f8 is 3-8
             ai1[((l & 0xf80000) >> 9) + ((l & 0xf800) >> 6) + ((l & 0xf8) >> 3)]++;
         }
 
@@ -596,18 +599,17 @@ class Surface {
         }
 
         this.spriteColoursUsed[spriteId] = abyte0;
-        this.spriteColourList[spriteId] = ai2;
-        this.surfacePixels[spriteId] = null;
+        this.spritePalettes[spriteId] = ai2;
+        this.surfacePixels[spriteId] = void 0;
     }
 
     loadSprite(spriteId) {
-        if (this.spriteColoursUsed[spriteId] === null) {
+        if (!this.spriteColoursUsed[spriteId])
             return;
-        }
 
         let size = this.spriteWidth[spriteId] * this.spriteHeight[spriteId];
         let idx = this.spriteColoursUsed[spriteId];
-        let cols = this.spriteColourList[spriteId];
+        let cols = this.spritePalettes[spriteId];
         let pixels = new Int32Array(size);
 
         for (let pixel = 0; pixel < size; pixel++) {
@@ -616,6 +618,7 @@ class Surface {
             if (colour === 0) {
                 colour = 1;
             } else if (colour === 0xff00ff) {
+            	// magenta == alpha transparency?
                 colour = 0;
             }
 
@@ -623,8 +626,8 @@ class Surface {
         }
 
         this.surfacePixels[spriteId] = pixels;
-        this.spriteColoursUsed[spriteId] = null;
-        this.spriteColourList[spriteId] = null;
+        this.spriteColoursUsed[spriteId] = void 0;
+        this.spritePalettes[spriteId] = void 0;
     }
 
     // used from World
@@ -730,8 +733,8 @@ class Surface {
             }
         }
 
-        if (this.surfacePixels[id] === null) {
-            this._drawSprite_from10A(this.pixels, this.spriteColoursUsed[id], this.spriteColourList[id], rX, rY, width, height, w2, h2, inc);
+        if (!this.surfacePixels[id]) {
+            this._drawSprite_from10A(this.pixels, this.spriteColoursUsed[id], this.spritePalettes[id], rX, rY, width, height, w2, h2, inc);
             return;
         } else {
             this._drawSprite_from10(this.pixels, this.surfacePixels[id], 0, rX, rY, width, height, w2, h2, inc);
@@ -877,8 +880,8 @@ class Surface {
             }
         }
 
-        if (this.surfacePixels[spriteId] === null) {
-            this._drawSpriteAlpha_from11A(this.pixels, this.spriteColoursUsed[spriteId], this.spriteColourList[spriteId], j1, size, width, height, extraXSpace, j2, yInc, alpha);
+        if (!this.surfacePixels[spriteId]) {
+            this._drawSpriteAlpha_from11A(this.pixels, this.spriteColoursUsed[spriteId], this.spritePalettes[spriteId], j1, size, width, height, extraXSpace, j2, yInc, alpha);
             return;
         } else {
             this._drawSpriteAlpha_from11(this.pixels, this.surfacePixels[spriteId], 0, j1, size, width, height, extraXSpace, j2, yInc, alpha);
@@ -1303,7 +1306,7 @@ class Surface {
         let j1 = this.width2;
         let k1 = this.height2;
 
-        if (this.landscapeColours === null) {
+        if (!this.landscapeColours) {
             this.landscapeColours = new Int32Array(512);
 
             for (let l1 = 0; l1 < 256; l1++) {
@@ -1326,9 +1329,9 @@ class Surface {
         let j3 = j2;
         let k3 = i2;
         let l3 = l2;
-        rotation &= 0xff;
+        rotation &= 0xFF;
         let i4 = this.landscapeColours[rotation] * scale;
-        let j4 = this.landscapeColours[rotation + 256] * scale;
+        let j4 = this.landscapeColours[rotation + 0x100] * scale;
         let k4 = x + (j2 * i4 + i2 * j4 >> 22);
         let l4 = y + (j2 * j4 - i2 * i4 >> 22);
         let i5 = x + (j3 * i4 + i3 * j4 >> 22);
@@ -1338,10 +1341,10 @@ class Surface {
         let i6 = x + (l3 * i4 + k3 * j4 >> 22);
         let j6 = y + (l3 * j4 - k3 * i4 >> 22);
 
-        if (scale === 192 && (rotation & 0x3f) === (Surface.anInt348 & 0x3f)) {
+        if (scale === 192 && (rotation & 0x3f) === (Surface.lastRotation & 0x3f)) {
             Surface.anInt346++;
         } else if (scale === 128) {
-            Surface.anInt348 = rotation;
+            Surface.lastRotation = rotation;
         } else {
             Surface.anInt347++;
         }
@@ -1375,7 +1378,7 @@ class Surface {
             l6 = this.boundsBottomY;
         }
 
-        if (this.anIntArray340 === null || this.anIntArray340.length !== k1 + 1) {
+        if (!this.anIntArray340 || this.anIntArray340.length !== k1 + 1) {
             this.anIntArray340 = new Int32Array(k1 + 1);
             this.anIntArray341 = new Int32Array(k1 + 1);
             this.anIntArray342 = new Int32Array(k1 + 1);
@@ -1718,7 +1721,7 @@ class Surface {
             }
 
             if (colour2 === 0xffffff) {
-                if (this.surfacePixels[sprite] !== null) {
+                if (this.surfacePixels[sprite]) {
                     if (!flag) {
                         this._transparentSpritePlot_from15(this.pixels, this.surfacePixels[sprite], 0, k2, l2, j4, w, h, j3, k3, width, colour1, i3, l3, i5);
                         return;
@@ -1729,15 +1732,15 @@ class Surface {
                 }
 
                 if (!flag) {
-                    this._transparentSpritePlot_from16A(this.pixels, this.spriteColoursUsed[sprite], this.spriteColourList[sprite], 0, k2, l2, j4, w, h, j3, k3, width, colour1, i3, l3, i5);
+                    this._transparentSpritePlot_from16A(this.pixels, this.spriteColoursUsed[sprite], this.spritePalettes[sprite], 0, k2, l2, j4, w, h, j3, k3, width, colour1, i3, l3, i5);
                     return;
                 } else {
-                    this._transparentSpritePlot_from16A(this.pixels, this.spriteColoursUsed[sprite], this.spriteColourList[sprite], 0, (this.spriteWidth[sprite] << 16) - k2 - 1, l2, j4, w, h, -j3, k3, width, colour1, i3, l3, i5);
+                    this._transparentSpritePlot_from16A(this.pixels, this.spriteColoursUsed[sprite], this.spritePalettes[sprite], 0, (this.spriteWidth[sprite] << 16) - k2 - 1, l2, j4, w, h, -j3, k3, width, colour1, i3, l3, i5);
                     return;
                 }
             }
 
-            if (this.surfacePixels[sprite] !== null) {
+            if (this.surfacePixels[sprite]) {
                 if (!flag) {
                     this._transparentSpritePlot_from16(this.pixels, this.surfacePixels[sprite], 0, k2, l2, j4, w, h, j3, k3, width, colour1, colour2, i3, l3, i5);
                     return;
@@ -1748,10 +1751,10 @@ class Surface {
             }
 
             if (!flag) {
-                this._transparentSpritePlot_from17(this.pixels, this.spriteColoursUsed[sprite], this.spriteColourList[sprite], 0, k2, l2, j4, w, h, j3, k3, width, colour1, colour2, i3, l3, i5);
+                this._transparentSpritePlot_from17(this.pixels, this.spriteColoursUsed[sprite], this.spritePalettes[sprite], 0, k2, l2, j4, w, h, j3, k3, width, colour1, colour2, i3, l3, i5);
                 return;
             } else {
-                this._transparentSpritePlot_from17(this.pixels, this.spriteColoursUsed[sprite], this.spriteColourList[sprite], 0, (this.spriteWidth[sprite] << 16) - k2 - 1, l2, j4, w, h, -j3, k3, width, colour1, colour2, i3, l3, i5);
+                this._transparentSpritePlot_from17(this.pixels, this.spriteColoursUsed[sprite], this.spritePalettes[sprite], 0, (this.spriteWidth[sprite] << 16) - k2 - 1, l2, j4, w, h, -j3, k3, width, colour1, colour2, i3, l3, i5);
                 return;
             }
         } catch (e) {
@@ -2123,7 +2126,7 @@ class Surface {
                 } else {
                     let width = Surface.characterWidth[text.charCodeAt(idx)];
 
-                    if (this.loggedIn && colour !== 0) {
+                    if (this.worldVisible && colour !== 0) {
                         this.drawCharacter(width, x + 1, y, 0, fontData);
                         this.drawCharacter(width, x, y + 1, 0, fontData);
                     }
@@ -2303,43 +2306,37 @@ class Surface {
     }
 
     textWidth(text, fontId) {
-        let total = 0;
+    	if (!text || text.length <= 0)
+    		return;
+
         let font = Surface.gameFonts[fontId];
 
+        let width = 0;
         for (let idx = 0; idx < text.length; idx++) {
-            if (text[idx] === '@' && idx + 4 < text.length && text[idx + 4] === '@') {
-                idx += 4;
-            } else if (text[idx] === '~' && idx + 4 < text.length && text[idx + 4] === '~') {
-                idx += 4;
+        	if (idx < text.length-4 && text[idx+4] === text[idx] && (text[idx] === '@' || text[idx] === '~')) {
+                idx += 5;
             } else {
-                total += font[Surface.characterWidth[text.charCodeAt(idx)] + 7];
+                width += font[Surface.characterWidth[text.charCodeAt(idx)] + 7];
             }
         }
 
-        return total;
+        return width;
     }
 }
 
 Surface.anInt346 = 0;
 Surface.anInt347 = 0;
-Surface.anInt348 = 0;
+Surface.lastRotation = 0;
 
-Surface.gameFonts = [];
-Surface.gameFonts.length = 50;
-Surface.gameFonts.fill(null);
-
+Surface.gameFonts = new Array(50);
 Surface.characterWidth = new Int32Array(256);
-
-let s = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!"\243$%^&*()-_=+[{]};:\'@#~,<.>/?\\| ';
-
 for (let i = 0; i < 256; i++) {
-    let j = s.indexOf(String.fromCharCode(i));
-
+    let j = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!"£$%^&*()-_=+[{]};:\'@#~,<.>/?\\| '.indexOf(String.fromCharCode(i));
     if (j === -1) {
-        j = 74;
+        Surface.characterWidth[i] = 666;
+        continue;
     }
-        
     Surface.characterWidth[i] = j * 9;
 }
 
-module.exports = Surface;
+export { Surface as default };
