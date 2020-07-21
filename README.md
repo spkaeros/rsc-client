@@ -1,11 +1,15 @@
-# Rusty RSC client
-*Disclaimer: I do manual testing and ensure it all _looks and feels_ right after any major commit that I make*
-**I made no attempt to ensure _1:1 semantically matching behavior_ when comparing this clients behavior against the official client**
-## Javascript Codebase
-Forked from: *MisterHat's* [mudclient204 javascript port](https://github.com/2003scape/rsc-client)
-_Without his work, I wouldn't have ever started to do this project._
+Rusty RSC client
+================
+**Disclaimer: I do manual testing and ensure it all _looks and feels_ right after any major commit that I make**
+**I made no attempt to ensure _1:1 semantically matching_ behavior when comparing this clients behavior against the official client**
+
+Javascript Codebase
+===================
+Forked from: @misterhat's [**RSClassic mudclient_204_** javascript port](https://github.com/2003scape/rsc-client)
+**Without his work, I wouldn't have even started to work on anything like this project.**
 He did the initial porting work of the Java mc204 to Javascript.  He had ported the codebase exactly as it sat in Java, which worked perfectly, but I wanted more.
-### Improving, modernizing, refactoring, learning...
+Improving, modernizing, refactoring, learning...
+------------------------------------------------
 I picked MisterHat's Javascript port up and I tweaked and hacked at it endlessly whenever I was bored in the name of performance improvements, and refactorization to modern techniques.
 This was kind of my Javascript crash course at first, as I was coming from a very non-web development background (mainly Java, PHP, Go, C, some C++, and minor experience in some others not really worth mentioning).
 After some time, and some performance monitoring with JS profilers, I realized I would need to change some of the guts of the client if I was to see any real meaningful speed ups, and that was something that I was really after since my CPU was just not keeping up sometimes, sadly (at the time, at least).  Modern PCs ran it fine obviously, but I was not running a modern PC, just an old old desktop from pre-08 that had been through a lot with me.
