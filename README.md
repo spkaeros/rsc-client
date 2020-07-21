@@ -1,7 +1,6 @@
-Rusty RSC client
+JS+Rust/WASM RSC webclient
 ================
-**Disclaimer: I do manual testing and ensure it all _looks and feels_ right after any major commit that I make**
-**I made no attempt to ensure _1:1 semantically matching_ behavior when comparing this clients behavior against the official client**
+**Disclaimer: I do manual testing and ensure it all _looks and feels_ right after any major commit that I make but I've made no attempt to ensure _1:1 semantically matching_ behavior when comparing this clients behavior against the official client**
 
 Javascript Codebase
 ===================
@@ -22,4 +21,5 @@ I chose Rust as it is probably one of the best language projects I've found in a
 I will be working on porting the non performance critical calls too, if it turns out that I like Rust as much as I think and may eventually wind up with a full Rust client on my hands (this is my current goal, if nothing in my opinions here change during development).
 
 *I do _not_ recommend trying to use this for anything beyond academic curiosity _at this moment_; I often have small issues left unbroken between large commits*
+
 _If you are familiar with Rust/WASM and JS environment interoperations or with porting JS to Rust or just wanting to learn some new things by doing rather than by reading, feel free to help me porting parts of the client_
