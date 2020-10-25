@@ -112,7 +112,6 @@ export default class GameConnection extends GameShell {
 		try {
 			this.username = u;
 			u = Utility.formatAndTruncate(u, 20);
-			
 			this.password = p;
 			p = Utility.formatAndTruncate(p, 20);
 
@@ -131,7 +130,6 @@ export default class GameConnection extends GameShell {
 				this.clientStream.closeStream();
 
 			this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port), this);
-			// TODO: XTEA block over the username, placed directly after the RSA block I believe
 			this.clientStream.send(Ops.LOGIN(u, p, reconnecting));
 
 			let resp = await this.clientStream.readStream();
@@ -233,18 +231,18 @@ export default class GameConnection extends GameShell {
 	closeConnection() {
 		if (this.clientStream) {
 			try {
-				this.clientStream.add(Ops.DISCONNECT);
-				this.clientStream.flush();
+				this.clientStream.send(Ops.DISCONNECT);
+				this.clientStream.closeStream();
 			} catch (e) {
 				console.error(e);
 			}
-			// this.clientStream.closeStream();
 		}
 		
 		this.resetLoginVars();
 	}
 	
 	async lostConnection() {
+		// this.closeConnection();
 		try {
 			this.socketException = new GameException(Error('Lost connection - attempting to re-establish...'), false);
 			throw this.socketException;
@@ -252,7 +250,6 @@ export default class GameConnection extends GameShell {
 			console.info('Network connection lost; re-establishing...');
 			console.error(e);
 		}
-		this.clientStream.close();
 
 		this.drawTextBox("Lost connection", "attempting to re-establish...");
 
@@ -287,17 +284,26 @@ export default class GameConnection extends GameShell {
 		} catch (e) {
 			console.error(e.message);
 			console.warn('Error in socket write subroutine:', e)
-			await this.lostConnection();
+			this.closeConnection();
+			this.clientStream = null;
 			return;
 		}
 
 		try {
 			let buffer = await this.clientStream.nextPacket();
+			if (this.clientStream.didError) {
+				await this.closeConnection();
+				// await this.lostConnection();
+				return;
+			}
 			if (!buffer || buffer.length <= 0)
 				return;
 			this.handlePacket(buffer);
 		} catch(e) {
 			console.warn('Error in socket read subroutine:', e)
+			this.closeConnection();
+			this.clientStream = null;
+			return;
 		}
 	}
 	
@@ -428,7 +434,7 @@ export default class GameConnection extends GameShell {
 	}
 	
 	ignoreRemove(l) {
-		this.clientStream.add(Ops.REMOVE_IGNORE(l));
+		this.clientStream.queue(Ops.REMOVE_IGNORE(l));
 		for (let ignored = 0; ignored < this.ignoreListCount; ignored++) {
 			if (this.ignoreList[ignored] === l) {
 				this.ignoreListCount--;
@@ -447,7 +453,7 @@ export default class GameConnection extends GameShell {
 				return;
 			}
 		
-		this.clientStream.add(Ops.ADD_FRIEND(l));
+		this.clientStream.queue(Ops.ADD_FRIEND(l));
 		if (this.friendListCount < GameConnection.maxSocialListSize) {
 			this.friendListHashes[this.friendListCount] = l;
 			this.friendListOnline[this.friendListCount++] = 0;

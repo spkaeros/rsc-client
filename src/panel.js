@@ -222,18 +222,16 @@ class Panel {
 				text += 'X';
 		}
 
+		if (this.focusControlIndex === control)
+			text += '*';
 		if (this.controlType[control] === CONTROL_TYPES.LIST_INPUT) {
 			if (this.mouseLastButtonDown === 1 && this.mouseX >= x && this.mouseY >= y - Math.floor(height / 2) && this.mouseX <= x + width && this.mouseY <= y + Math.floor(height / 2))
 				this.focusControlIndex = control;
 		} else if (this.controlType[control] === CONTROL_TYPES.TEXT_INPUT) {
 			if (this.mouseLastButtonDown === 1 && this.mouseX >= x - Math.floor(width / 2) && this.mouseY >= y - Math.floor(height / 2) && this.mouseX <= x + Math.floor(width / 2) && this.mouseY <= y + Math.floor(height / 2))
-				this.focusControlIndex = control;
-
+					this.focusControlIndex = control;
 			x -= Math.floor(this.surface.textWidth(text, textSize) / 2);
 		}
-
-		if (this.focusControlIndex === control)
-			text += '*';
 
 		this.drawString(control, x, y + Math.floor(this.surface.textHeight(textSize) / 3), text, textSize);
 	}

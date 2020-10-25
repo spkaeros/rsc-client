@@ -48,45 +48,58 @@ class Packet {
 	}
 	
 	async nextPacket() {
-		return await this.reader.tick(async () => {
-			try {
-				if (++this.readTries > 1000) {
-					this.reader.tickCount = 0;
-					this.exceptionMessage += 'time-out';
-					this.didError = true;
-					console.error('time-out');
-					return void 0;
-				}
+		try {
+			
+			return await this.reader.tick(async () => {
+				try {
+					if (this.didError) {
+						this.reset();
+						this.writeMarker = HEADER_LEN;
+						this.socketException = new GameException(this.exceptionMessage);
+						this.pqueue = [];
+						return this.socketException;
+					}
+					if (++this.readTries > 1000) {
+						this.reader.tickCount = 0;
+						this.exceptionMessage = 'time-out';
+						this.didError = true;
+						throw new Error(this.exceptionMessage);
+						return void 0;
+					}
 
-				// header
-				if (this.readLength === 0 && this.availableStream() >= 2) {
-					this.readTries = 0;
-					this.readLength = await this.getByte();
-					if (this.readLength >= 160)
-						this.readLength = ((this.readLength - 160) << 8) | await this.getByte();
+					// header
+					if (this.readLength === 0 && this.availableStream() >= 2) {
+						this.readTries = 0;
+						this.readLength = await this.getByte();
+						if (this.readLength >= 160)
+							this.readLength = ((this.readLength - 160) << 8) | await this.getByte();
+					}
+					// frame
+					if (this.readLength > 0 && this.availableStream() >= this.readLength) {
+						this.readTries = 0;
+						let readLen = this.readLength;
+						let buff = new Int8Array(readLen);
+						if (readLen < 160)
+							buff[--readLen] = await this.getByte();
+						if (readLen > 0)
+							await this.readBytes(readLen, buff);
+						this.readLength = 0;
+						this.reader.tickCount = 0;
+						this.readTries = 0;
+						return buff;
+					}
+					
+					this.reader.tickCount = this.reader.tickThreshold - 1;
+				} catch(e) {
+					console.error(e);
+					throw e;
 				}
-				// frame
-				if (this.readLength > 0 && this.availableStream() >= this.readLength) {
-					this.readTries = 0;
-					let readLen = this.readLength;
-					let buff = new Int8Array(readLen);
-					if (readLen < 160)
-						buff[--readLen] = await this.getByte();
-					if (readLen > 0)
-						await this.readBytes(readLen, buff);
-					this.readLength = 0;
-					this.reader.tickCount = 0;
-					this.readTries = 0;
-					return buff;
-				}
-				
-				this.reader.tickCount = this.reader.tickThreshold - 1;
-			} catch(e) {
-				console.error(e);
-				throw e;
-			}
-			return void 0;
-		});
+				return void 0;
+			});
+		} catch(e) {
+			throw e;
+			return e;
+		}
 	}
 	
 	hasPacket() {
@@ -102,7 +115,6 @@ class Packet {
 				this.writeMarker = HEADER_LEN;
 				this.socketException = new GameException(this.exceptionMessage);
 				this.pqueue = [];
-				throw this.socketException;
 				return;
 			}
 			if (!this.hasPacket()) {
@@ -117,14 +129,13 @@ class Packet {
 	
 	// Flushes the outgoing packet buffer contents to the underlying socket connection.
 	flush() {
-		if (this.pqueue.length > 0) {
+		if (this.pqueue.length > 0 || this.writeMarker > 0) {
+			if (this.writeMarker > 0) {
+				this.send(this);
+				this.reset();
+			}
 			for (let enqueued = this.pqueue.shift(); enqueued; enqueued = this.pqueue.shift())
 				this.send(enqueued);
-		}
-		if (this.writeMarker > 0) {
-			this.send(this);
-			// this.writeStreamBytes(this.data, 0, this.writeMarker);
-			this.reset();
 		}
 	}
 
@@ -367,14 +378,14 @@ class Packet {
 			this.putUByte(i >> 16);
 			this.putUByte(i >> 8);
 			this.putUByte(i);
-			this.data[this.endMarker++] = Number(((i >> 56n) + 128n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i) & 0xFFn);
+			// this.data[this.endMarker++] = Number(((i >> 56n) + 128n) & 0xFFn);
+			// this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
+			// this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
+			// this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
+			// this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
+			// this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
+			// this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
+			// this.data[this.endMarker++] = Number((i) & 0xFFn);
 			return;
 		}
 		this.putInt(i);

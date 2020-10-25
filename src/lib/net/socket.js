@@ -25,66 +25,75 @@ class Socket {
 			this.client = new WebSocket(`${this.host}:${this.port}`, 'binary');
 			this.client.binaryType = 'arraybuffer';
 
-			let onClose = () => {
-				this.client.removeEventListener('error', error);
-				this.client.removeEventListener('open', open);
+			let open, error, onPacket, onClose;
+			onClose = () => {
 				this.client.removeEventListener('close', onClose);
-				this.client.removeEventListener('message', onPacket);
+				this.client.removeEventListener('error', error);
+				if (this.connected)
+					this.client.removeEventListener('message', onPacket);
+				else
+					this.client.removeEventListener('open', open);
 				this.connected = false;
-				this.close();
+				this.clear();
 			};
-			let onPacket = (msg) => {
-				this.bufferList.push(new Int8Array(msg.data));
+			onPacket = (msg) => {
+				this.bufferList.push(new Uint8Array(msg.data));
 				this.bytesAvailable += msg.data.byteLength;
 				this.refreshCurrentBuffer();
 			};
-			let error = (err) => {
+			error = (err) => {
 				this.client.removeEventListener('error', error);
-				this.client.removeEventListener('open', open);
+				// this.client.removeEventListener('open', open);
+				if (this.connected)
+					this.client.removeEventListener('message', onPacket);
+				else
+					this.client.removeEventListener('open', open);
 				this.client.removeEventListener('close', onClose);
-				this.client.removeEventListener('message', onPacket);
+				// this.client.removeEventListener('message', onPacket);
 				this.connected = false;
 				this.clear();
 				reject(err);
 			};
-			let open = () => {
-				this.client.removeEventListener('open', open);
+			open = () => {
 				this.connected = true;
-				this.client.addEventListener('close', onClose);
+				this.client.removeEventListener('open', open);
 				this.client.addEventListener('message', onPacket);
 				resolve();
 			};
+			this.client.addEventListener('close', onClose);
 			this.client.addEventListener("error", error);
 			this.client.addEventListener("open", open);
 		});
 	}
 
 	write(bytes, off = 0, len = bytes.length) {
+		// if (!this.connected) {
+			// this.close();
+			// return;
+		// }
 		if (!this.connected) throw new Error('attempting to write to closed socket');
 
-		// len = len === -1 ? bytes.length : len;
 		this.client.send(bytes.slice(off, off + len));
 	}
 
 	refreshCurrentBuffer() {
-		if(this.bufferList.length <= 0)
-			return;
-		if (!this.buffer || (this.bufferRemains === 0 && this.available() > 0)) {
-			this.buffer = this.bufferList.shift();
+		if (this.bufferList.length > 0 && !this.buffer || (this.bufferRemains === 0 && this.available() > 0)) {
 			this.bufferOffset = 0;
 
+			this.buffer = this.bufferList.shift();
 			if (this.buffer && this.buffer.length) {
 				this.bufferRemains = this.buffer.length;
-				return;
+			} else {
+				this.bufferRemains = 0;
 			}
-			this.bufferRemains = 0;
 		}
 	}
 
 	// read the first byte available in the buffer, or wait for one to be sent
 	// if none are available.
 	async readByte() {
-		if (!this.connected || !this.client) return -1;
+		if (!this.connected)
+			return -1;
 
 		if (this.available() > 0 && this.bufferRemains > 0 && this.buffer) {
 			this.bufferRemains--;
@@ -94,19 +103,20 @@ class Socket {
 		}
 
 		return new Promise((resolve, reject) => {
-			let onClose = () => {
+			let onClose, onError, onNextMessage;
+			onClose = () => {
 				this.client.removeEventListener('error', onError);
 				this.client.removeEventListener('message', onNextMessage);
 				this.client.removeEventListener('close', onClose);
 				resolve(-1);
 			};
-			let onError = err => {
+			onError = err => {
 				this.client.removeEventListener('error', onError);
 				this.client.removeEventListener('message', onNextMessage);
 				this.client.removeEventListener('close', onClose);
 				reject(err);
 			};
-			let onNextMessage = async () => {
+			onNextMessage = async () => {
 				this.client.removeEventListener('error', onError);
 				this.client.removeEventListener('message', onNextMessage);
 				this.client.removeEventListener('close', onClose);
@@ -127,14 +137,13 @@ class Socket {
 
 		if (this.available() >= len && this.bufferRemains >= len && this.buffer) {
 			// We have enough data for this request
-			for (let i = off; i < off+len; i++) {
-				dst[i] = this.buffer[this.bufferOffset++] & 0xFF;
-				this.bytesAvailable--;
-
-				if (--this.bufferRemains <= 0)
+			for (let i = 0; i < len; i++) {
+				dst[off+i] = this.buffer[this.bufferOffset++] & 0xFF;
+				this.bytesAvailable -= 1;
+				this.bufferRemains -= 1;
+				if (this.bufferRemains <= 0)
 					this.refreshCurrentBuffer();
 			}
-
 			return len;
 		}
 
@@ -166,8 +175,8 @@ class Socket {
 	}
 
 	close() {
-		if (!this.connected) return;
-
+		if (!this.connected)
+			return;
 		this.client.close();
 	}
 

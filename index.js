@@ -4,7 +4,7 @@ import mudclient from './src/mudclient';
 if (!Utility.wasmMod) {
 	// initialize wasm environment for the client to use, with the Utility helper class acting as a bridge
 	(async () => {
-		Utility.wasmMod = await import('./dist/rsc_client.js');
+		Utility.wasmMod = await import('./pkg/rsc_client.js');
 	})()
 }
 

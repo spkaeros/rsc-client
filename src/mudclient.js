@@ -358,8 +358,8 @@ export default class mudclient extends GameConnection {
 		this.playerExperience = new Int32Array(this.playerStatCount);
 		this.tradeRecipientAccepted = false;
 		this.tradeAccepted = false;
-		this.mouseClickXHistory = new Int32Array(8192);
-		this.mouseClickYHistory = new Int32Array(8192);
+		// this.mouseClickXHistory = new Int32Array(8192);
+		// this.mouseClickYHistory = new Int32Array(8192);
 		this.teleportBubbleX = new Int32Array(50);
 		this.teleportBubbleY = new Int32Array(50);
 		this.receivedMessages = new Array(50);
@@ -1583,7 +1583,7 @@ export default class mudclient extends GameConnection {
 				this.inputPmFinal = '';
 				if (msg && this.privateMessageTarget !== 0 && this.privateMessageTarget !== this.localPlayer.hash) {
 					this.sendPrivateMessage(this.privateMessageTarget, msg, msg.length);
-					this.showServerMessage('@pri@You tell ' + Utility.hashToUsername(this.privateMessageTarget) + ': ' + this.chatSystem.decode(this.chatSystem.normalize(msg)));
+					this.showServerMessage('@pri@You tell ' + Utility.hashToUsername(this.privateMessageTarget) + ': ' + this.chatSystem.normalize(this.chatSystem.decode(msg)));
 				} else
 					this.showMessage('@que@Problem sending private message to target!', 3);
 			}
@@ -5958,35 +5958,38 @@ label0:
 	}
 
 	handleMouseDown(button, x, y) {
-		this.mouseClickXHistory[this.mouseClickCount] = x;
-		this.mouseClickYHistory[this.mouseClickCount] = y;
-		this.mouseClickCount = (this.mouseClickCount + 1) & 0x1FFF;
+		// this.mouseClickXHistory[this.mouseClickCount] = x;
+		// this.mouseClickYHistory[this.mouseClickCount] = y;
+		// this.mouseClickCount = (this.mouseClickCount++) & 0x1FFF;
 
 		// TODO: Audit mouse history array usage and figure out reason for them
-		for (let l = 10; l < 4000; l++) { // l=range(10,3999)
-			let clickIdx = this.mouseClickCount - l & 0x1FFF;
-
-			if (this.mouseClickXHistory[clickIdx] === x && this.mouseClickYHistory[clickIdx] === y) {
-				let flag = false;
-
-				for (let j1 = 1; j1 < l; j1++) {
-					let firstIdx = this.mouseClickCount - j1 & 0x1FFF;
-					let secondIdx = clickIdx - j1 & 0x1FFF;
-
-					// mouse history not equal to x,y from caller
-					if (this.mouseClickXHistory[secondIdx] !== x || this.mouseClickYHistory[secondIdx] !== y)
-						flag = true;
-
-					if (this.mouseClickXHistory[firstIdx] !== this.mouseClickXHistory[secondIdx] || this.mouseClickYHistory[firstIdx] !== this.mouseClickYHistory[secondIdx])
-						break;
-
-					if (secondIdx === l - 1 && flag && this.combatTimeout === 0 && this.logoutBoxFrames === 0) {
-						this.sendLogout();
-						return;
-					}
-				}
-			}
-		}
+		// So post-audit, this looks to be a tremendous drain of resources in an environment which
+		// I would like to squeeze the most out of.  Basically loops about 8e6 times for every click
+		// made in-game
+		// for (let l = 10; l < 4000; l++) { // l=range(10,3999)
+			// let clickIdx = this.mouseClickCount - l & 0x1FFF;
+// 
+			// if (this.mouseClickXHistory[clickIdx] === x && this.mouseClickYHistory[clickIdx] === y) {
+				// let flag = false;
+// 
+				// for (let j1 = 1; j1 < l; j1++) {
+					// let firstIdx = this.mouseClickCount - j1 & 0x1FFF;
+					// let secondIdx = clickIdx - j1 & 0x1FFF;
+// 
+					// // mouse history not equal to x,y from caller
+					// if (this.mouseClickXHistory[secondIdx] !== x || this.mouseClickYHistory[secondIdx] !== y)
+						// flag = true;
+// 
+					// if (this.mouseClickXHistory[firstIdx] !== this.mouseClickXHistory[secondIdx] || this.mouseClickYHistory[firstIdx] !== this.mouseClickYHistory[secondIdx])
+						// break;
+// 
+					// if (secondIdx === l - 1 && flag && this.combatTimeout === 0 && this.logoutBoxFrames === 0) {
+						// this.sendLogout();
+						// return;
+					// }
+				// }
+			// }
+		// }
 	}
 
 	drawTeleportBubble(x, y, w, h, id, tx, ty) {
@@ -6658,8 +6661,8 @@ label0:
 								for (let angle = 0; angle < 3; angle++) {
 									// in octa-directional movement, there's 3 possible directions
 									// that move toward each of the 4 main directions (NESW)
-									if (direction === (((2*dir)+(angle+1)) % 8)) {
-										if (dir % 2 === 0)
+									if (direction === (((dir<<1)+(angle+1)) & 7)) {
+										if (dir & 1 === 0)
 											curX += size;
 										else
 											curY += size;
@@ -6671,40 +6674,14 @@ label0:
 							mobToUpdate.waypointCurrent = step = (step+1) % 10;
 							mobToUpdate.waypointsX[step] = curX;
 							mobToUpdate.waypointsY[step] = curY;
-
-							// let sprite = Utility.getBitMask(pdata, bitOffset, 3);
-							// bitOffset += 3;
-							// let step = mobToUpdate.waypointCurrent;
-							// let curX = mobToUpdate.waypointsX[step];
-							// let curY = mobToUpdate.waypointsY[step];
-							// The below block is designed to update path coords using
-							// the current coords and the direction mob is walking.
-							// mobToUpdate.waypointCurrent = step = (step+1) % 10;
-							// for (let dir = 0; dir < 4; dir++) {
-								// let size = (dir < 2 ? this.tileSize : -this.tileSize);
-								// for (let angle = 0; angle < 3; angle++) {
-									// in octa-directional movement, there's 3 possible directions
-									// that move toward each of the 4 main directions (NESW)
-									// if (sprite === (((2*dir)+(angle+1)) % 8)) {
-										// if (dir % 2 === 0)
-											// mobToUpdate.waypointsX[step] += size;
-											// curX += size;
-										// else
-											// curY += size;
-											// mobToUpdate.waypointsY[step] += size;
-									// }
-								// }
-							// }
-							// mobToUpdate.animationNext = sprite;
-							// mobToUpdate.waypointsX[step] = curX;
-							// mobToUpdate.waypointsY[step] = curY;
 						} else {
-							let status = Utility.getBitMask(pdata, bitOffset, 2);
+							let status = Utility.getBitMask(pdata, bitOffset, 4);
 							bitOffset += 2;
-							if (status === 0b11)
+							if (status&0b1100 === 0b1100)
 								continue;
-							mobToUpdate.animationNext = (status << 2) | Utility.getBitMask(pdata, bitOffset, 2);
-							bitOffset  += 2;
+
+							mobToUpdate.animationNext = status;
+							bitOffset += 2;
 						}
 					}
 
@@ -6712,7 +6689,7 @@ label0:
 				}
 
 				let newCount = 0;
-				// TODO: 11+5+5+4+1=26 bits, so change +24 to +32??
+				// add 24 bits to the offset to represent the header for this packet
 				while (bitOffset+24 < psize*8) {
 					let serverIndex = Utility.getBitMask(pdata, bitOffset, 11);
 					bitOffset += 11;
@@ -6780,19 +6757,6 @@ label0:
 								this.groundItemZ[savedItems] = this.groundItemZ[item];
 							}
  							savedItems++;
-
-/*
-							if (itemDeltaX !== 0 || itemDeltaY !== 0) {
-								if (item !== savedItem) {
-									this.groundItemX[savedItem] = this.groundItemX[item];
-									this.groundItemY[savedItem] = this.groundItemY[item];
-									this.groundItemId[savedItem] = this.groundItemId[item];
-									this.groundItemZ[savedItem] = this.groundItemZ[item];
-								}
-
-								savedItem++;
-							}
-*/
 						}
 
 						this.groundItemCount = savedItems;
@@ -6989,10 +6953,10 @@ updateLoop:
 						// chat
 						let messageLength = pdata[offset++];
 						if (updatePlayer) {
-							let msg = this.chatSystem.decode(pdata.slice(offset, offset+messageLength));
+							let msg = this.chatSystem.normalize(this.chatSystem.decode(pdata.slice(offset, offset+messageLength)));
 							offset += messageLength;
-							for (let idx = 0; idx < ignoreList.length; idx++)
-								if (ignoreList[idx] === updatePlayer.hash)
+							for (let idx = 0; idx < this.ignoreList.length; idx++)
+								if (this.ignoreList[idx] === updatePlayer.hash)
 									continue updateLoop;
 
 							updatePlayer.messageTimeout = secondsToFrames(3);
@@ -7042,9 +7006,9 @@ updateLoop:
 							// updatePlayer.name = Utility.hashToUsername(updatePlayer.hash);
 							offset += 8;
 
-							let equippedCount = Utility.getUnsignedByte(pdata[offset++]);
-							for (let i = 0; i < 12; i++)
-								updatePlayer.equippedItem[i] = i < equippedCount ? Utility.getUnsignedByte(pdata[offset++]) : 0;
+							let equipmentSprites = Utility.getUnsignedByte(pdata[offset++]);
+							for (let count = 0; count < 12; count++)
+								updatePlayer.equippedItem[count] = (count < equipmentSprites ? Utility.getUnsignedByte(pdata[offset++]) : 0);
 
 							updatePlayer.colourHair = Utility.getUnsignedByte(pdata[offset++]);
 							updatePlayer.colourTop = Utility.getUnsignedByte(pdata[offset++]);
@@ -7060,7 +7024,7 @@ updateLoop:
 					} else if (updateType === 6) {
 						// quest-chat
 						let mLen = pdata[offset++] & 0xFF;
-						let msg = this.chatSystem.decode(pdata.slice(offset, offset+mLen));
+						let msg = this.chatSystem.normalize(this.chatSystem.decode(pdata.slice(offset, offset+mLen)));
 						offset += mLen;
 						if (updatePlayer) {
 							updatePlayer.messageTimeout = secondsToFrames(3);
@@ -7137,7 +7101,7 @@ updateLoop:
 						this.wallObjectCount = count;
 
 						// This block never can run??? why is it even here
-						if (id !== 65535) {
+						if (id !== 0xFFFF) {
 							this.world._setObjectAdjacency_from4(lX, lY, direction, id);
 							this.wallObjectModel[this.wallObjectCount] = this.createBoundaryModel(lX, lY, direction, id, this.wallObjectCount);
 							this.wallObjectX[this.wallObjectCount] = lX;
@@ -7152,10 +7116,9 @@ updateLoop:
 
 			if (opcode === S_OPCODES.REGION_NPCS) {
 				this.npcCacheCount = this.npcCount;
-				// this.npcsCache = this.npcs.slice();
-				 for (let i2 = 0; i2 < this.npcCacheCount; i2++) this.npcsCache[i2] = this.npcs[i2];
+				for (let i2 = 0; i2 < this.npcCacheCount; i2++) this.npcsCache[i2] = this.npcs[i2];
 
-				let bitOffset = offset*8;
+				let bitOffset = offset<<3;
 				let localCount = Utility.getBitMask(pdata, bitOffset, 8);
 				bitOffset += 8;
 
@@ -7167,7 +7130,6 @@ updateLoop:
 					if (needsUpdate) {
 						let directionalUpdate = Utility.getBitMask(pdata, bitOffset++, 1) === 0;
 						if (directionalUpdate) {
-
 							let direction = Utility.getBitMask(pdata, bitOffset, 3);
 							bitOffset += 3;
 							let step = npc.waypointCurrent;
@@ -7179,7 +7141,7 @@ updateLoop:
 								for (let angle = 0; angle < 3; angle++) {
 									// in octa-directional movement, there's 3 possible directions
 									// that move toward each of the 4 main directions (NESW)
-									if (direction === (((2*dir)+(angle+1)) % 8)) {
+									if (direction === (((dir<<1)+(angle+1)) & 7)) {
 										if (dir % 2 === 0)
 											curX += size;
 										else
@@ -7192,34 +7154,13 @@ updateLoop:
 							npc.waypointCurrent = step = (step+1) % 10;
 							npc.waypointsX[step] = curX;
 							npc.waypointsY[step] = curY;
-
-							// let sprite = Utility.getBitMask(pdata, bitOffset, 3);
-							// bitOffset += 3;
-							// let step = npc.waypointCurrent;
-							// npc.waypointCurrent = step = (step+1) % 10;
-							// for (let dir = 0; dir < 4; dir++) {
-								// let size = (dir < 2 ? this.tileSize : -this.tileSize);
-								// for (let angle = 0; angle < 3; angle++) {
-									// in octa-directional movement, there's 3 possible directions
-									// that move toward each of the 4 main directions (NESW)
-									// if (sprite === (((2*dir)+(angle+1)) % 8)) {
-										// if (dir % 2 === 0)
-											// npc.waypointsX[step] += size;
-											// curX += size;
-										// else
-											// curY += size;
-											// npc.waypointsY[step] += size;
-									// }
-								// }
-							// }
-							// npc.animationNext = sprite;
 						} else {
-							let sprite = Utility.getBitMask(pdata, bitOffset, 2);
+							let sprite = Utility.getBitMask(pdata, bitOffset, 4);
 							bitOffset += 2;
-							if (sprite === 0b11)
+							if (sprite&0b1100 === 0b1100)
 								continue;
 
-							npc.animationNext = (sprite << 2) | Utility.getBitMask(pdata, bitOffset, 2);
+							npc.animationNext = sprite;
 							bitOffset += 2;
 						}
 					}
@@ -7227,7 +7168,7 @@ updateLoop:
 					this.npcs[this.npcCount++] = npc;
 				}
 
-				while (bitOffset + 34 < psize * 8) {
+				while (bitOffset + 34 < psize << 3) {
 					let serverIndex = Utility.getBitMask(pdata, bitOffset, 12);
 					bitOffset += 12;
 
@@ -7259,54 +7200,30 @@ updateLoop:
 			}
 
 			if (opcode === S_OPCODES.REGION_NPC_UPDATE) {
-				let pOffset = offset;
-
-				let updateCount = Utility.getUnsignedShort(pdata, pOffset);
-				pOffset += 2;
+				let updateCount = Utility.getUnsignedShort(pdata, offset);
+				offset += 2;
 				if (updateCount <= 0)
 					return;
 
 				for (let idx = 0; idx < updateCount; idx++) {
-					if (pOffset+3 >= pdata.length) {
-						// minimum size of each update is 3 bytes, taking the form of uint16 serverIndex, then uint8 updateType
-						console.debug("Error updating regional NPC informations:\n\t", pOffset + "+3>=" + pdata.length);
-						return;
-					}
-					let updatingNpc = this.npcsServer[Utility.getUnsignedShort(pdata, pOffset)];
-					pOffset += 2;
-					let updateType = Utility.getUnsignedByte(pdata[pOffset++]);
-					if (!updatingNpc) {
-						if (updateType === 1) {
-							pOffset += 2;
-							pOffset += Utility.getUnsignedByte(pdata[pOffset])+1; // skip by msgSize + the byte for the size
-						} else if (updateType === 2) {
-							pOffset += 3;
-						}
-						continue;
-					}
+					let updatingNpc = this.npcsServer[Utility.getUnsignedShort(pdata, offset)];
+					offset += 2;
+					let updateType = Utility.getUnsignedByte(pdata[offset++]);
 					if (updateType === 1) {
-						if (pOffset+3 >= pdata.length)
-							return;
-
-						let target = Utility.getUnsignedShort(pdata, pOffset);
-						pOffset += 2;
-						let msgSize = Utility.getUnsignedByte(pdata[pOffset++]);
-						if (pOffset+msgSize >= pdata.length)
-							return;
-						updatingNpc.message = this.chatSystem.decode(Utility.getBytes(pdata, pOffset, msgSize));
-						pOffset += msgSize;
-
+						let target = Utility.getUnsignedShort(pdata, offset);
+						offset += 2;
+						let msgSize = Utility.getUnsignedByte(pdata[offset++]);
+						if (msgSize >= 128)
+							msgSize = (msgSize << 8) | Utility.getUnsignedByte(pdata[offset++]);
+						offset += msgSize;
 						updatingNpc.messageTimeout = secondsToFrames(3);
+						updatingNpc.message = this.chatSystem.normalize(this.chatSystem.decode(Utility.getBytes(pdata, offset, msgSize)));
 						if (target === this.localPlayer.serverIndex)
 							this.showMessage('@yel@' + GameData.npcName[updatingNpc.typeID] + ': ' + updatingNpc.message, 5);
 					} else if (updateType === 2) {
-						if (pOffset+3 >= pdata.length)
-							return;
-
-						updatingNpc.damageTaken = Utility.getUnsignedByte(pdata[pOffset++]);
-						updatingNpc.healthCurrent = Utility.getUnsignedByte(pdata[pOffset++]);
-						updatingNpc.healthMax = Utility.getUnsignedByte(pdata[pOffset++]);
-
+						updatingNpc.damageTaken = Utility.getUnsignedByte(pdata[offset++]);
+						updatingNpc.healthCurrent = Utility.getUnsignedByte(pdata[offset++]);
+						updatingNpc.healthMax = Utility.getUnsignedByte(pdata[offset++]);
 						updatingNpc.healthTimer.tickThreshold = secondsToFrames(4);
 					}
 				}
@@ -8059,8 +7976,8 @@ updateLoop:
 
 				let expThresh = mudclient.experienceTable[0];
 				for (let lvl = 0; lvl < MAX_STAT-1; lvl++)
-					if (this.playerExperience[skillIndex] >= mudclient.experienceTable[lvl])
-						expThresh = mudclient.experienceTable[lvl + 1];
+					if (this.playerExperience[skillIndex] >= mudclient.experienceTable[lvl] / 4)
+						expThresh = mudclient.experienceTable[lvl + 1] / 4;
 
 				this.surface.drawString('Total xp: ' + Math.floor(this.playerExperience[skillIndex]), uiX + 5, i1, 1, 0xFFFFFF);
 				i1 += 12;

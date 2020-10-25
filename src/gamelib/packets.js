@@ -2,6 +2,9 @@ import VERSION from '../version';
 import OPS from '../opcodes/client';
 import Packet from '../packet';
 import GameBuffer from '../game-buffer';
+import xtea from 'xtea';
+// import XTEA from '../lib/xtea';
+import {Buffer} from 'buffer';
 import {Utility} from '../utility';
 import {encryptBytes} from './rsa';
 
@@ -88,26 +91,29 @@ class Ops {
 		// client support and this will protect the user login credentials in this case.
 
 		let rsaBlock = new GameBuffer(new Uint8Array(128));
+		rsaBlock.putByte(10);
 		let randArr = new Uint32Array(4);
 		crypto.getRandomValues(randArr);
-		for (let i = 0; i < randArr.length; i++)
+		for (let i = 0; i < randArr.length; i += 1)
 			rsaBlock.putInt(randArr[i]);
-		// rsaBlock.putInt(randArr[0]);
-		// rsaBlock.putInt(randArr[1]);
-		// rsaBlock.putInt(randArr[2]);
-		// rsaBlock.putInt(randArr[3]);
-		// rsaBlock.putInt(Math.random() * 0xFFFFFF);
-		// rsaBlock.putInt(Math.random() * 0xFFFFFF);
-		// rsaBlock.putInt(Math.random() * 0xFFFFFF);
-		// rsaBlock.putInt(Math.random() * 0xFFFFFF);
-		rsaBlock.putLong(Utility.usernameToHash(username));
+			// rsaBlock.putInt(((randArr[i] << 24) & 0xFF) | ((randArr[i+1] << 16) & 0xFF) | ((randArr[i+2] << 8) & 0xFF) | (randArr[i+3] & 0xFF));
+		let randB = Buffer.alloc(16)
+		for (let i = 0; i < randB.length; i += 4) {
+			randB.writeUInt32BE(randArr[i>>2], i)
+		}
 		rsaBlock.putString(password);
-		
+		let rand = Buffer.alloc(24);
+		crypto.getRandomValues(rand);
+		// let x = new XTEA(Buffer.from(randB)).encrypt(Buffer.concat([Buffer.alloc(1), Buffer.from(randB), Buffer.alloc(8), Buffer.from(username, 'utf8'), Buffer.alloc(1)]));
+		let x = xtea.encrypt(Buffer.concat([Buffer.alloc(1), Buffer.from(randB), Buffer.alloc(8), Buffer.from(username, 'utf8'), Buffer.alloc(1)]), randB);
+		console.log(x);
+
 		let p = new Packet(OPS.LOGIN);
 		p.startAccess();
 		p.putBool(reconnecting);
-		p.putShort(VERSION.CLIENT);
+		p.putInt(235);
 		p.putBigBuffer(encryptBytes(rsaBlock.buffer.slice(0, rsaBlock.offset)));
+		p.putBigBuffer(x.slice());
 		p.stopAccess();
 		return p;
 	}
@@ -134,14 +140,14 @@ class Ops {
 	static CHANGE_APPEARANCE(gender, headType, bodyType, legType, hairColor, bodyColor, legColor, skinColor) {
 		let p = new Packet(OPS.APPEARANCE);
 		p.startAccess();
-		p.putByte(this.appearanceHeadGender);
-		p.putByte(this.appearanceHeadType);
-		p.putByte(this.appearanceBodyGender);
-		p.putByte(this.appearance2Colour);
-		p.putByte(this.appearanceHairColour);
-		p.putByte(this.appearanceTopColour);
-		p.putByte(this.appearanceBottomColour);
-		p.putByte(this.appearanceSkinColour);
+		p.putByte(gender);
+		p.putByte(headType);
+		p.putByte(bodyType);
+		p.putByte(legType);
+		p.putByte(hairColor);
+		p.putByte(bodyColor);
+		p.putByte(legColor);
+		p.putByte(skinColor);
 		p.stopAccess();
 		return p;
 	}
