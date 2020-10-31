@@ -658,46 +658,22 @@ export default class mudclient extends GameConnection {
 
 	_walkToActionSource_from8(startX, startY, x1, y1, x2, y2, checkObjects, walkToAction) {
 		let steps = this.world.route(startX, startY, x1, y1, x2, y2, this.walkPathX, this.walkPathY, checkObjects);
-
 		if (steps === -1) {
-			if (walkToAction) {
-				steps = 1;
-				this.walkPathX[0] = x1;
-				this.walkPathY[0] = y1;
-			} else {
+			if (!walkToAction)
 				return false;
-			}
+			steps = 1;
+			this.walkPathX[0] = x1;
+			this.walkPathY[0] = y1;
 		}
 
 		steps--;
 		startX = this.walkPathX[steps];
 		startY = this.walkPathY[steps];
 		steps--;
-
-		if (walkToAction) {
-			this.clientStream.newPacket(C_OPCODES.WALK_ACTION);
-		} else {
-			this.clientStream.newPacket(C_OPCODES.WALK);
-		}
-
-		this.clientStream.putShort(startX + this.regionX);
-		this.clientStream.putShort(startY + this.regionY);
-
-		if (walkToAction && steps === -1 && (startX + this.regionX) % 5 === 0) {
-			steps = 0;
-		}
-
-		for (let l1 = steps; l1 >= 0 && l1 > steps - 25; l1--) {
-			this.clientStream.putByte(this.walkPathX[l1] - startX);
-			this.clientStream.putByte(this.walkPathY[l1] - startY);
-		}
-
-		this.clientStream.sendPacket();
-
+		this.clientStream.queue(Ops.WALK(steps, startX, startY, x1, y1, x2, y2, checkObjects, walkToAction));
 		this.mouseClickXStep = -24;
 		this.mouseClickXX = this.mouseX;
 		this.mouseClickXY = this.mouseY;
-
 		return true;
 	}
 
@@ -712,24 +688,7 @@ export default class mudclient extends GameConnection {
 		startY = this.walkPathY[steps];
 		steps--;
 
-		if (walkToAction) {
-			this.clientStream.newPacket(C_OPCODES.WALK_ACTION);
-		} else {
-			this.clientStream.newPacket(C_OPCODES.WALK);
-		}
-
-		this.clientStream.putShort(startX + this.regionX);
-		this.clientStream.putShort(startY + this.regionY);
-
-		if (walkToAction && steps === -1 && (startX + this.regionX) % 5 === 0)
-			steps = 0;
-
-		for (let l1 = steps; l1 >= 0 && l1 > steps - 25; l1--) {
-			this.clientStream.putByte(this.walkPathX[l1] - startX);
-			this.clientStream.putByte(this.walkPathY[l1] - startY);
-		}
-
-		this.clientStream.sendPacket();
+		this.clientStream.queue(Ops.WALK(steps, startX, startY, x1, y1, x2, y2, checkObjects, walkToAction));
 
 		this.mouseClickXStep = -24;
 		this.mouseClickXX = this.mouseX;
@@ -754,26 +713,20 @@ export default class mudclient extends GameConnection {
 			this.bankItemsCount[i] = this.newBankItemsCount[i];
 		}
 
+outer:
 		for (let invIdx = 0; invIdx < this.inventoryItemsCount; invIdx++) {
 			if (this.bankItemCount >= this.bankItemsMax)
 				break;
 
 			let invId = this.inventoryItemId[invIdx];
-			let hasItemInInv = false;
-
 			for (let bankidx = 0; bankidx < this.bankItemCount; bankidx++) {
-				if (this.bankItems[bankidx] !== invId)
-					continue;
-
-				hasItemInInv = true;
-				break;
+				if (this.bankItems[bankidx] === invId) {
+					continue outer;
+				}
 			}
-
-			if (!hasItemInInv) {
-				this.bankItems[this.bankItemCount] = invId;
-				this.bankItemsCount[this.bankItemCount] = this.inventoryItemStackCount[invIdx];
-				this.bankItemCount++;
-			}
+			this.bankItems[this.bankItemCount] = invId;
+			this.bankItemsCount[this.bankItemCount++] = this.inventoryItemStackCount[invIdx];
+			this.bankItemCount++;
 		}
 	}
 
@@ -3022,15 +2975,15 @@ export default class mudclient extends GameConnection {
 
 	walkToWallObject(i, j, k) {
 		if (k === 0) {
-			this._walkToActionSource_from8(this.localRegionX, this.localRegionY, i, j - 1, i, j, false, true);
+			this.walkTo(this.localRegionX, this.localRegionY, i, j - 1, i, j, false, true);
 			return;
 		}
 		if (k === 1) {
-			this._walkToActionSource_from8(this.localRegionX, this.localRegionY, i - 1, j, i, j, false, true);
+			this.walkTo(this.localRegionX, this.localRegionY, i - 1, j, i, j, false, true);
 			return;
 		}
 
-		this._walkToActionSource_from8(this.localRegionX, this.localRegionY, i, j, i, j, true, true);
+		this.walkTo(this.localRegionX, this.localRegionY, i, j, i, j, true, true);
 	}
 
 	async fetchDefinitions() {
@@ -4286,6 +4239,8 @@ export default class mudclient extends GameConnection {
 		this.scene.fogZFalloff = 1;
 		this.scene.fogZDistance = 2300;
 		this.scene.setLightSourceCoords(-50, -10, -50);
+
+		Ops.MC = this;
 
 		this.world = new World(this.scene, this.surface);
 		this.world.baseMediaSprite = this.spriteMedia;
@@ -6205,34 +6160,19 @@ label0:
 
 		if (mItemId === 200) {
 			this.walkToGroundItem(this.localRegionX, this.localRegionY, mx, my, true);
-			this.clientStream.newPacket(C_OPCODES.CAST_GROUNDITEM);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CAST_GROUND_ITEM(mx, my, mIdx, mSrcIdx));
 			this.selectedSpell = -1;
 		}
 
 		if (mItemId === 210) {
 			this.walkToGroundItem(this.localRegionX, this.localRegionY, mx, my, true);
-			this.clientStream.newPacket(C_OPCODES.USEWITH_GROUNDITEM);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ON_GROUND_ITEM(mx, my, mIdx, mSrcIdx));
 			this.selectedItemInventoryIndex = -1;
 		}
 
 		if (mItemId === 220) {
 			this.walkToGroundItem(this.localRegionX, this.localRegionY, mx, my, true);
-			this.clientStream.newPacket(C_OPCODES.GROUNDITEM_TAKE);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.TAKE_GROUND_ITEM(mx, my, mIdx, mSrcIdx));
 		}
 
 		if (mItemId === 3200) {
@@ -6241,42 +6181,24 @@ label0:
 
 		if (mItemId === 300) {
 			this.walkToWallObject(mx, my, mIdx);
-			this.clientStream.newPacket(C_OPCODES.CAST_WALLOBJECT);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putByte(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CAST_BOUNDARY(mx, my, mIdx, mSrcIdx));
 			this.selectedSpell = -1;
 		}
 
 		if (mItemId === 310) {
 			this.walkToWallObject(mx, my, mIdx);
-			this.clientStream.newPacket(C_OPCODES.USEWITH_WALLOBJECT);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putByte(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ON_BOUNDARY(mx, my, mIdx, mSrcIdx));
 			this.selectedItemInventoryIndex = -1;
 		}
 
 		if (mItemId === 320) {
 			this.walkToWallObject(mx, my, mIdx);
-			this.clientStream.newPacket(C_OPCODES.WALL_OBJECT_COMMAND1);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putByte(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.BOUNDARY_ACTION(0, mx, my, mIdx));
 		}
 
 		if (mItemId === 2300) {
 			this.walkToWallObject(mx, my, mIdx);
-			this.clientStream.newPacket(C_OPCODES.WALL_OBJECT_COMMAND2);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putByte(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.BOUNDARY_ACTION(1, mx, my, mIdx));
 		}
 
 		if (mItemId === 3300) {
@@ -6285,37 +6207,25 @@ label0:
 
 		if (mItemId === 400) {
 			this.walkToObject(mx, my, mIdx, mSrcIdx);
-			this.clientStream.newPacket(C_OPCODES.CAST_OBJECT);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putShort(mTargetIndex);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CAST_SCENARY(mx, my, mTargetIndex));
 			this.selectedSpell = -1;
 		}
 
 		if (mItemId === 410) {
 			this.walkToObject(mx, my, mIdx, mSrcIdx);
-			this.clientStream.newPacket(C_OPCODES.USEWITH_OBJECT);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putShort(mTargetIndex);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ON_SCENARY(mx, my, mTargetIndex));
 			this.selectedItemInventoryIndex = -1;
 		}
 
 		if (mItemId === 420) {
 			this.walkToObject(mx, my, mIdx, mSrcIdx);
-			this.clientStream.newPacket(C_OPCODES.OBJECT_CMD1);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
+			this.clientStream.queue(Ops.SCENARY_ACTION(0, mx, my));
 			this.clientStream.sendPacket();
 		}
 
 		if (mItemId === 2400) {
 			this.walkToObject(mx, my, mIdx, mSrcIdx);
-			this.clientStream.newPacket(C_OPCODES.OBJECT_CMD2);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
+			this.clientStream.queue(Ops.SCENARY_ACTION(1, mx, my));
 			this.clientStream.sendPacket();
 		}
 
@@ -6381,10 +6291,7 @@ label0:
 			let l3 = (my - 64) / this.tileSize | 0;
 
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, l1, l3, true);
-			this.clientStream.newPacket(C_OPCODES.CAST_NPC);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CAST_NPC(mIdx, mSrcIdx));
 			this.selectedSpell = -1;
 		}
 
@@ -6393,10 +6300,7 @@ label0:
 			let i4 = (my - 64) / this.tileSize | 0;
 
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, i2, i4, true);
-			this.clientStream.newPacket(C_OPCODES.USEWITH_NPC);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ON_NPC(mIdx, mSrcIdx));
 			this.selectedItemInventoryIndex = -1;
 		}
 
@@ -6405,9 +6309,7 @@ label0:
 			let j4 = (my - 64) / this.tileSize | 0;
 
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, j2, j4, true);
-			this.clientStream.newPacket(C_OPCODES.NPC_TALK);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.TALK_NPC(mIdx));
 		}
 
 		if (mItemId === 725) {
@@ -6415,9 +6317,7 @@ label0:
 			let k4 = (my - 64) / this.tileSize | 0;
 
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, k2, k4, true);
-			this.clientStream.newPacket(C_OPCODES.NPC_CMD);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ACTION_NPC(mIdx));
 		}
 
 		if (mItemId === 715 || mItemId === 2715) {
@@ -6425,9 +6325,7 @@ label0:
 			let l4 = (my - 64) / this.tileSize | 0;
 
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, l2, l4, true);
-			this.clientStream.newPacket(C_OPCODES.NPC_ATTACK);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ATTACK_NPC(mIdx));
 		}
 
 		if (mItemId === 3700) {
@@ -6439,10 +6337,7 @@ label0:
 			let i5 = (my - 64) / this.tileSize | 0;
 
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, i3, i5, true);
-			this.clientStream.newPacket(C_OPCODES.CAST_PLAYER);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CAST_PLAYER(mIdx, mSrcIdx));
 			this.selectedSpell = -1;
 		}
 
@@ -6451,10 +6346,7 @@ label0:
 			let j5 = (my - 64) / this.tileSize | 0;
 
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, j3, j5, true);
-			this.clientStream.newPacket(C_OPCODES.USEWITH_PLAYER);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ON_PLAYER(mIdx, mSrcIdx));
 			this.selectedItemInventoryIndex = -1;
 		}
 
@@ -6463,9 +6355,7 @@ label0:
 			let k5 = (my - 64) / this.tileSize | 0;
 
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, k3, k5, true);
-			this.clientStream.newPacket(C_OPCODES.PLAYER_ATTACK);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ATTACK_PLAYER(mIdx));
 		}
 
 		if (mItemId === 2806) {
@@ -6488,11 +6378,7 @@ label0:
 
 		if (mItemId === 900) {
 			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, mx, my, true);
-			this.clientStream.newPacket(C_OPCODES.CAST_GROUND);
-			this.clientStream.putShort(mx + this.regionX);
-			this.clientStream.putShort(my + this.regionY);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CAST_GROUND(mx, my, mIdx));
 			this.selectedSpell = -1;
 		}
 
@@ -6608,7 +6494,7 @@ label0:
 			let offset = 1;
 			if (opcode === S_OPCODES.REGION_PLAYERS) {
 				this.knownPlayerCount = this.playerCount;
-				// this.knownPlayers = this.players.slice();
+				// this.knownPlayers = this.players.slice(0, this.playerCount);
 				for (let idx = 0; idx < this.knownPlayerCount; idx++)
 					this.knownPlayers[idx] = this.players[idx];
 
@@ -6675,12 +6561,12 @@ label0:
 							mobToUpdate.waypointsX[step] = curX;
 							mobToUpdate.waypointsY[step] = curY;
 						} else {
-							let status = Utility.getBitMask(pdata, bitOffset, 4);
+							let status = Utility.getBitMask(pdata, bitOffset, 2);
 							bitOffset += 2;
-							if (status&0b1100 === 0b1100)
+							if (status&0b11 === 0b11)
 								continue;
 
-							mobToUpdate.animationNext = status;
+							mobToUpdate.animationNext = (status << 2) | Utility.getBitMask(pdata, bitOffset, 2);
 							bitOffset += 2;
 						}
 					}
@@ -6717,17 +6603,18 @@ label0:
 				}
 
 				if (newCount > 0) {
-					this.clientStream.newPacket(C_OPCODES.KNOWN_PLAYERS);
-					this.clientStream.putShort(newCount);
-
-					for (let i = 0; i < newCount; i++) {
-						let c = this.playerServer[this.playerServerIndexes[i]];
-
-						this.clientStream.putShort(c.serverIndex);
-						this.clientStream.putShort(c.appearanceTicket);
-					}
-
-					this.clientStream.sendPacket();
+					this.clientStream.queue(Ops.GET_PLAYER_TICKETS(newCount));
+					// this.clientStream.newPacket(C_OPCODES.KNOWN_PLAYERS);
+					// this.clientStream.putShort(newCount);
+// 
+					// for (let i = 0; i < newCount; i++) {
+						// let c = this.playerServer[this.playerServerIndexes[i]];
+// 
+						// this.clientStream.putShort(c.serverIndex);
+						// this.clientStream.putShort(c.appearanceTicket);
+					// }
+// 
+					// this.clientStream.sendPacket();
 				}
 
 				return;
@@ -7116,9 +7003,10 @@ updateLoop:
 
 			if (opcode === S_OPCODES.REGION_NPCS) {
 				this.npcCacheCount = this.npcCount;
+				// this.npcsCache = this.npcs.slice(0, this.npcCount);
 				for (let i2 = 0; i2 < this.npcCacheCount; i2++) this.npcsCache[i2] = this.npcs[i2];
 
-				let bitOffset = offset<<3;
+				let bitOffset = offset*8;
 				let localCount = Utility.getBitMask(pdata, bitOffset, 8);
 				bitOffset += 8;
 
@@ -7155,12 +7043,12 @@ updateLoop:
 							npc.waypointsX[step] = curX;
 							npc.waypointsY[step] = curY;
 						} else {
-							let sprite = Utility.getBitMask(pdata, bitOffset, 4);
+							let status = Utility.getBitMask(pdata, bitOffset, 2);
 							bitOffset += 2;
-							if (sprite&0b1100 === 0b1100)
+							if (status&0b11 === 0b11)
 								continue;
 
-							npc.animationNext = sprite;
+							npc.animationNext = (status << 2) | Utility.getBitMask(pdata, bitOffset, 2);
 							bitOffset += 2;
 						}
 					}
@@ -7517,11 +7405,11 @@ updateLoop:
 
 				this.newBankItemCount = Utility.getUnsignedByte(pdata[offset++]);
 				this.bankItemsMax = Utility.getUnsignedByte(pdata[offset++]);
-				for (let k11 = 0; k11 < this.newBankItemCount; k11++) {
-					this.newBankItems[k11] = Utility.getUnsignedShort(pdata, offset);
+				for (let idx = 0; idx < this.newBankItemCount; idx++) {
+					this.newBankItems[idx] = Utility.getUnsignedShort(pdata, offset);
 					offset += 2;
-					this.newBankItemsCount[k11] = Utility.getSmart08_32(pdata, offset);
-					if (this.newBankItemsCount[k11] >= 128)
+					this.newBankItemsCount[idx] = Utility.getSmart08_32(pdata, offset);
+					if (this.newBankItemsCount[idx] >= 128)
 						offset += 4;
 					else
 						offset++;

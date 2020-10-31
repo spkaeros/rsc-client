@@ -20,9 +20,9 @@ class GameCharacter {
     constructor() {
         this.serverIndex = 0;
         this.appearanceTicket = 0;
-        this.waypointsX = new Uint32Array(10);
-        this.waypointsY = new Uint32Array(10);
-        this.equippedItem = new Uint32Array(12);
+        this.waypointsX = new Uint16Array(10);
+        this.waypointsY = new Uint16Array(10);
+        this.equippedItem = new Uint16Array(12);
         this.currentX = 0;
         this.currentY = 0;
         this.level = -1;
@@ -174,6 +174,22 @@ class GameCharacter {
 	set hash(hash) {
 		this._hash = hash;
 		this._name = Utility.hashToUsername(hash);
+	}
+
+	get message() {
+		return this._message || void 0;
+	}
+
+	set message(msg) {
+		this._message = msg;
+	}
+
+	get bubble() {
+		return this._bubble || void 0;
+	}
+
+	set bubble(b) {
+		this._bubble = b;
 	}
 }
 

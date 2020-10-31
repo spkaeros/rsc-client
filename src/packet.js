@@ -5,7 +5,7 @@ const txtEncoder = new TextEncoder('utf-8');
 
 const HEADER_LEN = 3;
 // 24575 is maximum encodable byte length with the Jagex protocol (+3 for header/opcode)
-const BYTES_LIMIT = 24575;
+const BYTES_LIMIT = 5000;
 
 class Packet {
 	get opcode() {
@@ -13,34 +13,34 @@ class Packet {
 			this._opcode = 0;
 		return this._opcode;
 	}
-	
+
 	set opcode(op) {
 		this._opcode = op;
 	}
-
+	
 	constructor(id = -1) {
 		// the limitation is in the header encoding.  Length is encoded conditionally,
 		// and one branch subtracts 160 from the first byte (big-endian), before the shift resulting in
 		// a range of up to 24320, add 255 to this and you get 24575, our maximum encodable smart length.
-		this.data = new Int8Array(BYTES_LIMIT+HEADER_LEN);
-		this.buff = new Int8Array(BYTES_LIMIT+HEADER_LEN);
+		this.data = new Uint8Array(BYTES_LIMIT+HEADER_LEN);
+		this.buff = new Uint8Array(BYTES_LIMIT+HEADER_LEN);
 		this.readLength = 0;
 		this.writeMarker = 0;
 		this.endMarker = HEADER_LEN;
 		this.didError = false;
 		this.exceptionMessage = '';
-		this.writer = new Timer(20); // 1 write flush every 20 engine loops(.4 sec)
-		this.reader = new Timer(5); // 1 read call every 5 engine loops(.1 sec)
+		this.writer = new Timer(20); // 1 write flush every 20 engine loops(.4 sec), 2.5 per sec
+		this.reader = new Timer(5); // 1 read call every 5 engine loops(.1 sec), 10 per sec
 		this.readTries = 0;
 		this.opcode = id;
 		this.pqueue = [];
 	}
 
 	static bare(opcode) {
-		let p = new Packet(opcode);
-		p.startAccess();
-		p.stopAccess();
-		return p;
+		let packet = new Packet(opcode);
+		packet.startAccess();
+		packet.stopAccess();
+		return packet;
 	}
 	
 	async readBytes(len, buff) {
@@ -49,7 +49,6 @@ class Packet {
 	
 	async nextPacket() {
 		try {
-			
 			return await this.reader.tick(async () => {
 				try {
 					if (this.didError) {
@@ -134,8 +133,9 @@ class Packet {
 				this.send(this);
 				this.reset();
 			}
-			for (let enqueued = this.pqueue.shift(); enqueued; enqueued = this.pqueue.shift())
+			for (let enqueued = this.pqueue.shift(); enqueued; enqueued = this.pqueue.shift()) {
 				this.send(enqueued);
+			}
 		}
 	}
 
@@ -148,6 +148,10 @@ class Packet {
 	}
 
 	send(p) {
+		if (!p.data) {
+			console.warn("data-less packet, huge problem:" + p);
+	//		p.data = Int8Array.of([1, p.opcode + (Packet.isaacOut.rand()>>>0)&0xFF])
+		}
 		this.writeStreamBytes(p.data, 0, p.writeMarker);
 	}
 
@@ -173,15 +177,7 @@ class Packet {
 			this.data[this.writeMarker + 1] = this.data[this.endMarker];
 		}
 		
-		// tracks opcode throughput in frames and bytes sent by opcode
-		// if (this.packetMaxLength <= 10000) {
-		//     let opcode = this.data[this.writeMarker + 2] & 0xFF;
-		//
-		//     Packet.anIntArray537[opcode]++;
-		//     Packet.anIntArray541[opcode] += this.endMarker - this.writeMarker;
-		// }
-
-		// reset output packet buffer caret position
+		// set output buffer writer to start at end of this message stream, as it's state is now finalized for server
 		this.writeMarker = this.endMarker;
 	}
 
@@ -194,7 +190,8 @@ class Packet {
 	}
 
 	startAccess(op = this.opcode) {
-		if (this.writeMarker >= Math.floor(BYTES_LIMIT*80/100)) {
+		// 80%
+		if (this.writeMarker >= Math.floor(BYTES_LIMIT*4/5)) {
 			try {
 				this.tick();
 			} catch (e) {
@@ -205,9 +202,10 @@ class Packet {
 		}
 
 		if (!this.data)
-			this.data = new Int8Array(BYTES_LIMIT);
+			this.data = new Uint8Array(BYTES_LIMIT+3);
 
 		this.data[this.writeMarker+2] = op & 0xFF;
+		if (Packet.isaacOut) this.data[this.writeMarker+2] = (this.data[this.writeMarker+2]+(Packet.isaacOut.rand()>>>0))&0xFF;
 		this.endMarker = this.writeMarker + 3;
 		this.data[this.endMarker] = 0;
 		// set end caret to the buffer position directly following header bytes and opcode
@@ -249,7 +247,7 @@ class Packet {
 
 	// Reads a big-endian unsigned long integer (uint64) from the network buffer and returns it.
 	async getLong() {
-		return BigInt(await this.getInt() << 32) | BigInt(await this.getInt());
+		return 	((BigInt(await this.getInt()) << 32n) | BigInt(await this.getInt()));
 		// let high = await this.getInt();
 		// let low = await this.getInt();
 		// return new Long(low, high, true);
@@ -278,17 +276,17 @@ class Packet {
 	
 	// Queues up an unsigned byte into the current output packet buffer.
 	putUByte(i) {
-		this.putByte(i&0xFF);
+		this.data[this.endMarker++] = i & 0xFF;
 	}
 	
 	// Queues up a boolean value represented as a single byte (encoded as 1 for true, 0 for false)
 	putBoolean(b) {
-		this.putByte(b ? 1 : 0);
+		this.data[this.endMarker++] = b ? 1 : 0;
 	}
 	
 	// Queues up a boolean value represented as a single byte (encoded as 1 for true, 0 for false)
 	putBool(b) {
-		this.putByte(b ? 1 : 0);
+		this.data[this.endMarker++] = b ? 1 : 0;
 	}
 
 	// Queues up a big-endian unsigned short integer (uint16) into the current output packet buffer.
@@ -299,24 +297,20 @@ class Packet {
 	
 	// Queues up a big-endian unsigned integer (uint32) into the current output packet buffer.
 	putInt(i) {
-		// this.putUByte(i>>24);
-		// this.putUByte(i>>16);
-		// this.putUByte(i>>8);
-		// this.putUByte(i);
 		this.putShort(i>>16);
 		this.putShort(i);
 	}
 
 	putSmart08_64(i) {
 		if (i >= 128) {
-			this.data[this.endMarker++] = Number(((i >> 56n) + 128n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i) & 0xFFn);
+			this.data[this.endMarker++] = Number((BigInt(i) >> 56n) + 128n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 48n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 40n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 32n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 24n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 16n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 8n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 0n) & 0xFF;
 			return;
 		}
 		this.putUByte(i);
@@ -344,14 +338,15 @@ class Packet {
 
 	putSmart16_64(i) {
 		if (i >= 128) {
-			this.data[this.endMarker++] = Number(((i >> 56n) + 128n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
-			this.data[this.endMarker++] = Number((i) & 0xFFn);
+			this.data[this.endMarker++] = Number((BigInt(i) >> 56n) + 128n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 48n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 40n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 32n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 24n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 16n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 8n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 0n) & 0xFF;
+//			this.putLong(i+128);
 			return;
 		}
 		this.putShort(i);
@@ -370,22 +365,14 @@ class Packet {
 	
 	putSmart32_64(i) {
 		if (i >= 128) {
-			this.putUByte((i >> 56) + 128);
-			this.putUByte(i >> 48);
-			this.putUByte(i >> 40);
-			this.putUByte(i >> 32);
-			this.putUByte(i >> 24);
-			this.putUByte(i >> 16);
-			this.putUByte(i >> 8);
-			this.putUByte(i);
-			// this.data[this.endMarker++] = Number(((i >> 56n) + 128n) & 0xFFn);
-			// this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
-			// this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
-			// this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
-			// this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
-			// this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
-			// this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
-			// this.data[this.endMarker++] = Number((i) & 0xFFn);
+			this.data[this.endMarker++] = Number((BigInt(i) >> 56n) + 128n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 48n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 40n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 32n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 24n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 16n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 8n) & 0xFF;
+			this.data[this.endMarker++] = Number(BigInt(i) >> 0n) & 0xFF;
 			return;
 		}
 		this.putInt(i);
@@ -393,14 +380,14 @@ class Packet {
 
 	// Queues up a big-endian unsigned long integer (uint64) into the current output packet buffer.
 	putLong(i) {
-		this.data[this.endMarker++] = Number((i >> 56n) & 0xFFn);
-		this.data[this.endMarker++] = Number((i >> 48n) & 0xFFn);
-		this.data[this.endMarker++] = Number((i >> 40n) & 0xFFn);
-		this.data[this.endMarker++] = Number((i >> 32n) & 0xFFn);
-		this.data[this.endMarker++] = Number((i >> 24n) & 0xFFn);
-		this.data[this.endMarker++] = Number((i >> 16n) & 0xFFn);
-		this.data[this.endMarker++] = Number((i >> 8n) & 0xFFn);
-		this.data[this.endMarker++] = Number((i) & 0xFFn);
+		this.data[this.endMarker++] = Number(BigInt(i) >> 56n) & 0xFF;
+		this.data[this.endMarker++] = Number(BigInt(i) >> 48n) & 0xFF;
+		this.data[this.endMarker++] = Number(BigInt(i) >> 40n) & 0xFF;
+		this.data[this.endMarker++] = Number(BigInt(i) >> 32n) & 0xFF;
+		this.data[this.endMarker++] = Number(BigInt(i) >> 24n) & 0xFF;
+		this.data[this.endMarker++] = Number(BigInt(i) >> 16n) & 0xFF;
+		this.data[this.endMarker++] = Number(BigInt(i) >> 8n) & 0xFF;
+		this.data[this.endMarker++] = Number(BigInt(i) >> 0n) & 0xFF;
 	}
 
 	// Queues up an array of unsigned bytes into the current output packet buffer.

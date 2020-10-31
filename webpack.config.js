@@ -23,6 +23,6 @@ module.exports = {
           // TextEncoder: ['text-encoding', 'TextEncoder']
         // })
     ],
-    // mode: 'production'
-    mode: 'development'
+    mode: 'production'
+    // mode: 'debug'
 };

@@ -37,7 +37,7 @@
  *
  * Usage:
  *   <script src="isaac.js"></script>
- *   var random_number = isaac.random();
+ *   var random_number = isaac.random();                                                                                                                                                                                                                                                                                                                   
  *
  * Output: [ 0x00000000; 0xffffffff]
  *         [-2147483648; 2147483647]
@@ -100,7 +100,7 @@ var isaac = (function(){
       r = Array(256), // result array
       gnt = 0;        // generation counter
 
-  seed(Math.random() * 0xffffffff);
+  // seed(Math.random() * 0xffffffff);
 
   /* private: 32-bit integer safe adder */
   function add(x, y) {
@@ -132,11 +132,11 @@ var isaac = (function(){
       s = [s];
     }
 
-    if(s instanceof Array) {
-      reset();
-      for(i = 0; i < s.length; i++)
-        r[i & 0xff] += (typeof(s[i]) === 'number') ? s[i] : 0;
-    }
+    // if(s instanceof Array) {
+    reset();
+    for(i = 0; i < s.length; i++)
+      r[i & 0xff] += (typeof(s[i]) === 'number') ? s[i] : 0;
+    // }
 
     /* private: seed mixer */
     function seed_mix() {
@@ -180,7 +180,7 @@ var isaac = (function(){
     }
 
     prng(); /* fill in the first set of results */
-    gnt = 256;  /* prepare to use the first set of results */;
+    gnt = 255;  /* prepare to use the first set of results */;
   }
 
   /* public: isaac generator, n = number of run */
@@ -210,15 +210,20 @@ var isaac = (function(){
 
   /* public: return a random number between */
   function rand() {
-    if(!gnt--) {
-      prng(); gnt = 255;
-    }
-    return r[gnt];
+  	let next = r[gnt--];
+  	if (gnt <= 0) {
+  		prng(); gnt = 255;
+  	}
+    return next;
   }
 
   /* public: return internals in an object*/
   function internals(){
     return {a: acc, b: brs, c: cnt, m: m, r: r};
+  }
+  
+  function random() {
+  	return Number(BigInt(rand())&0xFFFFFFFFn);
   }
 
   /* return class object */
@@ -227,11 +232,9 @@ var isaac = (function(){
     'seed':  seed,
     'prng':  prng,
     'rand':  rand,
+    'random':  random,
     'internals': internals
   };
-})(); /* declare and execute */
+});
 
-/* public: output*/
-isaac.random = function() {
-  return 0.5 + this.rand() * 2.3283064365386963e-10; // 2^-32
-}
+module.exports = { isaac }

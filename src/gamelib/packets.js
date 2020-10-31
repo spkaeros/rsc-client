@@ -1,12 +1,10 @@
 import VERSION from '../version';
 import OPS from '../opcodes/client';
 import Packet from '../packet';
-import GameBuffer from '../game-buffer';
 import xtea from 'xtea';
-// import XTEA from '../lib/xtea';
-import {Buffer} from 'buffer';
-import {Utility} from '../utility';
-import {encryptBytes} from './rsa';
+import crypto from 'crypto';
+import { Utility } from '../utility';
+import { encryptBytes } from './rsa';
 
 class Ops {
 	static COMMAND(s) {
@@ -84,36 +82,28 @@ class Ops {
 	}
 
 	static LOGIN(username, password, reconnecting = false) {
-		// below seeds the opcode cipher.
 		// I deprecated the security of the traditional Jagex protocol (rsa+isaac) in favor of traditional TLS mechanisms
 		// which are inherently more secure and also we gain the support for it through built-in standardized libraries automatically
 		// Even though we no longer need to, I still encrypt the login block for the reason that one may wish to provide non-TLS
 		// client support and this will protect the user login credentials in this case.
 
-		let rsaBlock = new GameBuffer(new Uint8Array(128));
-		rsaBlock.putByte(10);
-		let randArr = new Uint32Array(4);
-		crypto.getRandomValues(randArr);
-		for (let i = 0; i < randArr.length; i += 1)
-			rsaBlock.putInt(randArr[i]);
-			// rsaBlock.putInt(((randArr[i] << 24) & 0xFF) | ((randArr[i+1] << 16) & 0xFF) | ((randArr[i+2] << 8) & 0xFF) | (randArr[i+3] & 0xFF));
-		let randB = Buffer.alloc(16)
-		for (let i = 0; i < randB.length; i += 4) {
-			randB.writeUInt32BE(randArr[i>>2], i)
+		// 45 bytes??  set it to 64 just for safety
+		let keyWords = Buffer.alloc(4);
+		crypto.randomFillSync(keyWords);
+		Packet.isaacSeeds = keyWords.slice();
+		let keys = new Uint8Array(16);
+		for (let i = 0; i < 4; i++) {
+			keys[(i<<2)+0] = (keyWords[i] >>> 24) & 0xFF;
+			keys[(i<<2)+1] = (keyWords[i] >>> 16) & 0xFF;
+			keys[(i<<2)+2] = (keyWords[i] >>> 8) & 0xFF;
+			keys[(i<<2)+3] = (keyWords[i] >>> 0) & 0xFF;
 		}
-		rsaBlock.putString(password);
-		let rand = Buffer.alloc(24);
-		crypto.getRandomValues(rand);
-		// let x = new XTEA(Buffer.from(randB)).encrypt(Buffer.concat([Buffer.alloc(1), Buffer.from(randB), Buffer.alloc(8), Buffer.from(username, 'utf8'), Buffer.alloc(1)]));
-		let x = xtea.encrypt(Buffer.concat([Buffer.alloc(1), Buffer.from(randB), Buffer.alloc(8), Buffer.from(username, 'utf8'), Buffer.alloc(1)]), randB);
-		console.log(x);
-
 		let p = new Packet(OPS.LOGIN);
 		p.startAccess();
 		p.putBool(reconnecting);
-		p.putInt(235);
-		p.putBigBuffer(encryptBytes(rsaBlock.buffer.slice(0, rsaBlock.offset)));
-		p.putBigBuffer(x.slice());
+		p.putInt(VERSION.CLIENT);
+		p.putBigBuffer(encryptBytes(Uint8Array.from(Buffer.concat([Buffer.of(10), Buffer.from(keys), Buffer.from(password, 'utf-8'), Buffer.alloc(20-password.length), crypto.randomBytes(8)]))));
+		p.putBigBuffer(xtea.encrypt(Buffer.concat([Buffer.of(0), crypto.randomBytes(24), Buffer.from(username), Buffer.of(0)]), Buffer.from(keys)));
 		p.stopAccess();
 		return p;
 	}
@@ -152,17 +142,238 @@ class Ops {
 		return p;
 	}
 
+	static WALK(steps, startX, startY, x1, y1, x2, y2, checkObjects, walkToAction) {
+		let p = new Packet(OPS.WALK);
+		if (!walkToAction)
+			p.opcode = OPS.WALK_ACTION;
+		p.startAccess();
+
+		// add start point
+		p.putShort(startX + Ops.MC.regionX);
+		p.putShort(startY + Ops.MC.regionY);
+
+		if (walkToAction && steps === -1 && (startX + Ops.MC.regionX) % 5 === 0)
+			steps = 0;
+
+		// add pivot point deltas
+		for (let l1 = steps; l1 >= 0 && l1 > steps - 25; l1--) {
+			p.putByte(Ops.MC.walkPathX[l1] - startX);
+			p.putByte(Ops.MC.walkPathY[l1] - startY);
+		}
+
+		p.stopAccess();
+		return p;
+	}
+
+	static GET_PLAYER_TICKETS(count) {
+		let p = new Packet(OPS.KNOWN_PLAYERS);
+		p.startAccess();
+		p.putShort(count);
+		for (let i = 0; i < count; i++) {
+			let player = Ops.MC.playerServer[Ops.MC.playerServerIndexes[i]];
+			p.putShort(player.serverIndex);
+			p.putShort(player.appearanceTicket);
+		}
+		p.stopAccess();
+		return p;
+	}
+	
+	static CAST_GROUND_ITEM(x, y, target, spell) {
+		let p = new Packet(OPS.CAST_GROUNDITEM);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.putShort(target);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	
+	static ON_GROUND_ITEM(x, y, target, invItem) {
+		let p = new Packet(OPS.USEWITH_GROUNDITEM);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.putShort(target);
+		p.putShort(invItem);
+		p.stopAccess();
+		return p;
+	}
+	
+	static TAKE_GROUND_ITEM(x, y, target, unused) {
+		let p = new Packet(OPS.GROUNDITEM_TAKE);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.putShort(target);
+		p.putShort(unused);
+		p.stopAccess();
+		return p;
+	}
+	
+	static CAST_BOUNDARY(x, y, target, spell) {
+		let p = new Packet(OPS.CAST_WALLOBJECT);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.putByte(target);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	
+	static ON_BOUNDARY(x, y, target, invItem) {
+		let p = new Packet(OPS.USEWITH_WALLOBJECT);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.putByte(target);
+		p.putShort(invItem);
+		p.stopAccess();
+		return p;
+	}
+	
+	static BOUNDARY_ACTION(click, x, y, target) {
+		let p = new Packet(click === 0 ? OPS.WALL_OBJECT_COMMAND1 : OPS.WALL_OBJECT_COMMAND2);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.putByte(target);
+		p.stopAccess();
+		return p;
+	}
+	static CAST_SCENARY(x, y, spell) {
+		let p = new Packet(OPS.CAST_OBJECT);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	static ON_SCENARY(x, y, invItem) {
+		let p = new Packet(OPS.USEWITH_OBJECT);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.putShort(invItem);
+		p.stopAccess();
+		return p;
+	}
+	static SCENARY_ACTION(click, x, y) {
+		let p = new Packet(click === 0 ? OPS.OBJECT_CMD1 : OBJECT_CMD2);
+		p.startAccess();
+		p.putShort(x + Ops.MC.regionX);
+		p.putShort(y + Ops.MC.regionY);
+		p.stopAccess();
+		return p;
+	}
+	static CAST_NPC(idx, spell) {
+		let p = new Packet(OPS.CAST_NPC);
+		p.startAccess();
+		p.putShort(idx);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	static CAST_PLAYER(idx, spell) {
+		let p = new Packet(OPS.CAST_PLAYER);
+		p.startAccess();
+		p.putShort(idx);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	static ON_NPC(idx, spell) {
+		let p = new Packet(OPS.USEWITH_NPC);
+		p.startAccess();
+		p.putShort(idx);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	static ON_PLAYER(idx, spell) {
+		let p = new Packet(OPS.USEWITH_PLAYER);
+		p.startAccess();
+		p.putShort(idx);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	static TALK_NPC(idx) {
+		let p = new Packet(OPS.NPC_TALK);
+		p.startAccess();
+		p.putShort(idx);
+		p.stopAccess();
+		return p;
+	}
+	static ACTION_NPC(idx) {
+		let p = new Packet(OPS.NPC_CMD);
+		p.startAccess();
+		p.putShort(idx);
+		p.stopAccess();
+		return p;
+	}
+	static ATTACK_NPC(idx) {
+		let p = new Packet(OPS.NPC_ATTACK);
+		p.startAccess();
+		p.putShort(idx);
+		p.stopAccess();
+		return p;
+	}
+	static ATTACK_PLAYER(idx) {
+		let p = new Packet(OPS.PLAYER_ATTACK);
+		p.startAccess();
+		p.putShort(idx);
+		p.stopAccess();
+		return p;
+	}
+	
+	static CAST_GROUND(x,y,spell) {
+		let p = new Packet(OPS.CAST_GROUND);
+		p.startAccess();
+		p.putShort(x+Ops.MC.regionX);
+		p.putShort(y+Ops.MC.regionY);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	
+	static DISCONNECT() {
+		return Packet.bare(OPS.CLOSE_CONNECTION);
+	}
+
+	static PING() {
+		return Packet.bare(OPS.PING);
+	}
+
+	static CLOSE_BANK() {
+		return Packet.bare(OPS.CLOSE_BANK);
+	}
+
+	static DECLINE_DUEL() {
+		return Packet.bare(OPS.DUEL_DECLINE);
+	}
+
+	static ACCEPT_DUEL_ONE() {
+		return Packet.bare(OPS.DUEL_ACCEPT);
+	}
+
+	static ACCEPT_DUEL_TWO() {
+		return Packet.bare(OPS.DUEL_CONFIRM_ACCEPT);
+	}
+
+	static DECLINE_TRADE() {
+		return Packet.bare(OPS.TRADE_DECLINE);
+	}
+
+	static ACCEPT_TRADE_ONE() {
+		return Packet.bare(OPS.TRADE_ACCEPT);
+	}
+
+	static ACCEPT_TRADE_TWO() {
+		return Packet.bare(OPS.TRADE_CONFIRM_ACCEPT);
+	}
 }
-
-Ops.DISCONNECT = Packet.bare(OPS.CLOSE_CONNECTION);
-Ops.PING = Packet.bare(OPS.PING);
-Ops.CLOSE_BANK = Packet.bare(OPS.BANK_CLOSE);
-Ops.DECLINE_DUEL = Packet.bare(OPS.DUEL_DECLINE);
-Ops.ACCEPT_DUEL_ONE = Packet.bare(OPS.DUEL_ACCEPT);
-Ops.ACCEPT_DUEL_TWO = Packet.bare(OPS.DUEL_CONFIRM_ACCEPT);
-Ops.DECLINE_TRADE = Packet.bare(OPS.TRADE_DECLINE);
-Ops.ACCEPT_TRADE_ONE = Packet.bare(OPS.TRADE_ACCEPT);
-Ops.ACCEPT_TRADE_TWO = Packet.bare(OPS.TRADE_CONFIRM_ACCEPT);
-
 
 export { Ops as default };

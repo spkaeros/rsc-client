@@ -321,18 +321,15 @@ export default class GameShell {
 		
 		if (e.button === 1)
 			this.middleButtonDown = false;
-		this.lastMouseButtonDown = this.mouseButtonDown;
 		this.mouseButtonDown = 0;
-		this.mouseActionTimeout = 0;
 		return false;
 	}
 	
 	mouseOut(e) {
 		e.preventDefault();
-		this.mouseX = 0;
-		this.mouseY = 0;
-		this.mouseActionTimeout = 0;
-//		this.mouseButtonDown = 0;
+		// this.mouseX = e.offsetX;
+		// this.mouseY = e.offsetY;
+		// this.mouseButtonDown = 0;
 		// this.middleButtonDown = false;
 		return false;
 	}
@@ -349,26 +346,24 @@ export default class GameShell {
 			// return false;
 		// }
 		
-		// this.lastMouseButtonDown = this.mouseButtonDown;
-		this.mouseActionTimeout = 0;
-		// this.handleMouseDown(this.mouseButtonDown, this.mouseX, this.mouseY);
 
-		switch(e.button) {
-		case 0:
+		if(e.button === 0)
 			this.mouseButtonDown = 1;
-			return;
-		case 1:
+		else if(e.button === 2)
+			this.mouseButtonDown = 2;
+		else if (e.button === 1) {
 			this.mouseButtonDown = 3;
 			if (this.options.middleClickCamera) {
 				this.middleButtonDown = true;
 				this.originRotation = this.cameraRotation;
 				this.originMouseX = this.mouseX;
 			}
-			return;
-		case 2:
-			this.mouseButtonDown = 2;
-			return;
-		}
+		} else
+			return false;
+		
+		this.lastMouseButtonDown = this.mouseButtonDown;
+		this.mouseActionTimeout = 0;
+		this.handleMouseDown(this.mouseButtonDown, this.mouseX, this.mouseY);
 
 		return false;
 	}
@@ -379,12 +374,13 @@ export default class GameShell {
 		if (!this.options.mouseWheel)
 			return;
 		
-		if (e.deltaMode === 0)
+		if (e.deltaMode === 0) {
 			// deltaMode === 0 means deltaX/deltaY is given in pixels (chrome)
 			this.mouseScrollDelta = Math.floor(e.deltaY / 14);
-		else if (e.deltaMode === 1)
+		} else if (e.deltaMode === 1) {
 			// deltaMode === 1 means deltaX/deltaY is given in lines (firefox)
 			this.mouseScrollDelta = Math.floor(e.deltaY);
+		}
 		
 		return false;
 	}

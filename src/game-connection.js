@@ -7,6 +7,7 @@ import GameException from './lib/game-exception';
 import NetworkStream from './network-stream';
 import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
 import { getCookie as getCookie } from './mudclient';
+import { isaac } from './lib/isaac';
 import VERSION from './version';
 import Ops from './gamelib/packets';
 import S_OPCODES from './opcodes/server';
@@ -21,7 +22,7 @@ export default class GameConnection extends GameShell {
 		this.settingsBlockTrade = false;
 		this.settingsBlockDuel = false;
 		this.server = '127.0.0.1';
-		this.port = 43595;
+		this.port = 43594;
 		this.username = getCookie('username');
 		this.password = '';
 		this.friendListCount = 0;
@@ -131,8 +132,11 @@ export default class GameConnection extends GameShell {
 
 			this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port), this);
 			this.clientStream.send(Ops.LOGIN(u, p, reconnecting));
-
 			let resp = await this.clientStream.readStream();
+			Packet.isaacIn = isaac();
+			Packet.isaacOut = isaac();
+			Packet.isaacIn.seed(Packet.isaacSeeds);
+			Packet.isaacOut.seed(Packet.isaacSeeds);
 			console.debug('login response:' + resp);
 			switch ((resp&~64)) {
 			case 25:
@@ -231,13 +235,16 @@ export default class GameConnection extends GameShell {
 	closeConnection() {
 		if (this.clientStream) {
 			try {
-				this.clientStream.send(Ops.DISCONNECT);
+				this.clientStream.send(Ops.DISCONNECT());
 				this.clientStream.closeStream();
 			} catch (e) {
 				console.error(e);
 			}
 		}
 		
+		Packet.isaacOut = void 0;
+		Packet.isaacIn = void 0;
+
 		this.resetLoginVars();
 	}
 	
@@ -272,7 +279,7 @@ export default class GameConnection extends GameShell {
 	
 	async checkConnection() {
 		this.timeoutCheck.tick(() => {
-			this.clientStream.queue(Ops.PING);
+			this.clientStream.queue(Ops.PING());
 		})
 
 		if (this.clientStream.hasPacket()) {
@@ -293,7 +300,6 @@ export default class GameConnection extends GameShell {
 			let buffer = await this.clientStream.nextPacket();
 			if (this.clientStream.didError) {
 				await this.closeConnection();
-				// await this.lostConnection();
 				return;
 			}
 			if (!buffer || buffer.length <= 0)
@@ -311,7 +317,8 @@ export default class GameConnection extends GameShell {
 		let offset = 0;
 		let size = data.length;
 		let opcode = Utility.getUnsignedByte(data[offset++]);
-		// console.info(`Incoming Packet: <opcode:${opcode};size:${size}>`);
+		opcode = (opcode - (Packet.isaacIn.rand() >>> 0) & 0xFF);
+		console.info(`Incoming Packet: <opcode:${opcode};size:${size}>`);
 		if (opcode === S_OPCODES.MESSAGE) {
 			this.showServerMessage(this.chatSystem.decode(data.slice(offset)));
 			return;
@@ -355,17 +362,6 @@ export default class GameConnection extends GameShell {
 			this.friendListOnline[this.friendListCount++] = online;
 			this.sortFriendsList();
 			return;
-			// for (let i2 = 0; i2 < this.friendListCount; i2++) {
-				// if (this.friendListHashes[i2].equals(hash)) {
-					// if (this.friendListOnline[i2] === 0 && online !== 0) {
-						// this.showServerMessage('@pri@' + Utility.hashToUsername(hash) + ' has logged in');
-					// 
-					// if (this.friendListOnline[i2] !== 0 && online === 0) {
-						// this.showServerMessage('@pri@' + Utility.hashToUsername(hash) + ' has logged out');
-					// size = 0; // not sure what this is for
-					// return;
-				// }
-			// }
 		}
 		
 		if (opcode === S_OPCODES.IGNORE_LIST) {
@@ -390,7 +386,7 @@ export default class GameConnection extends GameShell {
 			offset += 8;
 			let pmUuid = Utility.getUnsignedInt(data, offset);
 			offset += 4;
-			// Make sure this is not a duplicate private message
+			// Make sure this is not a copy of a private message
 			for (let uuid of this.privateMessageIds)
 				if (uuid === pmUuid)
 					return;
@@ -494,8 +490,7 @@ export default class GameConnection extends GameShell {
 }
 
 Object.defineProperty(GameConnection, 'socialListSize', {
-	get: ()=>200,
-	set: undefined,
+	value: 200,
 });
 
 Object.defineProperty(GameConnection, 'privateMessageUuid', {

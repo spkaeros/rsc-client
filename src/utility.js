@@ -52,8 +52,6 @@ class Utility {
 				BigInt(Utility.getUnsignedByte(data[off+5])) << 16n |
 				BigInt(Utility.getUnsignedByte(data[off+6])) << 8n |
 				BigInt(Utility.getUnsignedByte(data[off+7]));
-		// return BigInt(Utility.getUnsignedInt(data, off+4) << 32) | BigInt(Utility.getUnsignedInt(data, off));
-		// return new Long(Utility.getUnsignedInt(data, off + 4), Utility.getUnsignedInt(data, off), true);
 	}
 
 	static getSignedShort(data, off) {
@@ -398,36 +396,5 @@ let WelcomeStates = {
 	NEW_USER: new WelcomeState('New User view'),
 	EXISTING_USER: new WelcomeState('Existing User view'),
 };
-
-// import('../dist/rsc_client').then((wasm) => {
-	// console.log(wasm);
-	// Utility.initializeWasm(wasm);
-// })
-// 
-// (async () => await import('../dist/rsc_client').then((wasm) => {
-	// console.log(wasm);
-	// Utility.initializeWasm(wasm);
-// }));
-
-// fetch('static/rustyclient.js').then(response => response.arrayBuffer())
-// .then(bytes => WebAssembly.instantiate(bytes, {}))
-// .then(results => {
-	// Utility.wasmMod = results.instance;
-	// console.log(results);
-	// console.log(results.instance);
-	// console.log(results.instance.exports);
-// });
-
-// if (Utility.wasmMod) console.log("Got it");
-
-// if (!Utility.wasmMod)
-	// (async () => {
-		// Load up wasm module to facilitate rust interop
-		// all wasm calls to rust will be performed through this single API point
-		// Utility.wasmMod = await import('../pkg/rsc_client');
-		// console.log(test.toUnsigned().toString(), Utility.wasmMod.hashRecoveryAnswer("hello this is a test"));
-	// })();
-// else
-	// console.info("Wasm module loaded without async parenthetical");
 
 export { Utility as Utility, EngineStates as EngineStates, GameStates as GameStates, GamePanels as GamePanels, WelcomeStates as WelcomeStates };
