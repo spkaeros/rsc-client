@@ -144,3 +144,12 @@ pub fn hash_recovery_answer(_answer: String) -> u64 {
 
     hash
 }
+
+#[wasm_bindgen(js_name = hashFileName)]
+pub fn hash_file_name(_file: String) -> i32 {
+    let mut hash = 0 as i32;
+    for ch in _file.to_ascii_uppercase().as_bytes().iter() {
+        hash = (hash * 61 + (*ch as i32)) - 32;
+    }
+    hash
+}

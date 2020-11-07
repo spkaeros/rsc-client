@@ -33,4 +33,4 @@ function encryptBytes(arr) {
 	return BigInt.toArray(BigInt.fromArray(arr).modPow(EXPONENT, MODULUS));
 }
 
-export { encryptBytes as encryptBytes };
+export { encryptBytes as default };

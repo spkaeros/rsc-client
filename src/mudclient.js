@@ -656,20 +656,32 @@ export default class mudclient extends GameConnection {
 		this.surface.drawStringCenter('Click here to cancel', 256, y, 1, textColour);
 	}
 
-	_walkToActionSource_from8(startX, startY, x1, y1, x2, y2, checkObjects, walkToAction) {
-		let steps = this.world.route(startX, startY, x1, y1, x2, y2, this.walkPathX, this.walkPathY, checkObjects);
-		if (steps === -1) {
-			if (!walkToAction)
-				return false;
-			steps = 1;
-			this.walkPathX[0] = x1;
-			this.walkPathY[0] = y1;
-		}
+	walkToMob(sx, sy, dx, dy, action) {
+		this.walkToEntity(sx, sy, dx, dy, dx, dy, false, action);
+	}
 
+	walkToPoint(x, y, dstX, dstY) {
+		this.walkToEntity(x, y, dstX, dstY, dstX, dstY, false, false);
+	}
+	
+	walkToEntity(startX, startY, x1, y1, x2, y2, checkObjects, walkToAction) {
+		let steps = this.world.route(startX, startY, x1, y1, x2, y2, this.walkPathX, this.walkPathY, checkObjects);
+
+		if (steps === -1) {
+			if (walkToAction) {
+				steps = 1;
+				this.walkPathX[0] = x1;
+				this.walkPathY[0] = y1;
+			} else {
+				return false;
+			}
+		}
+		
 		steps--;
 		startX = this.walkPathX[steps];
 		startY = this.walkPathY[steps];
 		steps--;
+
 		this.clientStream.queue(Ops.WALK(steps, startX, startY, x1, y1, x2, y2, checkObjects, walkToAction));
 		this.mouseClickXStep = -24;
 		this.mouseClickXX = this.mouseX;
@@ -713,20 +725,26 @@ export default class mudclient extends GameConnection {
 			this.bankItemsCount[i] = this.newBankItemsCount[i];
 		}
 
-outer:
 		for (let invIdx = 0; invIdx < this.inventoryItemsCount; invIdx++) {
 			if (this.bankItemCount >= this.bankItemsMax)
 				break;
 
 			let invId = this.inventoryItemId[invIdx];
+			let hasItemInInv = false;
+
 			for (let bankidx = 0; bankidx < this.bankItemCount; bankidx++) {
-				if (this.bankItems[bankidx] === invId) {
-					continue outer;
-				}
+				if (this.bankItems[bankidx] !== invId)
+					continue;
+
+				hasItemInInv = true;
+				break;
 			}
-			this.bankItems[this.bankItemCount] = invId;
-			this.bankItemsCount[this.bankItemCount++] = this.inventoryItemStackCount[invIdx];
-			this.bankItemCount++;
+
+			if (!hasItemInInv) {
+				this.bankItems[this.bankItemCount] = invId;
+				this.bankItemsCount[this.bankItemCount] = this.inventoryItemStackCount[invIdx];
+				this.bankItemCount++;
+			}
 		}
 	}
 
@@ -815,10 +833,6 @@ outer:
 			this.surface.drawBoxAlpha(i2 - 15, l2 - 3, k3, 5, 0x00FF00, 0xC0);
 			this.surface.drawBoxAlpha((i2 - 15) + k3, l2 - 3, 30 - k3, 5, 0xff0000, 0xC0);
 		}
-	}
-
-	_walkToActionSource_from5(sx, sy, dx, dy, action) {
-		this._walkToActionSource_from8(sx, sy, dx, dy, dx, dy, false, action);
 	}
 
 	createMessageTabPanel() {
@@ -1021,15 +1035,7 @@ outer:
 						}
 
 						if (sendUpdate) {
-							this.clientStream.newPacket(C_OPCODES.TRADE_ITEM_UPDATE);
-							this.clientStream.putByte(this.tradeItemsCount);
-
-							for (let j4 = 0; j4 < this.tradeItemsCount; j4++) {
-								this.clientStream.putShort(this.tradeItems[j4]);
-								this.clientStream.putInt(this.tradeItemCount[j4]);
-							}
-
-							this.clientStream.sendPacket();
+							this.clientStream.queue(Ops.TRADE_ITEMS(this.tradeItemCount));
 							this.tradeRecipientAccepted = false;
 							this.tradeAccepted = false;
 						}
@@ -1058,15 +1064,7 @@ outer:
 							break;
 						}
 
-						this.clientStream.newPacket(C_OPCODES.TRADE_ITEM_UPDATE);
-						this.clientStream.putByte(this.tradeItemsCount);
-
-						for (let i3 = 0; i3 < this.tradeItemsCount; i3++) {
-							this.clientStream.putShort(this.tradeItems[i3]);
-							this.clientStream.putInt(this.tradeItemCount[i3]);
-						}
-
-						this.clientStream.sendPacket();
+						this.clientStream.queue(Ops.TRADE_ITEMS(this.tradeItemCount));
 						this.tradeRecipientAccepted = false;
 						this.tradeAccepted = false;
 					}
@@ -1074,20 +1072,18 @@ outer:
 
 				if (mouseX >= 217 && mouseY >= 238 && mouseX <= 286 && mouseY <= 259) {
 					this.tradeAccepted = true;
-					this.clientStream.queue(Ops.ACCEPT_TRADE_ONE);
-					// this.clientStream.newPacket(C_OPCODES.TRADE_ACCEPT);
-					// this.clientStream.sendPacket();
+					this.clientStream.queue(Ops.ACCEPT_TRADE_ONE());
 				}
 
 				if (mouseX >= 394 && mouseY >= 238 && mouseX < 463 && mouseY < 259) {
 					this.tradeConfigVisible = false;
-					this.clientStream.queue(Ops.DECLINE_TRADE);
+					this.clientStream.queue(Ops.DECLINE_TRADE());
 					// this.clientStream.newPacket(C_OPCODES.TRADE_DECLINE);
 					// this.clientStream.sendPacket();
 				}
 			} else if (this.mouseButtonClick !== 0) {
 				this.tradeConfigVisible = false;
-				this.clientStream.queue(Ops.DECLINE_TRADE);
+				this.clientStream.queue(Ops.DECLINE_TRADE());
 				// this.clientStream.newPacket(C_OPCODES.TRADE_DECLINE);
 				// this.clientStream.sendPacket();
 			}
@@ -1171,7 +1167,7 @@ outer:
 		}
 
 		for (let itemIndex = 0; itemIndex < this.tradeItemsCount; itemIndex++) {
-			let slotX = 9 + dialogX + (itemIndex % 4) * 49;
+			let slotX = 9 + dialogX + (itemIndex & 3) * 49;
 			let slotY = 31 + dialogY + ((itemIndex / 4) | 0) * 34;
 
 			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, this.spriteItem + GameData.itemPicture[this.tradeItems[itemIndex]], GameData.itemMask[this.tradeItems[itemIndex]], 0, 0, false);
@@ -1186,7 +1182,7 @@ outer:
 		}
 
 		for (let itemIndex = 0; itemIndex < this.tradeRecipientItemsCount; itemIndex++) {
-			let slotX = 9 + dialogX + (itemIndex % 4) * 49;
+			let slotX = 9 + dialogX + (itemIndex & 3) * 49;
 			let slotY = 156 + dialogY + ((itemIndex / 4) | 0) * 34;
 
 			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, this.spriteItem + GameData.itemPicture[this.tradeRecipientItems[itemIndex]], GameData.itemMask[this.tradeRecipientItems[itemIndex]], 0, 0, false);
@@ -1426,8 +1422,8 @@ outer:
 			return;
 		}
 
-		this.clientStream.newPacket(C_OPCODES.LOGOUT);
-		this.clientStream.sendPacket();
+		// this.clientStream.newPacket(C_OPCODES.LOGOUT);
+		this.clientStream.send(Ops.LOGOUT());
 		this.logoutBoxFrames = secondsToFrames(20);
 	}
 
@@ -2115,7 +2111,7 @@ outer:
 		if (this.objectAnimationCount > 5) {
 			this.objectAnimationCount = 0;
 			this.objectAnimationNumberFireLightningSpell = (this.objectAnimationNumberFireLightningSpell + 1) % 3;
-			this.objectAnimationNumberTorch = (this.objectAnimationNumberTorch + 1) % 4;
+			this.objectAnimationNumberTorch = (this.objectAnimationNumberTorch + 1) & 3;
 			this.objectAnimationNumberClaw = (this.objectAnimationNumberClaw + 1) % 5;
 		}
 
@@ -2689,7 +2685,7 @@ outer:
 			dy = this.localPlayer.currentY - dy;
 
 			if (this.mouseButtonClick === 1) {
-				this._walkToActionSource_from5(this.localRegionX, this.localRegionY, dx / 128 | 0, dy / 128 | 0, false);
+				this.walkToMob(this.localRegionX, this.localRegionY, dx / 128 | 0, dy / 128 | 0, false);
 
 				this.mouseButtonClick = 0;
 			}
@@ -2749,21 +2745,21 @@ outer:
 		if (this.mouseButtonClick === 1) {
 			if (this.mouseX < dialogX || this.mouseY < dialogY || this.mouseX > dialogX + 468 || this.mouseY > dialogY + 262) {
 				this.tradeConfirmVisible = false;
-				this.clientStream.queue(Ops.DECLINE_TRADE);
+				this.clientStream.queue(Ops.DECLINE_TRADE());
 				// this.clientStream.newPacket(C_OPCODES.TRADE_DECLINE);
 				// this.clientStream.sendPacket();
 			}
 
 			if (this.mouseX >= (dialogX + 118) - 35 && this.mouseX <= dialogX + 118 + 70 && this.mouseY >= dialogY + 238 && this.mouseY <= dialogY + 238 + 21) {
 				this.tradeConfirmAccepted = true;
-				this.clientStream.queue(Ops.ACCEPT_TRADE_TWO);
+				this.clientStream.queue(Ops.ACCEPT_TRADE_TWO());
 				// this.clientStream.newPacket(C_OPCODES.TRADE_CONFIRM_ACCEPT);
 				// this.clientStream.sendPacket();
 			}
 
 			if (this.mouseX >= (dialogX + 352) - 35 && this.mouseX <= dialogX + 353 + 70 && this.mouseY >= dialogY + 238 && this.mouseY <= dialogY + 238 + 21) {
 				this.tradeConfirmVisible = false;
-				this.clientStream.queue(Ops.DECLINE_TRADE);
+				this.clientStream.queue(Ops.DECLINE_TRADE());
 				// this.clientStream.newPacket(C_OPCODES.TRADE_DECLINE);
 				// this.clientStream.sendPacket();
 			}
@@ -2832,9 +2828,7 @@ outer:
 					continue;
 				}
 
-				this.clientStream.newPacket(C_OPCODES.CHOOSE_OPTION);
-				this.clientStream.putByte(i);
-				this.clientStream.sendPacket();
+				this.clientStream.queue(Ops.CHOOSE_MENU(i));
 				break;
 			}
 
@@ -2871,20 +2865,20 @@ outer:
 			flag = true;
 		}
 
-		let j2 = i2 * 3 + this.npcWalkModel[Math.floor(npc.stepCount / GameData.npcWalkModel[npc.typeID]) % 4];
+		let j2 = i2 * 3 + this.npcWalkModel[Math.floor(npc.stepCount / GameData.npcWalkModel[npc.typeID]) & 3];
 
 		if (npc.animationCurrent === 8) {
 			i2 = 5;
 			l1 = 2;
 			flag = false;
 			x -= (GameData.npcCombatAnimation[npc.typeID] * ty) / 100 | 0;
-			j2 = i2 * 3 + this.npcCombatModelArray1[(((this.frameCounter / (GameData.npcCombatModel[npc.typeID]) | 0) - 1)) % 8];
+			j2 = i2 * 3 + this.npcCombatModelArray1[(((this.frameCounter / (GameData.npcCombatModel[npc.typeID]) | 0) - 1)) & 7];
 		} else if (npc.animationCurrent === 9) {
 			i2 = 5;
 			l1 = 2;
 			flag = true;
 			x += (GameData.npcCombatAnimation[npc.typeID] * ty) / 100 | 0;
-			j2 = i2 * 3 + this.npcCombatModelArray2[((this.frameCounter / GameData.npcCombatModel[npc.typeID]) | 0) % 8];
+			j2 = i2 * 3 + this.npcCombatModelArray2[((this.frameCounter / GameData.npcCombatModel[npc.typeID]) | 0) & 7];
 		}
 
 		for (let k2 = 0; k2 < 12; k2++) {
@@ -3184,8 +3178,7 @@ outer:
 		this.surface.drawStringRight('Close window', x + 406, y + 10, 1, colour);
 
 		if (this.mouseButtonClick !== 0 && (this.mouseY < 12 || this.mouseY >= 280 || this.mouseX >= 475)) {
-			this.clientStream.queue(Ops.CLOSE_BANK);
-			// this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CLOSE_BANK());
 			this.bankVisible = false;
 			if (this.dialogItemInput === 2 || this.dialogItemInput === 1)
 				this.dialogItemInput = 0;
@@ -3235,11 +3228,7 @@ outer:
 						this.mouseButtonClick = 0;
 
 						let slot = this.bankItems[this.bankSelectedItemSlot];
-						this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-						this.clientStream.putShort(slot);
-						this.clientStream.putInt(1);
-						this.clientStream.putInt(0x12345678);
-						this.clientStream.sendPacket();
+						this.clientStream.queue(Ops.BANK_ACTION(slot, 1, true));
 					}
 				}
 				this.surface.drawString('One', minX, maxY, 1, colour);
@@ -3254,11 +3243,7 @@ outer:
 							this.mouseButtonClick = 0;
 
 							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-							this.clientStream.putShort(slot);
-							this.clientStream.putInt(5);
-							this.clientStream.putInt(0x12345678);
-							this.clientStream.sendPacket();
+							this.clientStream.queue(Ops.BANK_ACTION(slot, 5, true));
 						}
 					}
 					this.surface.drawString('Five', minX, maxY, 1, colour);
@@ -3275,11 +3260,7 @@ outer:
 							this.mouseButtonClick = 0;
 
 							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-							this.clientStream.putShort(slot);
-							this.clientStream.putInt(10);
-							this.clientStream.putInt(0x12345678);
-							this.clientStream.sendPacket();
+							this.clientStream.queue(Ops.BANK_ACTION(slot, 10, true));
 						}
 					}
 					this.surface.drawString('10', minX, maxY, 1, colour);
@@ -3295,11 +3276,7 @@ outer:
 							this.mouseButtonClick = 0;
 
 							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-							this.clientStream.putShort(slot);
-							this.clientStream.putInt(50);
-							this.clientStream.putInt(0x12345678);
-							this.clientStream.sendPacket();
+							this.clientStream.queue(Ops.BANK_ACTION(slot, 50, true));
 						}
 					}
 					this.surface.drawString('50', minX, maxY, 1, colour);
@@ -3327,11 +3304,7 @@ outer:
 						this.mouseButtonClick = 0;
 
 						let slot = this.bankItems[this.bankSelectedItemSlot];
-						this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-						this.clientStream.putShort(slot);
-						this.clientStream.putInt(itemCount);
-						this.clientStream.putInt(0x12345678);
-						this.clientStream.sendPacket();
+						this.clientStream.queue(Ops.BANK_ACTION(slot, itemCount, true));
 					}
 				}
 				this.surface.drawString('All', minX, maxY, 1, colour);
@@ -3354,11 +3327,7 @@ outer:
 						this.mouseButtonClick = 0;
 
 						let slot = this.bankItems[this.bankSelectedItemSlot];
-						this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
-						this.clientStream.putShort(slot);
-						this.clientStream.putInt(1);
-						this.clientStream.putInt(0x87654321);
-						this.clientStream.sendPacket();
+						this.clientStream.queue(Ops.BANK_ACTION(slot, 1, false));
 					}
 				}
 				this.surface.drawString('One', minX, maxY, 1, colour);
@@ -3374,11 +3343,7 @@ outer:
 							this.mouseButtonClick = 0;
 
 							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
-							this.clientStream.putShort(slot);
-							this.clientStream.putInt(5);
-							this.clientStream.putInt(0x87654321);
-							this.clientStream.sendPacket();
+							this.clientStream.queue(Ops.BANK_ACTION(slot, 5, false));
 						}
 					}
 					this.surface.drawString('Five', minX, maxY, 1, colour);
@@ -3394,11 +3359,7 @@ outer:
 							this.mouseButtonClick = 0;
 
 							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
-							this.clientStream.putShort(slot);
-							this.clientStream.putInt(10);
-							this.clientStream.putInt(0x87654321);
-							this.clientStream.sendPacket();
+							this.clientStream.queue(Ops.BANK_ACTION(slot, 10, false));
 						}
 					}
 					this.surface.drawString('10', minX, maxY, 1, colour);
@@ -3414,11 +3375,7 @@ outer:
 							this.mouseButtonClick = 0;
 
 							let slot = this.bankItems[this.bankSelectedItemSlot];
-							this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
-							this.clientStream.putShort(slot);
-							this.clientStream.putInt(50);
-							this.clientStream.putInt(0x87654321);
-							this.clientStream.sendPacket();
+							this.clientStream.queue(Ops.BANK_ACTION(slot, 50, false));
 						}
 					}
 					this.surface.drawString('50', minX, maxY, 1, colour);
@@ -3445,11 +3402,7 @@ outer:
 						this.mouseButtonClick = 0;
 
 						let slot = this.bankItems[this.bankSelectedItemSlot];
-						this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
-						this.clientStream.putShort(slot);
-						this.clientStream.putInt(this.getInventoryCount(itemType));
-						this.clientStream.putInt(0x87654321);
-						this.clientStream.sendPacket();
+						this.clientStream.queue(Ops.BANK_ACTION(slot, this.getInventoryCount(itemType), false));
 					}
 				}
 				this.surface.drawString('All', minX, maxY, 1, colour);
@@ -3493,22 +3446,8 @@ outer:
 				}
 				let max = this.dialogItemInput === 1 ? this.bankItemsCount[this.bankSelectedItemSlot] : this.getInventoryCount(this.bankItems[this.bankSelectedItemSlot]);
 				let amount = Math.max(0, Math.min(max, Number(text)));
-
-				if (this.dialogItemInput === 1) {
-					let slot = this.bankItems[this.bankSelectedItemSlot];
-					this.clientStream.newPacket(C_OPCODES.BANK_WITHDRAW);
-					this.clientStream.putShort(slot);
-					this.clientStream.putInt(amount);
-					this.clientStream.putInt(0x12345678);
-					this.clientStream.sendPacket();
-				} else if (this.dialogItemInput === 2) {
-					let slot = this.bankItems[this.bankSelectedItemSlot];
-					this.clientStream.newPacket(C_OPCODES.BANK_DEPOSIT);
-					this.clientStream.putShort(slot);
-					this.clientStream.putInt(amount);
-					this.clientStream.putInt(0x87654321);
-					this.clientStream.sendPacket();
-				}
+				let slot = this.bankItems[this.bankSelectedItemSlot];
+				this.clientStream.queue(Ops.BANK_ACTION(slot, amount, this.dialogItemInput === 1));
 				this.dialogItemInput = 0;
 			}
 		}
@@ -3654,19 +3593,19 @@ outer:
 
 				if (mouseX >= 217 && mouseY >= 238 && mouseX <= 286 && mouseY <= 259) {
 					this.duelOfferAccepted = true;
-					this.clientStream.newPacket(C_OPCODES.DUEL_ACCEPT);
-					this.clientStream.sendPacket();
+					// this.clientStream.newPacket(C_OPCODES.DUEL_ACCEPT);
+					this.clientStream.queue(Ops.ACCEPT_DUEL_ONE());
 				}
 
 				if (mouseX >= 394 && mouseY >= 238 && mouseX < 463 && mouseY < 259) {
 					this.duelConfigVisible = false;
 					// this.clientStream.newPacket(C_OPCODES.DUEL_DECLINE);
 					// this.clientStream.sendPacket();
-					this.clientStream.queue(Ops.DECLINE_DUEL);
+					this.clientStream.queue(Ops.DECLINE_DUEL());
 				}
 			} else if (this.mouseButtonClick !== 0) {
 				this.duelConfigVisible = false;
-				this.clientStream.queue(Ops.DECLINE_DUEL);
+				this.clientStream.queue(Ops.DECLINE_DUEL());
 				// this.clientStream.newPacket(C_OPCODES.DUEL_DECLINE);
 				// this.clientStream.sendPacket();
 			}
@@ -3786,7 +3725,7 @@ outer:
 		}
 
 		for (let i = 0; i < this.duelOfferItemCount; i++) {
-			let x = 9 + dialogX + (i % 4) * 49;
+			let x = 9 + dialogX + (i & 3) * 49;
 			let y = 31 + dialogY + ((i / 4) | 0) * 34;
 
 			this.surface._spriteClipping_from9(x, y, 48, 32, this.spriteItem + GameData.itemPicture[this.duelOfferItemList[i].id], GameData.itemMask[this.duelOfferItemList[i].id], 0, 0, false);
@@ -3801,7 +3740,7 @@ outer:
 		}
 
 		for (let i = 0; i < this.duelOfferOpponentItemCount; i++) {
-			let x = 9 + dialogX + (i % 4) * 49;
+			let x = 9 + dialogX + (i & 3) * 49;
 			let y = 124 + dialogY + ((i / 4) | 0) * 34;
 
 			this.surface._spriteClipping_from9(x, y, 48, 32, this.spriteItem + GameData.itemPicture[this.duelOfferOpponentItemList[i].id], GameData.itemMask[this.duelOfferOpponentItemList[i].id], 0, 0, false);
@@ -3968,20 +3907,20 @@ outer:
 			flag = true;
 		}
 
-		let j2 = i2 * 3 + this.npcWalkModel[Math.floor(player.stepCount / 6) % 4];
+		let j2 = i2 * 3 + this.npcWalkModel[Math.floor(player.stepCount / 6) & 3];
 
 		if (player.animationCurrent === 8) {
 			i2 = 5;
 			l1 = 2;
 			flag = false;
 			x -= Math.floor((5 * ty) / 100);
-			j2 = i2 * 3 + this.npcCombatModelArray1[Math.floor(this.frameCounter / 5) % 8];
+			j2 = i2 * 3 + this.npcCombatModelArray1[Math.floor(this.frameCounter / 5) & 7];
 		} else if (player.animationCurrent === 9) {
 			i2 = 5;
 			l1 = 2;
 			flag = true;
 			x += Math.floor((5 * ty) / 100);
-			j2 = i2 * 3 + this.npcCombatModelArray2[Math.floor(this.frameCounter / 6) % 8];
+			j2 = i2 * 3 + this.npcCombatModelArray2[Math.floor(this.frameCounter / 6) & 7];
 		}
 
 		for (let k2 = 0; k2 < 12; k2++) {
@@ -3999,27 +3938,27 @@ outer:
 					} else if (l2 === 4 && i2 === 1) {
 						k4 = -22;
 						i5 = -3;
-						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) % 4];
+						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) & 3];
 					} else if (l2 === 4 && i2 === 2) {
 						k4 = 0;
 						i5 = -8;
-						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) % 4];
+						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) & 3];
 					} else if (l2 === 4 && i2 === 3) {
 						k4 = 26;
 						i5 = -5;
-						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) % 4];
+						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) & 3];
 					} else if (l2 === 3 && i2 === 1) {
 						k4 = 22;
 						i5 = 3;
-						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) % 4];
+						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) & 3];
 					} else if (l2 === 3 && i2 === 2) {
 						k4 = 0;
 						i5 = 8;
-						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) % 4];
+						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) & 3];
 					} else if (l2 === 3 && i2 === 3) {
 						k4 = -26;
 						i5 = 5;
-						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) % 4];
+						j5 = i2 * 3 + this.npcWalkModel[(2 + Math.floor(player.stepCount / 6)) & 3];
 					}
 				}
 
@@ -4150,12 +4089,8 @@ outer:
 		let i = GameData.itemSpriteCount;
 
 		for (let j = 1; i > 0; j++) {
-			let k = i;
+			let k = Math.min(30, i);
 			i -= 30;
-
-			if (k > 30) {
-				k = 30;
-			}
 
 			this.surface.parseSprite(this.spriteItem + (j - 1) * 30, Utility.loadData('objects' + j + '.dat', 0, media), buff, k);
 		}
@@ -4187,7 +4122,7 @@ outer:
 	}
 
 	async startGame() {
-		this.port = this.port || 43595;
+		this.port = this.port || 43594;
 
 		await this.fetchDefinitions();
 		await this.fetchChatFilters();
@@ -4445,15 +4380,11 @@ outer:
 					} else if (this.playerStatCurrent[5] === 0) {
 						this.showMessage('You have run out of prayer points. Return to a church to recharge', 3);
 					} else if (this.prayers[l1]) {
-						this.clientStream.newPacket(C_OPCODES.PRAYER_OFF);
-						this.clientStream.putByte(l1);
-						this.clientStream.sendPacket();
+						this.clientStream.queue(Ops.TOGGLE_PRAYER(l1, false));
 						this.prayers[l1] = false;
 						this.playSoundFile('prayeroff');
 					} else {
-						this.clientStream.newPacket(C_OPCODES.PRAYER_ON);
-						this.clientStream.putByte(l1);
-						this.clientStream.sendPacket();
+						this.clientStream.queue(Ops.TOGGLE_PRAYER(l1, true));
 						this.prayers[l1] = true;
 						this.playSoundFile('prayeron');
 					}
@@ -4495,38 +4426,20 @@ outer:
 					if (itemType !== -1) {
 						if (this.shopItemCount[this.shopSelectedItemIndex] > 0 && mouseX > 298 && mouseY >= 204 && mouseX < 408 && mouseY <= 215) {
 							let priceMod = this.shopBuyPriceMod + this.shopItemPrice[this.shopSelectedItemIndex];
-
-							if (priceMod < 10) {
-								priceMod = 10;
-							}
-
-							let itemPrice = (priceMod * GameData.itemBasePrice[itemType]) / 100 | 0;
-
-							this.clientStream.newPacket(C_OPCODES.SHOP_BUY);
-							this.clientStream.putShort(this.shopItem[this.shopSelectedItemIndex]);
-							this.clientStream.putInt(itemPrice);
-							this.clientStream.sendPacket();
+							let itemPrice = (Math.max(10, priceMod) * GameData.itemBasePrice[itemType]) / 100 | 0;
+							this.clientStream.queue(Ops.SHOP_ACTION(this.shopItem[this.shopSelectedItemIndex], itemPrice, true))
 						}
 
 						if (this.getInventoryCount(itemType) > 0 && mouseX > 2 && mouseY >= 229 && mouseX < 112 && mouseY <= 240) {
 							let priceMod = this.shopSellPriceMod + this.shopItemPrice[this.shopSelectedItemIndex];
-
-							if (priceMod < 10) {
-								priceMod = 10;
-							}
-
-							let itemPrice = (priceMod * GameData.itemBasePrice[itemType]) / 100 | 0;
-
-							this.clientStream.newPacket(C_OPCODES.SHOP_SELL);
-							this.clientStream.putShort(this.shopItem[this.shopSelectedItemIndex]);
-							this.clientStream.putInt(itemPrice);
-							this.clientStream.sendPacket();
+							let itemPrice = (Math.max(10, priceMod) * GameData.itemBasePrice[itemType]) / 100 | 0;
+							this.clientStream.queue(Ops.SHOP_ACTION(this.shopItem[this.shopSelectedItemIndex], itemPrice, false))
 						}
 					}
 				}
 			} else {
-				this.clientStream.newPacket(C_OPCODES.SHOP_CLOSE);
-				this.clientStream.sendPacket();
+				// this.clientStream.newPacket(C_OPCODES.SHOP_CLOSE);
+				this.clientStream.queue(Ops.CLOSE_SHOP());
 				this.shopVisible = false;
 				return;
 			}
@@ -4969,7 +4882,7 @@ outer:
 		let dy = 8;
 		if (this.debug) {
 			this.surface.drawStringCenter(`Mouse:${this.mouseX},${this.mouseY}`, 256, 15, 1, 0xffff00);
-			this.surface.drawStringCenter(`Player:${this.localPlayer.currentX + this.regionX},${this.localPlayer.currentY + this.regionY}`, 256, 30, 1, 0xffff00);
+			this.surface.drawStringCenter(`Player:${(this.localPlayer.currentX >>> 7) + this.regionX},${(this.localPlayer.currentY >>> 7) + this.regionY}`, 256, 30, 1, 0xffff00);
 		}
 		if (this.showFps && this.fps > 0) {
 			this.surface.drawStringCenter('FPS:' + this.fps, 465, this.gameHeight - dy, 1, 0xffff00);
@@ -5381,7 +5294,7 @@ label0:
 
 	walkToGroundItem(i, j, k, l, walkToAction) {
 		if (!this.walkTo(i, j, k, l, k, l, false, walkToAction))
-			this._walkToActionSource_from8(i, j, k, l, k, l, true, walkToAction);
+			this.walkToEntity(i, j, k, l, k, l, true, walkToAction);
 	}
 
 	async loadModels() {
@@ -5585,10 +5498,10 @@ label0:
 				h++;
 			}
 
-			this._walkToActionSource_from8(this.localRegionX, this.localRegionY, x, y, (x + w) - 1, (y + h) - 1, false, true);
+			this.walkToEntity(this.localRegionX, this.localRegionY, x, y, (x + w) - 1, (y + h) - 1, false, true);
 
 		} else {
-			this._walkToActionSource_from8(this.localRegionX, this.localRegionY, x, y, (x + w) - 1, (y + h) - 1, true, true);
+			this.walkToEntity(this.localRegionX, this.localRegionY, x, y, (x + w) - 1, (y + h) - 1, true, true);
 
 		}
 	}
@@ -5798,24 +5711,15 @@ label0:
 			if (this.mouseButtonClick === 1) {
 				if (this.mouseX > panelX && this.mouseX < panelX + width && this.mouseY > panelY - 12 && this.mouseY < panelY + 4) {
 					this.optionCameraModeAuto = !this.optionCameraModeAuto;
-					this.clientStream.newPacket(C_OPCODES.SETTINGS_GAME);
-					this.clientStream.putByte(0);
-					this.clientStream.putByte(this.optionCameraModeAuto ? 1 : 0);
-					this.clientStream.sendPacket();
+					this.clientStream.queue(Ops.SETTINGS(0, this.optionCameraModeAuto));
 				}
 				if (this.mouseX > panelX && this.mouseX < panelX + width && this.mouseY > panelY+15 - 12 && this.mouseY < panelY+15 + 4) {
 					this.optionMouseButtonOne = !this.optionMouseButtonOne;
-					this.clientStream.newPacket(C_OPCODES.SETTINGS_GAME);
-					this.clientStream.putByte(2);
-					this.clientStream.putByte(this.optionMouseButtonOne ? 1 : 0);
-					this.clientStream.sendPacket();
+					this.clientStream.queue(Ops.SETTINGS(2, this.optionMouseButtonOne));
 				}
 				if (this.mouseX > panelX && this.mouseX < panelX + width && this.mouseY > panelY+30 - 12 && this.mouseY < panelY+30 + 4) {
 					this.optionSoundDisabled = !this.optionSoundDisabled;
-					this.clientStream.newPacket(C_OPCODES.SETTINGS_GAME);
-					this.clientStream.putByte(3);
-					this.clientStream.putByte(this.optionSoundDisabled ? 1 : 0);
-					this.clientStream.sendPacket();
+					this.clientStream.queue(Ops.SETTINGS(3, this.optionSoundDisabled));
 				}
 			}
 			panelY += 45
@@ -6126,9 +6030,7 @@ label0:
 					continue;
 				this.combatStyle = i - 1;
 				this.mouseButtonClick = 0;
-				this.clientStream.newPacket(C_OPCODES.COMBAT_STYLE);
-				this.clientStream.putByte(this.combatStyle);
-				this.clientStream.sendPacket();
+				this.clientStream.queue(Ops.FIGHT_STYLE(this.combatStyle));
 				break;
 			}
 		}
@@ -6220,13 +6122,11 @@ label0:
 		if (mItemId === 420) {
 			this.walkToObject(mx, my, mIdx, mSrcIdx);
 			this.clientStream.queue(Ops.SCENARY_ACTION(0, mx, my));
-			this.clientStream.sendPacket();
 		}
 
 		if (mItemId === 2400) {
 			this.walkToObject(mx, my, mIdx, mSrcIdx);
 			this.clientStream.queue(Ops.SCENARY_ACTION(1, mx, my));
-			this.clientStream.sendPacket();
 		}
 
 		if (mItemId === 3400) {
@@ -6234,37 +6134,25 @@ label0:
 		}
 
 		if (mItemId === 600) {
-			this.clientStream.newPacket(C_OPCODES.CAST_INVITEM);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CAST_INVENTORY(mIdx, mSrcIdx));
 			this.selectedSpell = -1;
 		}
 
 		if (mItemId === 610) {
-			this.clientStream.newPacket(C_OPCODES.USEWITH_INVITEM);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.putShort(mSrcIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.ON_INVENTORY(mIdx, mSrcIdx));
 			this.selectedItemInventoryIndex = -1;
 		}
 
 		if (mItemId === 620) {
-			this.clientStream.newPacket(C_OPCODES.INV_UNEQUIP);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.UNEQUIP(mIdx));
 		}
 
 		if (mItemId === 630) {
-			this.clientStream.newPacket(C_OPCODES.INV_WEAR);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.EQUIP(mIdx));
 		}
 
 		if (mItemId === 640) {
-			this.clientStream.newPacket(C_OPCODES.INV_CMD);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.INVENTORY_ACTION(mIdx));
 		}
 
 		if (mItemId === 650) {
@@ -6274,9 +6162,7 @@ label0:
 		}
 
 		if (mItemId === 660) {
-			this.clientStream.newPacket(C_OPCODES.INV_DROP);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.DROP_ITEM(mIdx));
 			this.selectedItemInventoryIndex = -1;
 			this.showUiTab = 0;
 			this.showMessage('Dropping ' + GameData.itemName[this.inventoryItemId[mIdx]], 4);
@@ -6290,7 +6176,7 @@ label0:
 			let l1 = (mx - 64) / this.tileSize | 0;
 			let l3 = (my - 64) / this.tileSize | 0;
 
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, l1, l3, true);
+			this.walkToMob(this.localRegionX, this.localRegionY, l1, l3, true);
 			this.clientStream.queue(Ops.CAST_NPC(mIdx, mSrcIdx));
 			this.selectedSpell = -1;
 		}
@@ -6299,7 +6185,7 @@ label0:
 			let i2 = (mx - 64) / this.tileSize | 0;
 			let i4 = (my - 64) / this.tileSize | 0;
 
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, i2, i4, true);
+			this.walkToMob(this.localRegionX, this.localRegionY, i2, i4, true);
 			this.clientStream.queue(Ops.ON_NPC(mIdx, mSrcIdx));
 			this.selectedItemInventoryIndex = -1;
 		}
@@ -6308,7 +6194,7 @@ label0:
 			let j2 = (mx - 64) / this.tileSize | 0;
 			let j4 = (my - 64) / this.tileSize | 0;
 
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, j2, j4, true);
+			this.walkToMob(this.localRegionX, this.localRegionY, j2, j4, true);
 			this.clientStream.queue(Ops.TALK_NPC(mIdx));
 		}
 
@@ -6316,15 +6202,15 @@ label0:
 			let k2 = (mx - 64) / this.tileSize | 0;
 			let k4 = (my - 64) / this.tileSize | 0;
 
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, k2, k4, true);
-			this.clientStream.queue(Ops.ACTION_NPC(mIdx));
+			this.walkToMob(this.localRegionX, this.localRegionY, k2, k4, true);
+			this.clientStream.queue(Ops.NPC_ACTION(mIdx));
 		}
 
 		if (mItemId === 715 || mItemId === 2715) {
 			let l2 = (mx - 64) / this.tileSize | 0;
 			let l4 = (my - 64) / this.tileSize | 0;
 
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, l2, l4, true);
+			this.walkToMob(this.localRegionX, this.localRegionY, l2, l4, true);
 			this.clientStream.queue(Ops.ATTACK_NPC(mIdx));
 		}
 
@@ -6336,7 +6222,7 @@ label0:
 			let i3 = (mx - 64) / this.tileSize | 0;
 			let i5 = (my - 64) / this.tileSize | 0;
 
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, i3, i5, true);
+			this.walkToMob(this.localRegionX, this.localRegionY, i3, i5, true);
 			this.clientStream.queue(Ops.CAST_PLAYER(mIdx, mSrcIdx));
 			this.selectedSpell = -1;
 		}
@@ -6345,7 +6231,7 @@ label0:
 			let j3 = (mx - 64) / this.tileSize | 0;
 			let j5 = (my - 64) / this.tileSize | 0;
 
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, j3, j5, true);
+			this.walkToMob(this.localRegionX, this.localRegionY, j3, j5, true);
 			this.clientStream.queue(Ops.ON_PLAYER(mIdx, mSrcIdx));
 			this.selectedItemInventoryIndex = -1;
 		}
@@ -6354,45 +6240,37 @@ label0:
 			let k3 = (mx - 64) / this.tileSize | 0;
 			let k5 = (my - 64) / this.tileSize | 0;
 
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, k3, k5, true);
-			this.clientStream.queue(Ops.ATTACK_PLAYER(mIdx));
+			this.walkToMob(this.localRegionX, this.localRegionY, k3, k5, true);
+			this.clientStream.queue(Ops.ATTACK_PLAYER(mIdx, mSrcIdx));
 		}
 
 		if (mItemId === 2806) {
-			this.clientStream.newPacket(C_OPCODES.PLAYER_DUEL);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.REQUEST_DUEL(mIdx));
 		}
 
 		if (mItemId === 2810) {
-			this.clientStream.newPacket(C_OPCODES.PLAYER_TRADE);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.REQUEST_TRADE(mIdx));
 		}
 
 		if (mItemId === 2820) {
-			this.clientStream.newPacket(C_OPCODES.PLAYER_FOLLOW);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.FOLLOW(mIdx));
 		}
 
 		if (mItemId === 900) {
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, mx, my, true);
+			this.walkToMob(this.localRegionX, this.localRegionY, mx, my, true);
 			this.clientStream.queue(Ops.CAST_GROUND(mx, my, mIdx));
 			this.selectedSpell = -1;
 		}
 
 		if (mItemId === 920) {
-			this._walkToActionSource_from5(this.localRegionX, this.localRegionY, mx, my, false);
+			this.walkToMob(this.localRegionX, this.localRegionY, mx, my, false);
 
 			if (this.mouseClickXStep === -24)
 				this.mouseClickXStep = 24;
 		}
 
 		if (mItemId === 1000) {
-			this.clientStream.newPacket(C_OPCODES.CAST_SELF);
-			this.clientStream.putShort(mIdx);
-			this.clientStream.sendPacket();
+			this.clientStream.queue(Ops.CAST_SELF(mx, my, mIdx));
 			this.selectedSpell = -1;
 		}
 
@@ -6405,10 +6283,10 @@ label0:
 	updateWelcomeStatuses(s, s1) {
 		switch (this.welcomeState) {
 		case WelcomeStates.NEW_USER:
-			this.panelLogin[WelcomeStates.NEW_USER].setTextHandle(this.controlRegisterStatus, s + ' ' + s1);
+			this.panelLogin[WelcomeStates.NEW_USER].setTextHandle(this.controlRegisterStatus, `${s} ${s1}`);
 			break;
 		case WelcomeStates.EXISTING_USER:
-			this.panelLogin[WelcomeStates.EXISTING_USER].setTextHandle(this.controlLoginStatus, s + ' ' + s1);
+			this.panelLogin[WelcomeStates.EXISTING_USER].setTextHandle(this.controlLoginStatus, `${s} ${s1}`);
 			break;
 		default:
 			break;
@@ -6494,11 +6372,10 @@ label0:
 			let offset = 1;
 			if (opcode === S_OPCODES.REGION_PLAYERS) {
 				this.knownPlayerCount = this.playerCount;
-				// this.knownPlayers = this.players.slice(0, this.playerCount);
-				for (let idx = 0; idx < this.knownPlayerCount; idx++)
-					this.knownPlayers[idx] = this.players[idx];
+				// this.knownPlayers = this.players.slice(0, this.knownPlayerCount);
+				for (let idx = 0; idx < this.knownPlayerCount; idx++) this.knownPlayers[idx] = this.players[idx];
 
-				let bitOffset = offset*8;
+				let bitOffset = offset<<3;
 				this.localRegionX = Utility.getBitMask(pdata, bitOffset, 11);
 				bitOffset += 11;
 				this.localRegionY = Utility.getBitMask(pdata, bitOffset, 13);
@@ -6561,12 +6438,12 @@ label0:
 							mobToUpdate.waypointsX[step] = curX;
 							mobToUpdate.waypointsY[step] = curY;
 						} else {
-							let status = Utility.getBitMask(pdata, bitOffset, 2);
+							let status = Utility.getBitMask(pdata, bitOffset, 4);
 							bitOffset += 2;
-							if (status&0b11 === 0b11)
+							if (status&0b1100 === 0b1100)
 								continue;
 
-							mobToUpdate.animationNext = (status << 2) | Utility.getBitMask(pdata, bitOffset, 2);
+							mobToUpdate.animationNext = status;
 							bitOffset += 2;
 						}
 					}
@@ -6576,7 +6453,7 @@ label0:
 
 				let newCount = 0;
 				// add 24 bits to the offset to represent the header for this packet
-				while (bitOffset+24 < psize*8) {
+				while (bitOffset+24 < psize<<3) {
 					let serverIndex = Utility.getBitMask(pdata, bitOffset, 11);
 					bitOffset += 11;
 
@@ -6597,25 +6474,15 @@ label0:
 					let meshY = ((this.localRegionY + areaY) * this.tileSize) + 64;
 
 					this.createPlayer(serverIndex, meshX, meshY, direction);
-
-					if (Utility.getBitMask(pdata, bitOffset++, 1) === 0)
-						this.playerServerIndexes[newCount++] = serverIndex;
+					// TODO: Erase for 235
+					// if (Utility.getBitMask(pdata, bitOffset++, 1) === 0)
+						// this.playerServerIndexes[newCount++] = serverIndex;
 				}
 
-				if (newCount > 0) {
-					this.clientStream.queue(Ops.GET_PLAYER_TICKETS(newCount));
-					// this.clientStream.newPacket(C_OPCODES.KNOWN_PLAYERS);
-					// this.clientStream.putShort(newCount);
-// 
-					// for (let i = 0; i < newCount; i++) {
-						// let c = this.playerServer[this.playerServerIndexes[i]];
-// 
-						// this.clientStream.putShort(c.serverIndex);
-						// this.clientStream.putShort(c.appearanceTicket);
-					// }
-// 
-					// this.clientStream.sendPacket();
-				}
+				// if (newCount > 0) {
+					// // TODO: Erase for 235
+					// this.clientStream.queue(Ops.GET_PLAYER_TICKETS(newCount));
+				// }
 
 				return;
 			}
@@ -6801,7 +6668,7 @@ label0:
 				this.inventoryItemsCount = Utility.getUnsignedByte(pdata[offset++]);
 				for (let i = 0; i < this.inventoryItemsCount; i++) {
 					this.inventoryItemId[i] = Utility.getUnsignedShort(pdata, offset) & 0x7FFF;
-					this.inventoryEquipped[i] = (Utility.getUnsignedShort(pdata, offset) >> 15) !== 0;
+					this.inventoryEquipped[i] = (Utility.getUnsignedShort(pdata, offset) >>> 15) !== 0;
 					offset += 2;
 
 					if (GameData.itemStackable[this.inventoryItemId[i]] !== 0) {
@@ -6818,8 +6685,8 @@ label0:
 			}
 
 			if (opcode === S_OPCODES.REGION_PLAYER_UPDATE) {
-				let updateCount = Utility.getUnsignedShort(pdata, 1);
-				let offset = 3;
+				let updateCount = Utility.getUnsignedShort(pdata, offset);
+				offset += 2;
 updateLoop:
 				for (let update = 0; update < updateCount; update++) {
 					let updatePlayer = this.playerServer[Utility.getUnsignedShort(pdata, offset)];
@@ -6831,11 +6698,8 @@ updateLoop:
 						let id = Utility.getUnsignedShort(pdata, offset);
 						offset += 2;
 
-						if (updatePlayer) {
+						if (updatePlayer)
 							updatePlayer.bubble = new Bubble(id);
-							// updatePlayer.bubbleTimeout = secondsToFrames(4);
-							// updatePlayer.bubbleItem = id;
-						}
 					} else if (updateType === 1) {
 						// chat
 						let messageLength = pdata[offset++];
@@ -6850,7 +6714,6 @@ updateLoop:
 							updatePlayer.message = msg;
 							this.showMessage(updatePlayer.name + ': ' + updatePlayer.message, 2);
 						}
-
 					} else if (updateType === 2) {
 						// combat damage and hp
 						let damage = Utility.getUnsignedByte(pdata[offset++]);
@@ -7003,7 +6866,7 @@ updateLoop:
 
 			if (opcode === S_OPCODES.REGION_NPCS) {
 				this.npcCacheCount = this.npcCount;
-				// this.npcsCache = this.npcs.slice(0, this.npcCount);
+				// this.npcsCache = this.npcs.slice(0, this.npcCacheCount);
 				for (let i2 = 0; i2 < this.npcCacheCount; i2++) this.npcsCache[i2] = this.npcs[i2];
 
 				let bitOffset = offset*8;
@@ -7013,11 +6876,9 @@ updateLoop:
 				this.npcCount = 0;
 				for (let cur = 0; cur < localCount; cur++) {
 					let npc = this.npcsCache[cur];
-					if (!npc) continue;
-					let needsUpdate = Utility.getBitMask(pdata, bitOffset++, 1) !== 0;
-					if (needsUpdate) {
-						let directionalUpdate = Utility.getBitMask(pdata, bitOffset++, 1) === 0;
-						if (directionalUpdate) {
+					// if (!npc) continue;
+					if (Utility.getBitMask(pdata, bitOffset++, 1) !== 0) {
+						if (Utility.getBitMask(pdata, bitOffset++, 1) === 0) {
 							let direction = Utility.getBitMask(pdata, bitOffset, 3);
 							bitOffset += 3;
 							let step = npc.waypointCurrent;
@@ -7030,7 +6891,7 @@ updateLoop:
 									// in octa-directional movement, there's 3 possible directions
 									// that move toward each of the 4 main directions (NESW)
 									if (direction === (((dir<<1)+(angle+1)) & 7)) {
-										if (dir % 2 === 0)
+										if (dir & 1 === 0)
 											curX += size;
 										else
 											curY += size;
@@ -7043,12 +6904,13 @@ updateLoop:
 							npc.waypointsX[step] = curX;
 							npc.waypointsY[step] = curY;
 						} else {
-							let status = Utility.getBitMask(pdata, bitOffset, 2);
+							let sprite = Utility.getBitMask(pdata, bitOffset, 2);
 							bitOffset += 2;
-							if (status&0b11 === 0b11)
+							// first 2 bits were on, means remove from list and the other 2 bits belong elsewhere
+							if (sprite === 0b11)
 								continue;
 
-							npc.animationNext = (status << 2) | Utility.getBitMask(pdata, bitOffset, 2);
+							npc.animationNext = (sprite << 2) | Utility.getBitMask(pdata, bitOffset, 2);
 							bitOffset += 2;
 						}
 					}
@@ -7056,7 +6918,7 @@ updateLoop:
 					this.npcs[this.npcCount++] = npc;
 				}
 
-				while (bitOffset + 34 < psize << 3) {
+				while (bitOffset + 34 < psize*8) {
 					let serverIndex = Utility.getBitMask(pdata, bitOffset, 12);
 					bitOffset += 12;
 
@@ -7157,18 +7019,17 @@ updateLoop:
 				for (let i = 0; i < this.playerStatCount; i++)
 					this.playerStatBase[i] = Utility.getUnsignedByte(pdata[offset++]);
 
-				for (let i = 0; i < this.playerStatCount; i++) {
-					this.playerExperience[i] = Utility.getUnsignedInt(pdata, offset);
-					offset += 4;
-				}
+				for (let i = 0; i < this.playerStatCount; i++)
+					this.playerExperience[i] = Utility.getUnsignedInt(pdata, offset+(i<<2));
+				offset += this.playerStatCount<<2;
 
 				this.playerQuestPoints = Utility.getUnsignedByte(pdata[offset++]);
 				return;
 			}
 
 			if (opcode === S_OPCODES.PLAYER_STAT_EQUIPMENT_BONUS) {
-				for (let i3 = 1; i3 <= this.playerStatEquipmentCount; i3++)
-					this.playerStatEquipment[i3-1] = Utility.getUnsignedByte(pdata[i3]);
+				for (let i3 = 0; i3 < this.playerStatEquipmentCount; i3++)
+					this.playerStatEquipment[i3] = Utility.getUnsignedByte(pdata[offset+i3]);
 				return;
 			}
 
@@ -7178,7 +7039,7 @@ updateLoop:
 			}
 
 			if (opcode === S_OPCODES.REGION_ENTITY_UPDATE) {
-				let chunkCount = Math.floor((psize - 1) / 4);
+				let chunkCount = Math.floor((psize - 1) >>> 2);
 
 				for (let chunk = 0; chunk < chunkCount; chunk++) {
 					let chunkX = this.localRegionX + Utility.getSignedShort(pdata, offset) >> 3;
@@ -7396,8 +7257,8 @@ updateLoop:
 				return;
 			}
 			if (opcode === S_OPCODES.PLAYER_QUEST_LIST) {
-				for (let i = 1; i < this.questCount+1; i++)
-					this.questComplete[i-1] = Utility.getBoolean(pdata[i]);
+				for (let i = 0; i < this.questCount; i++)
+					this.questComplete[i] = Utility.getBoolean(pdata[offset+i]);
 				return;
 			}
 			if (opcode === S_OPCODES.BANK_OPEN) {
@@ -7405,11 +7266,11 @@ updateLoop:
 
 				this.newBankItemCount = Utility.getUnsignedByte(pdata[offset++]);
 				this.bankItemsMax = Utility.getUnsignedByte(pdata[offset++]);
-				for (let idx = 0; idx < this.newBankItemCount; idx++) {
-					this.newBankItems[idx] = Utility.getUnsignedShort(pdata, offset);
+				for (let k11 = 0; k11 < this.newBankItemCount; k11++) {
+					this.newBankItems[k11] = Utility.getUnsignedShort(pdata, offset);
 					offset += 2;
-					this.newBankItemsCount[idx] = Utility.getSmart08_32(pdata, offset);
-					if (this.newBankItemsCount[idx] >= 128)
+					this.newBankItemsCount[k11] = Utility.getSmart08_32(pdata, offset);
+					if (this.newBankItemsCount[k11] >= 128)
 						offset += 4;
 					else
 						offset++;
@@ -7576,7 +7437,7 @@ updateLoop:
 				}
 
 				this.inventoryItemId[index] = (id & 0x7FFF);
-				this.inventoryEquipped[index] = ((id & 0x8000) >> 15) !== 0;
+				this.inventoryEquipped[index] = ((id & 0x8000) >>> 15) !== 0;
 				this.inventoryItemStackCount[index] = stack;
 				if (index >= this.inventoryItemsCount)
 					this.inventoryItemsCount = index + 1;

@@ -205,7 +205,7 @@ class Packet {
 			this.data = new Uint8Array(BYTES_LIMIT+3);
 
 		this.data[this.writeMarker+2] = op & 0xFF;
-		if (Packet.isaacOut) this.data[this.writeMarker+2] = (this.data[this.writeMarker+2]+(Packet.isaacOut.rand()>>>0))&0xFF;
+		if (op !== 0 && Packet.isaacOut) this.data[this.writeMarker+2] = (this.data[this.writeMarker+2]+(Packet.isaacOut.rand()>>>0))&0xFF;
 		this.endMarker = this.writeMarker + 3;
 		this.data[this.endMarker] = 0;
 		// set end caret to the buffer position directly following header bytes and opcode

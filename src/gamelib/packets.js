@@ -2,7 +2,6 @@ import VERSION from '../version';
 import OPS from '../opcodes/client';
 import Packet from '../packet';
 import xtea from 'xtea';
-import crypto from 'crypto';
 import { Utility } from '../utility';
 import { encryptBytes } from './rsa';
 
@@ -28,6 +27,61 @@ class Ops {
 		let p = new Packet(OPS.CHAT);
 		p.startAccess();
 		p.putBytes(s, 0, len);
+		p.stopAccess();
+		return p;
+	}
+
+	static FIGHT_STYLE(idx) {
+		let p = new Packet(OPS.COMBAT_STYLE);
+		p.startAccess();
+		p.putByte(idx);
+		p.stopAccess();
+		return p;
+	}
+
+	static CHOOSE_MENU(idx) {
+		let p = new Packet(OPS.CHOOSE_OPTION);
+		p.startAccess();
+		p.putByte(idx);
+		p.stopAccess();
+		return p;
+	}
+
+	static TOGGLE_PRAYER(idx, on) {
+		let p = new Packet(on ? OPS.PRAYER_ON : OPS.PRAYER_OFF);
+		p.startAccess();
+		p.putByte(idx);
+		p.stopAccess();
+		return p;
+	}
+
+	static BANK_ACTION(slot, amount, withdraw) {
+		let p = new Packet(withdraw ? OPS.BANK_WITHDRAW : OPS.BANK_DEPOSIT);
+		p.startAccess();
+		p.putShort(idx);
+		p.putInt(amount);
+		p.putInt(withdraw ? 0x12345678 : 0x87654321)
+		p.stopAccess();
+		return p;
+	}
+
+	static TRADE_ITEMS(count) {
+		let p = new Packet(OPS.TRADE_ITEM_UPDATE);
+		p.startAccess();
+		p.putByte(count);
+		for (let i = 0; i < count; i++) {
+			p.putShort(Ops.MC.tradeItems[i]);
+			p.putInt(Ops.MC.tradeItemCount[i]);
+		}
+		p.stopAccess();
+		return p;
+	}
+
+	static SETTINGS(idx, value) {
+		let p = new Packet(OPS.SETTINGS_GAME);
+		p.startAccess();
+		p.putByte(idx);
+		p.putBool(value);
 		p.stopAccess();
 		return p;
 	}
@@ -88,22 +142,18 @@ class Ops {
 		// client support and this will protect the user login credentials in this case.
 
 		// 45 bytes??  set it to 64 just for safety
-		let keyWords = Buffer.alloc(4);
-		crypto.randomFillSync(keyWords);
-		Packet.isaacSeeds = keyWords.slice();
-		let keys = new Uint8Array(16);
-		for (let i = 0; i < 4; i++) {
-			keys[(i<<2)+0] = (keyWords[i] >>> 24) & 0xFF;
-			keys[(i<<2)+1] = (keyWords[i] >>> 16) & 0xFF;
-			keys[(i<<2)+2] = (keyWords[i] >>> 8) & 0xFF;
-			keys[(i<<2)+3] = (keyWords[i] >>> 0) & 0xFF;
-		}
+		let keyWords = Buffer.alloc(6);
+		crypto.getRandomValues(keyWords);
+		Packet.isaacSeeds = keyWords.slice(0, 4);
+		let keys = Buffer.alloc(24);
+		for (let i = 0; i < 4; i++)
+			keys.writeUInt32BE(keyWords[i], i<<2);
 		let p = new Packet(OPS.LOGIN);
 		p.startAccess();
 		p.putBool(reconnecting);
 		p.putInt(VERSION.CLIENT);
-		p.putBigBuffer(encryptBytes(Uint8Array.from(Buffer.concat([Buffer.of(10), Buffer.from(keys), Buffer.from(password, 'utf-8'), Buffer.alloc(20-password.length), crypto.randomBytes(8)]))));
-		p.putBigBuffer(xtea.encrypt(Buffer.concat([Buffer.of(0), crypto.randomBytes(24), Buffer.from(username), Buffer.of(0)]), Buffer.from(keys)));
+		p.putBigBuffer(Utility.rsaEncrypt(Buffer.concat([Buffer.of(10), keys.slice(0, 16), Buffer.from(password, 'utf-8'), Buffer.alloc(19-password.length, 0x20), Buffer.of(0), keys.slice(16, 24)])));
+		p.putBigBuffer(xtea.encrypt(Buffer.concat([Buffer.of(0), keys, Buffer.from(username), Buffer.of(0)]), keys));
 		p.stopAccess();
 		return p;
 	}
@@ -222,6 +272,56 @@ class Ops {
 		return p;
 	}
 	
+	static ON_INVENTORY(target, item) {
+		let p = new Packet(OPS.USEWITH_INVITEM);
+		p.startAccess();
+		p.putShort(target);
+		p.putShort(item);
+		p.stopAccess();
+		return p;
+	}
+	
+	static UNEQUIP(item) {
+		let p = new Packet(OPS.INV_UNEQUIP);
+		p.startAccess();
+		p.putShort(item);
+		p.stopAccess();
+		return p;
+	}
+	
+	static EQUIP(item) {
+		let p = new Packet(OPS.INV_WEAR);
+		p.startAccess();
+		p.putShort(item);
+		p.stopAccess();
+		return p;
+	}
+	
+	static INVENTORY_ACTION(item) {
+		let p = new Packet(OPS.INV_CMD);
+		p.startAccess();
+		p.putShort(item);
+		p.stopAccess();
+		return p;
+	}
+	
+	static DROP_ITEM(item) {
+		let p = new Packet(OPS.INV_DROP);
+		p.startAccess();
+		p.putShort(item);
+		p.stopAccess();
+		return p;
+	}
+	
+	static CAST_INVENTORY(target, spell) {
+		let p = new Packet(OPS.CAST_INVITEM);
+		p.startAccess();
+		p.putShort(target);
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	
 	static ON_BOUNDARY(x, y, target, invItem) {
 		let p = new Packet(OPS.USEWITH_WALLOBJECT);
 		p.startAccess();
@@ -242,6 +342,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static CAST_SCENARY(x, y, spell) {
 		let p = new Packet(OPS.CAST_OBJECT);
 		p.startAccess();
@@ -251,6 +352,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static ON_SCENARY(x, y, invItem) {
 		let p = new Packet(OPS.USEWITH_OBJECT);
 		p.startAccess();
@@ -260,6 +362,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static SCENARY_ACTION(click, x, y) {
 		let p = new Packet(click === 0 ? OPS.OBJECT_CMD1 : OBJECT_CMD2);
 		p.startAccess();
@@ -268,6 +371,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static CAST_NPC(idx, spell) {
 		let p = new Packet(OPS.CAST_NPC);
 		p.startAccess();
@@ -276,6 +380,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static CAST_PLAYER(idx, spell) {
 		let p = new Packet(OPS.CAST_PLAYER);
 		p.startAccess();
@@ -284,6 +389,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static ON_NPC(idx, spell) {
 		let p = new Packet(OPS.USEWITH_NPC);
 		p.startAccess();
@@ -292,6 +398,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static ON_PLAYER(idx, spell) {
 		let p = new Packet(OPS.USEWITH_PLAYER);
 		p.startAccess();
@@ -300,6 +407,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static TALK_NPC(idx) {
 		let p = new Packet(OPS.NPC_TALK);
 		p.startAccess();
@@ -307,13 +415,15 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
-	static ACTION_NPC(idx) {
+
+	static NPC_ACTION(idx) {
 		let p = new Packet(OPS.NPC_CMD);
 		p.startAccess();
 		p.putShort(idx);
 		p.stopAccess();
 		return p;
 	}
+
 	static ATTACK_NPC(idx) {
 		let p = new Packet(OPS.NPC_ATTACK);
 		p.startAccess();
@@ -321,6 +431,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static ATTACK_PLAYER(idx) {
 		let p = new Packet(OPS.PLAYER_ATTACK);
 		p.startAccess();
@@ -339,16 +450,64 @@ class Ops {
 		return p;
 	}
 	
+	static CAST_SELF(spell) {
+		let p = new Packet(OPS.CAST_SELF);
+		p.startAccess();
+		p.putShort(spell);
+		p.stopAccess();
+		return p;
+	}
+	
+	static REQUEST_DUEL(target) {
+		let p = new Packet(OPS.PLAYER_DUEL);
+		p.startAccess();
+		p.putShort(target);
+		p.stopAccess();
+		return p;
+	}
+	
+	static REQUEST_TRADE(target) {
+		let p = new Packet(OPS.PLAYER_TRADE);
+		p.startAccess();
+		p.putShort(target);
+		p.stopAccess();
+		return p;
+	}
+
+	static SHOP_ACTION(id, cost, buying) {
+		let p = new Packet(buying ? OPS.SHOP_BUY : OPS.SHOP_SELL);
+		p.startAccess();
+		p.putShort(id);
+		p.putInt(cost);
+		p.stopAccess();
+		return p;
+	}
+	
+	static FOLLOW(target) {
+		let p = new Packet(OPS.PLAYER_FOLLOW);
+		p.startAccess();
+		p.putShort(target);
+		p.stopAccess();
+		return p;
+	}
+	
 	static DISCONNECT() {
 		return Packet.bare(OPS.CLOSE_CONNECTION);
+	}
+	
+	static LOGOUT() {
+		return Packet.bare(OPS.LOGOUT);
 	}
 
 	static PING() {
 		return Packet.bare(OPS.PING);
 	}
+	static CLOSE_SHOP() {
+		return Packet.bare(OPS.SHOP_CLOSE);
+	}
 
 	static CLOSE_BANK() {
-		return Packet.bare(OPS.CLOSE_BANK);
+		return Packet.bare(OPS.BANK_CLOSE);
 	}
 
 	static DECLINE_DUEL() {
@@ -377,3 +536,4 @@ class Ops {
 }
 
 export { Ops as default };
+

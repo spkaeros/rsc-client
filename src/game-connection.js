@@ -7,7 +7,7 @@ import GameException from './lib/game-exception';
 import NetworkStream from './network-stream';
 import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
 import { getCookie as getCookie } from './mudclient';
-import { isaac } from './lib/isaac';
+import rng from './lib/isaac';
 import VERSION from './version';
 import Ops from './gamelib/packets';
 import S_OPCODES from './opcodes/server';
@@ -22,7 +22,7 @@ export default class GameConnection extends GameShell {
 		this.settingsBlockTrade = false;
 		this.settingsBlockDuel = false;
 		this.server = '127.0.0.1';
-		this.port = 43594;
+		this.port = 43595;
 		this.username = getCookie('username');
 		this.password = '';
 		this.friendListCount = 0;
@@ -132,10 +132,11 @@ export default class GameConnection extends GameShell {
 
 			this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port), this);
 			this.clientStream.send(Ops.LOGIN(u, p, reconnecting));
+
 			let resp = await this.clientStream.readStream();
-			Packet.isaacIn = isaac();
-			Packet.isaacOut = isaac();
+			Packet.isaacIn = rng.isaac();
 			Packet.isaacIn.seed(Packet.isaacSeeds);
+			Packet.isaacOut = rng.isaac();
 			Packet.isaacOut.seed(Packet.isaacSeeds);
 			console.debug('login response:' + resp);
 			switch ((resp&~64)) {
@@ -242,9 +243,6 @@ export default class GameConnection extends GameShell {
 			}
 		}
 		
-		Packet.isaacOut = void 0;
-		Packet.isaacIn = void 0;
-
 		this.resetLoginVars();
 	}
 	
@@ -279,7 +277,7 @@ export default class GameConnection extends GameShell {
 	
 	async checkConnection() {
 		this.timeoutCheck.tick(() => {
-			this.clientStream.queue(Ops.PING());
+			this.clientStream.send(Ops.PING());
 		})
 
 		if (this.clientStream.hasPacket()) {
@@ -300,6 +298,7 @@ export default class GameConnection extends GameShell {
 			let buffer = await this.clientStream.nextPacket();
 			if (this.clientStream.didError) {
 				await this.closeConnection();
+				// await this.lostConnection();
 				return;
 			}
 			if (!buffer || buffer.length <= 0)
@@ -317,8 +316,8 @@ export default class GameConnection extends GameShell {
 		let offset = 0;
 		let size = data.length;
 		let opcode = Utility.getUnsignedByte(data[offset++]);
-		opcode = (opcode - (Packet.isaacIn.rand() >>> 0) & 0xFF);
-		console.info(`Incoming Packet: <opcode:${opcode};size:${size}>`);
+		if (Packet.isaacIn) opcode = (opcode - (Packet.isaacIn.rand()>>>0)) & 0xFF;
+		// console.info(`Incoming Packet: <opcode:${opcode};size:${size}>`);
 		if (opcode === S_OPCODES.MESSAGE) {
 			this.showServerMessage(this.chatSystem.decode(data.slice(offset)));
 			return;
@@ -362,6 +361,17 @@ export default class GameConnection extends GameShell {
 			this.friendListOnline[this.friendListCount++] = online;
 			this.sortFriendsList();
 			return;
+			// for (let i2 = 0; i2 < this.friendListCount; i2++) {
+				// if (this.friendListHashes[i2].equals(hash)) {
+					// if (this.friendListOnline[i2] === 0 && online !== 0) {
+						// this.showServerMessage('@pri@' + Utility.hashToUsername(hash) + ' has logged in');
+					// 
+					// if (this.friendListOnline[i2] !== 0 && online === 0) {
+						// this.showServerMessage('@pri@' + Utility.hashToUsername(hash) + ' has logged out');
+					// size = 0; // not sure what this is for
+					// return;
+				// }
+			// }
 		}
 		
 		if (opcode === S_OPCODES.IGNORE_LIST) {
@@ -386,7 +396,7 @@ export default class GameConnection extends GameShell {
 			offset += 8;
 			let pmUuid = Utility.getUnsignedInt(data, offset);
 			offset += 4;
-			// Make sure this is not a copy of a private message
+			// Make sure this is not a duplicate private message
 			for (let uuid of this.privateMessageIds)
 				if (uuid === pmUuid)
 					return;
@@ -472,11 +482,11 @@ export default class GameConnection extends GameShell {
 	}
 	
 	sendPrivateMessage(u, buff, len = buff.length) {
-		this.clientStream.queue(Ops.PM(u, buff, len));
+		this.clientStream.queue(Ops.PM(u, buff));
 	}
 	
 	sendChatMessage(buff, len = buff.length) {
-		this.clientStream.queue(Ops.CHAT(buff, len));
+		this.clientStream.queue(Ops.CHAT(buff));
 	}
 	
 	sendCommandString(s) {
@@ -490,7 +500,8 @@ export default class GameConnection extends GameShell {
 }
 
 Object.defineProperty(GameConnection, 'socialListSize', {
-	value: 200,
+	get: ()=>200,
+	set: undefined,
 });
 
 Object.defineProperty(GameConnection, 'privateMessageUuid', {
