@@ -284,7 +284,7 @@ class Utility {
 
 	static unpackData(file, dstOff, data, fileData) {
 		let targetHash = Utility.hashFileName(file);
-		console.log(targetHash);
+		// console.log(targetHash);
 		let metaOffset = 0;
 		let count = Utility.getUnsignedShort(data, metaOffset);
 		metaOffset += 2;

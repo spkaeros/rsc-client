@@ -15,6 +15,7 @@ import Surface from './surface';
 import SurfaceSprite from './surface-sprite';
 import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
 import World from './world';
+import Timer from './timer';
 import Packet from './packet';
 import VERSION from './version';
 import S_OPCODES from './opcodes/server';
@@ -6419,18 +6420,29 @@ label0:
 							let curX = mobToUpdate.waypointsX[step];
 							let curY = mobToUpdate.waypointsY[step];
 
-							for (let dir = 0; dir < 4; dir++) {
-								let size = (dir < 2 ? this.tileSize : -this.tileSize);
-								for (let angle = 0; angle < 3; angle++) {
-									// in octa-directional movement, there's 3 possible directions
-									// that move toward each of the 4 main directions (NESW)
-									if (direction === (((dir<<1)+(angle+1)) & 7)) {
-										if (dir & 1 === 0)
-											curX += size;
-										else
-											curY += size;
-									}
-								}
+							switch(direction) {
+								case 1:
+								case 2:
+								case 3:
+									curX += this.tileSize;
+									break;
+								case 5:
+								case 6:
+								case 7:
+									curX -= this.tileSize;
+									break;
+							}
+							switch(direction) {
+								case 3:
+								case 4:
+								case 5:
+									curY += this.tileSize;
+									break;
+								case 7:
+								case 0:
+								case 1:
+									curY -= this.tileSize;
+									break;
 							}
 
 							mobToUpdate.animationNext = direction;
@@ -6724,7 +6736,8 @@ updateLoop:
 							updatePlayer.damageTaken = damage;
 							updatePlayer.healthCurrent = current;
 							updatePlayer.healthMax = max;
-							updatePlayer.healthTimer.tickThreshold = secondsToFrames(4);
+							// updatePlayer.healthTimer.tickThreshold = secondsToFrames(4);
+							updatePlayer.healthTimer = Timer.fromSeconds(4);
 							if (updatePlayer === this.localPlayer) {
 								this.playerStatCurrent[3] = current;
 								this.playerStatBase[3] = max;
@@ -6885,18 +6898,29 @@ updateLoop:
 							let curX = npc.waypointsX[step];
 							let curY = npc.waypointsY[step];
 
-							for (let dir = 0; dir < 4; dir++) {
-								let size = (dir < 2 ? this.tileSize : -this.tileSize);
-								for (let angle = 0; angle < 3; angle++) {
-									// in octa-directional movement, there's 3 possible directions
-									// that move toward each of the 4 main directions (NESW)
-									if (direction === (((dir<<1)+(angle+1)) & 7)) {
-										if (dir & 1 === 0)
-											curX += size;
-										else
-											curY += size;
-									}
-								}
+							switch(direction) {
+								case 1:
+								case 2:
+								case 3:
+									curX += this.tileSize;
+									break;
+								case 5:
+								case 6:
+								case 7:
+									curX -= this.tileSize;
+									break;
+							}
+							switch(direction) {
+								case 3:
+								case 4:
+								case 5:
+									curY += this.tileSize;
+									break;
+								case 7:
+								case 0:
+								case 1:
+									curY -= this.tileSize;
+									break;
 							}
 
 							npc.animationNext = direction;
@@ -6974,7 +6998,8 @@ updateLoop:
 						updatingNpc.damageTaken = Utility.getUnsignedByte(pdata[offset++]);
 						updatingNpc.healthCurrent = Utility.getUnsignedByte(pdata[offset++]);
 						updatingNpc.healthMax = Utility.getUnsignedByte(pdata[offset++]);
-						updatingNpc.healthTimer.tickThreshold = secondsToFrames(4);
+						// updatingNpc.healthTimer.tickThreshold = secondsToFrames(4);
+						updatingNpc.healthTimer = Timer.fromSeconds(4);
 					}
 				}
 
