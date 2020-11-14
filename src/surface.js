@@ -2314,7 +2314,7 @@ class Surface {
         let width = 0;
         for (let idx = 0; idx < text.length; idx++) {
         	if (idx < text.length-4 && text[idx+4] === text[idx] && (text[idx] === '@' || text[idx] === '~')) {
-                idx += 5;
+                idx += 4;
             } else {
                 width += font[Surface.characterWidth[text.charCodeAt(idx)] + 7];
             }

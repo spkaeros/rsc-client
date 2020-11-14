@@ -1,13 +1,11 @@
 import Color from './lib/graphics/color';
 import Font from './lib/graphics/font';
 import GameShell from './game-shell';
-import GameBuffer from './game-buffer';
 import Packet from './packet'
 import GameException from './lib/game-exception';
 import NetworkStream from './network-stream';
 import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
 import { getCookie as getCookie } from './mudclient';
-import rng from './lib/isaac';
 import VERSION from './version';
 import Ops from './gamelib/packets';
 import S_OPCODES from './opcodes/server';
@@ -21,8 +19,8 @@ export default class GameConnection extends GameShell {
 		this.settingsBlockPrivate = false;
 		this.settingsBlockTrade = false;
 		this.settingsBlockDuel = false;
-		this.server = '127.0.0.1';
-		this.port = 43595;
+		this.server = 'rsclassic.dev';
+		this.port = 43594;
 		this.username = getCookie('username');
 		this.password = '';
 		this.friendListCount = 0;
@@ -33,7 +31,6 @@ export default class GameConnection extends GameShell {
 		this.privateMessageIds = new Uint32Array(GameConnection.socialListSize);
 		this.timeoutCheck = Timer.fromSeconds(5);
 	}
-	
 	
 	async registerAccount(username, password) {
 		try {
@@ -134,11 +131,7 @@ export default class GameConnection extends GameShell {
 			this.clientStream.send(Ops.LOGIN(u, p, reconnecting));
 
 			let resp = await this.clientStream.readStream();
-			Packet.isaacIn = rng.isaac();
-			Packet.isaacIn.seed(Packet.isaacSeeds);
-			Packet.isaacOut = rng.isaac();
-			Packet.isaacOut.seed(Packet.isaacSeeds);
-			console.debug('login response:' + resp);
+			console.log('login response:' + resp&~64 + ' raw:' + resp);
 			switch ((resp&~64)) {
 			case 25:
 			case 24:
@@ -277,7 +270,7 @@ export default class GameConnection extends GameShell {
 	
 	async checkConnection() {
 		this.timeoutCheck.tick(() => {
-			this.clientStream.send(Ops.PING());
+			this.clientStream.queue(Ops.PING());
 		})
 
 		if (this.clientStream.hasPacket()) {
@@ -289,16 +282,14 @@ export default class GameConnection extends GameShell {
 		} catch (e) {
 			console.error(e.message);
 			console.warn('Error in socket write subroutine:', e)
-			this.closeConnection();
-			this.clientStream = null;
+			await this.lostConnection();
 			return;
 		}
 
 		try {
 			let buffer = await this.clientStream.nextPacket();
 			if (this.clientStream.didError) {
-				await this.closeConnection();
-				// await this.lostConnection();
+				await this.lostConnection();
 				return;
 			}
 			if (!buffer || buffer.length <= 0)
@@ -306,8 +297,7 @@ export default class GameConnection extends GameShell {
 			this.handlePacket(buffer);
 		} catch(e) {
 			console.warn('Error in socket read subroutine:', e)
-			this.closeConnection();
-			this.clientStream = null;
+			await this.lostConnection();
 			return;
 		}
 	}
@@ -316,7 +306,6 @@ export default class GameConnection extends GameShell {
 		let offset = 0;
 		let size = data.length;
 		let opcode = Utility.getUnsignedByte(data[offset++]);
-		if (Packet.isaacIn) opcode = (opcode - (Packet.isaacIn.rand()>>>0)) & 0xFF;
 		// console.info(`Incoming Packet: <opcode:${opcode};size:${size}>`);
 		if (opcode === S_OPCODES.MESSAGE) {
 			this.showServerMessage(this.chatSystem.decode(data.slice(offset)));
@@ -361,17 +350,6 @@ export default class GameConnection extends GameShell {
 			this.friendListOnline[this.friendListCount++] = online;
 			this.sortFriendsList();
 			return;
-			// for (let i2 = 0; i2 < this.friendListCount; i2++) {
-				// if (this.friendListHashes[i2].equals(hash)) {
-					// if (this.friendListOnline[i2] === 0 && online !== 0) {
-						// this.showServerMessage('@pri@' + Utility.hashToUsername(hash) + ' has logged in');
-					// 
-					// if (this.friendListOnline[i2] !== 0 && online === 0) {
-						// this.showServerMessage('@pri@' + Utility.hashToUsername(hash) + ' has logged out');
-					// size = 0; // not sure what this is for
-					// return;
-				// }
-			// }
 		}
 		
 		if (opcode === S_OPCODES.IGNORE_LIST) {
@@ -424,41 +402,66 @@ export default class GameConnection extends GameShell {
 	sendPrivacySettings(chat, priv, trade, duel) {
 		this.clientStream.queue(Ops.PRIVACY_SETTINGS(chat, priv, trade, duel));
 	}
+
+	ignoreIdx(s) {
+		for (let ignored = 0; ignored < this.ignoreListCount; ignored++)
+			if (this.ignoreList[ignored] === Utility.usernameToHash(s))
+				return ignored;
+		return -1;
+	}
+	
+	hasIgnore(s) {
+		return this.ignoreIdx(s) >= 0;
+	}
+	
+	friendIdx(s) {
+		for (let friend = 0; friend < this.friendListCount; friend++)
+			if (this.friendListHashes[friend] === Utility.usernameToHash(s))
+				return friend;
+		return -1;
+	}
+
+	hasFriend(s) {
+		return this.friendIdx(s) >= 0;
+	}
 	
 	ignoreAdd(s) {
-		let l = Utility.usernameToHash(s);
-
 		// scan for previous entry, return early if found
-		for (let ignored = 0; ignored < this.ignoreListCount; ignored++)
-			if (this.ignoreList[ignored] === l)
-				return;
+		if (this.hasIgnore(s)) {
+			return;
+		}
 
+		let l = Utility.usernameToHash(s);
 		this.clientStream.queue(Ops.ADD_IGNORE(l));
-		
 		if (this.ignoreListCount < GameConnection.socialListSize)
 			this.ignoreList[this.ignoreListCount++] = l;
 	}
 	
 	ignoreRemove(l) {
+		// for (let ignored = 0; ignored < this.ignoreListCount; ignored++) {
+			// if (this.ignoreList[ignored] === l) {
+				// this.ignoreListCount--;
+				// for (let j = ignored; j < this.ignoreListCount; j++)
+					// this.ignoreList[j] = this.ignoreList[j + 1];
+				// return;
+			// }
+		// }
+		let idx = this.ignoreIdx(Utility.hashToUsername(l));
+		if (idx < 0)
+			return;
+		this.ignoreListCount -= 1;
+		for (let i = idx; i < this.ignoreListCount; i += 1)
+			this.ignoreList[i] = this.ignoreList[i+1];
 		this.clientStream.queue(Ops.REMOVE_IGNORE(l));
-		for (let ignored = 0; ignored < this.ignoreListCount; ignored++) {
-			if (this.ignoreList[ignored] === l) {
-				this.ignoreListCount--;
-				for (let j = ignored; j < this.ignoreListCount; j++)
-					this.ignoreList[j] = this.ignoreList[j + 1];
-				return;
-			}
-		}
 	}
 	
 	friendAdd(s) {
 		let l = Utility.usernameToHash(s);
-		for (let i = 0; i < this.friendListCount; i++)
-			if (this.friendListHashes[i] === l) {
-				displayMessage("You're already friends with that person!", 6);
-				return;
-			}
-		
+		if (this.hasFriend(s)) {
+			displayMessage("You're already friends with that person!", 6);
+			return;
+		}
+
 		this.clientStream.queue(Ops.ADD_FRIEND(l));
 		if (this.friendListCount < GameConnection.maxSocialListSize) {
 			this.friendListHashes[this.friendListCount] = l;
@@ -467,18 +470,17 @@ export default class GameConnection extends GameShell {
 	}
 	
 	friendRemove(l) {
-		this.clientStream.queue(Ops.REMOVE_FRIEND(l));
-		for (let i = 0; i < this.friendListCount; i++) {
-			let friend = this.friendListHashes[i];
-			if (friend === l) {
-				this.friendListCount--;
-				for (let j = i; j < this.friendListCount; j++)
-					this.friendListHashes[j], this.friendListOnline[j] = this.friendListHashes[j + 1], this.friendListOnline[j + 1];
-				this.showServerMessage('@pri@' + Utility.hashToUsername(l) + ' has been removed from your friends list');
-				return;
-			}
+		let idx = this.friendIdx(Utility.hashToUsername(l));
+		if (idx < 0)
+			return;
+		this.friendListCount -= 1;
+		for (let i = idx; i < this.friendListCount; i += 1) {
+			this.friendListHashes[i] = this.friendListHashes[i+1];
+			this.friendListOnline[i] = this.friendListOnline[i+1];
 		}
-		displayMessage("Problem removing contact from friends.  You're not even a friend of that person!", 6);
+		this.clientStream.queue(Ops.REMOVE_FRIEND(l));
+		this.showServerMessage('@pri@' + Utility.hashToUsername(l) + ' has been removed from your friends list');
+		// displayMessage("Problem removing contact from friends.  You're not even a friend of that person!", 6);
 	}
 	
 	sendPrivateMessage(u, buff, len = buff.length) {
@@ -500,17 +502,18 @@ export default class GameConnection extends GameShell {
 }
 
 Object.defineProperty(GameConnection, 'socialListSize', {
-	get: ()=>200,
-	set: undefined,
+	value: 200,
 });
 
-Object.defineProperty(GameConnection, 'privateMessageUuid', {
-	get: () => {
-		if (!GameConnection._privateMessageUuid)
-			GameConnection._privateMessageUuid = 0;
-		GameConnection._privateMessageUuid = (++GameConnection._privateMessageUuid) % GameConnection.socialListSize;
+Object.defineProperties(GameConnection, {
+	'privateMessageUuid': {
+		get: () => {
+			if (!GameConnection._privateMessageUuid)
+				GameConnection._privateMessageUuid = 0;
+			GameConnection._privateMessageUuid = (++GameConnection._privateMessageUuid) % GameConnection.socialListSize;
 
-		return GameConnection._privateMessageUuid;
+			return GameConnection._privateMessageUuid;
+		},
+		set: void 0,
 	},
-	set: undefined,
 });

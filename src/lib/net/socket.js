@@ -4,21 +4,20 @@ class Socket {
 		this.port = port;
 
 		this.client = null;
-		this.connected = false;
-
 		// amount of bytes are left to read since last read call (in total)
 		this.bytesAvailable = 0;
 		// the message buffers that arrive from the websocket
 		this.bufferList = [];
 		// the current buffer we're reading
-		this.buffer = null;
+		this.buffer = void 0;
 		// amount of bytes we read in current buffer
 		this.bufferOffset = 0;
-		// amount of bytes left in current buffer
-		this.bufferRemains = 0;
-		// this.connect();
 	}
 
+	get connected() {
+		// returns true on connecting or connected states.
+		return this.client && (this.client.readyState === 1 || this.client.readyState === 2);
+	}
 
 	connect() {
 		return new Promise((resolve, reject) => {
@@ -33,11 +32,10 @@ class Socket {
 					this.client.removeEventListener('message', onPacket);
 				else
 					this.client.removeEventListener('open', open);
-				this.connected = false;
 				this.clear();
 			};
 			onPacket = (msg) => {
-				this.bufferList.push(new Uint8Array(msg.data));
+				this.bufferList.push(Buffer.from(msg.data));
 				this.bytesAvailable += msg.data.byteLength;
 				this.refreshCurrentBuffer();
 			};
@@ -50,12 +48,10 @@ class Socket {
 					this.client.removeEventListener('open', open);
 				this.client.removeEventListener('close', onClose);
 				// this.client.removeEventListener('message', onPacket);
-				this.connected = false;
 				this.clear();
 				reject(err);
 			};
 			open = () => {
-				this.connected = true;
 				this.client.removeEventListener('open', open);
 				this.client.addEventListener('message', onPacket);
 				resolve();
@@ -81,11 +77,6 @@ class Socket {
 			this.bufferOffset = 0;
 
 			this.buffer = this.bufferList.shift();
-			if (this.buffer && this.buffer.length) {
-				this.bufferRemains = this.buffer.length;
-			} else {
-				this.bufferRemains = 0;
-			}
 		}
 	}
 
@@ -96,36 +87,13 @@ class Socket {
 			return -1;
 
 		if (this.available() > 0 && this.bufferRemains > 0 && this.buffer) {
-			this.bufferRemains--;
 			this.bytesAvailable--;
 
 			return this.buffer[this.bufferOffset++] & 0xFF;
 		}
 
 		return new Promise((resolve, reject) => {
-			let onClose, onError, onNextMessage;
-			onClose = () => {
-				this.client.removeEventListener('error', onError);
-				this.client.removeEventListener('message', onNextMessage);
-				this.client.removeEventListener('close', onClose);
-				resolve(-1);
-			};
-			onError = err => {
-				this.client.removeEventListener('error', onError);
-				this.client.removeEventListener('message', onNextMessage);
-				this.client.removeEventListener('close', onClose);
-				reject(err);
-			};
-			onNextMessage = async () => {
-				this.client.removeEventListener('error', onError);
-				this.client.removeEventListener('message', onNextMessage);
-				this.client.removeEventListener('close', onClose);
-				resolve(await this.readByte());
-			};
-
-			this.client.addEventListener('error', onError);
-			this.client.addEventListener('close', onClose);
-			this.client.addEventListener('message', onNextMessage);
+			this.client.addEventListener('message', this.byteListener(resolve));
 		});
 	}
 
@@ -140,7 +108,6 @@ class Socket {
 			for (let i = 0; i < len; i++) {
 				dst[off+i] = this.buffer[this.bufferOffset++] & 0xFF;
 				this.bytesAvailable -= 1;
-				this.bufferRemains -= 1;
 				if (this.bufferRemains <= 0)
 					this.refreshCurrentBuffer();
 			}
@@ -148,29 +115,7 @@ class Socket {
 		}
 
 		return new Promise((resolve, reject) => {
-			let onClose, onError, onNextMessage;
-			onClose = () => {
-				this.client.removeEventListener('error', onError);
-				this.client.removeEventListener('close', onClose);
-				this.client.removeEventListener('message', onNextMessage);
-				resolve(-1);
-			};
-			onError = err => {
-				this.client.removeEventListener('error', onError);
-				this.client.removeEventListener('close', onClose);
-				this.client.removeEventListener('message', onNextMessage);
-				reject(err);
-			};
-			onNextMessage = async () => {
-				this.client.removeEventListener('error', onError);
-				this.client.removeEventListener('close', onClose);
-				this.client.removeEventListener('message', onNextMessage);
-				resolve(await this.readBytes(dst, off, len));
-			};
-
-			this.client.addEventListener('error', onError);
-			this.client.addEventListener('close', onClose);
-			this.client.addEventListener('message', onNextMessage);
+			this.client.addEventListener('message', this.bytesListener(dst, len, resolve));
 		});
 	}
 
@@ -184,13 +129,36 @@ class Socket {
 		return this.bytesAvailable;
 	}
 
+	get bufferRemains() {
+		if (!this.buffer)
+			return 0;
+		return this.buffer.length - this.bufferOffset;
+	}
+
 	clear() {
 		this.close();
 		this.buffer = null;
 		this.bufferList = [];
 		this.bufferOffset = 0;
-		this.bufferRemains = 0;
 		this.bytesAvailable = 0;
+	}
+
+	byteListener(resolve) {
+		this.byteFn = (async () => {
+			// this.client.removeEventListener('message', this.byteFn);
+			this.byteFn = void 0;
+			resolve(await this.readByte());
+		});
+		return this.byteFn;
+	}
+
+	bytesListener(dst, len, resolve) {
+		this.bytesFn = (async () => {
+			// this.client.removeEventListener('message', this.bytesFn);
+			this.bytesFn = void 0;
+			resolve(await this.readBytes(dst, 0, len));
+		});
+		return this.bytesFn;
 	}
 }
 

@@ -58,7 +58,7 @@ class Ops {
 	static BANK_ACTION(slot, amount, withdraw) {
 		let p = new Packet(withdraw ? OPS.BANK_WITHDRAW : OPS.BANK_DEPOSIT);
 		p.startAccess();
-		p.putShort(idx);
+		p.putShort(slot);
 		p.putInt(amount);
 		p.putInt(withdraw ? 0x12345678 : 0x87654321)
 		p.stopAccess();
@@ -144,7 +144,7 @@ class Ops {
 		// 45 bytes??  set it to 64 just for safety
 		let keyWords = Buffer.alloc(6);
 		crypto.getRandomValues(keyWords);
-		Packet.isaacSeeds = keyWords.slice(0, 4);
+		Packet.initCipher(keyWords.slice(0, 4));
 		let keys = Buffer.alloc(24);
 		for (let i = 0; i < 4; i++)
 			keys.writeUInt32BE(keyWords[i], i<<2);
@@ -152,8 +152,8 @@ class Ops {
 		p.startAccess();
 		p.putBool(reconnecting);
 		p.putInt(VERSION.CLIENT);
-		p.putBigBuffer(Utility.rsaEncrypt(Buffer.concat([Buffer.of(10), keys.slice(0, 16), Buffer.from(password, 'utf-8'), Buffer.alloc(19-password.length, 0x20), Buffer.of(0), keys.slice(16, 24)])));
-		p.putBigBuffer(xtea.encrypt(Buffer.concat([Buffer.of(0), keys, Buffer.from(username), Buffer.of(0)]), keys));
+		p.putBuffer(Utility.rsaEncrypt(Buffer.concat([Buffer.of(10), keys.slice(0, 16), Buffer.from(password, 'utf-8'), Buffer.alloc(19-password.length, 0x20), Buffer.of(0), keys.slice(16, 24)])));
+		p.putBuffer(xtea.encrypt(Buffer.concat([Buffer.of(0), keys, Buffer.from(username), Buffer.of(0)]), keys));
 		p.stopAccess();
 		return p;
 	}
@@ -364,7 +364,7 @@ class Ops {
 	}
 
 	static SCENARY_ACTION(click, x, y) {
-		let p = new Packet(click === 0 ? OPS.OBJECT_CMD1 : OBJECT_CMD2);
+		let p = new Packet(click === 0 ? OPS.OBJECT_CMD1 : OPS.OBJECT_CMD2);
 		p.startAccess();
 		p.putShort(x + Ops.MC.regionX);
 		p.putShort(y + Ops.MC.regionY);

@@ -28,14 +28,14 @@ class NetworkStream extends Packet {
         return this.socket.available();
     }
 
-    async readStreamBytes(len, off, buff) {
+    async readStreamBytes(buff, off, len) {
         if (this.closed)
             return;
 
         await this.socket.readBytes(buff, off, len);
     }
 
-    writeStreamBytes(buff, off, len) {
+    writeStreamBytes(buff, off = 0, len = (buff.length - off)) {
         if (this.closing || this.closed)
             return;
 

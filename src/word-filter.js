@@ -1,4 +1,3 @@
-import GameBuffer from './game-buffer';
 import { Utility } from './utility';
 
 let C_TILDE = 126, C_EXCLM = 33, C_PRCNT = 37, C_AT = 64, C_ZERO = '0'.charCodeAt(0), C_NINE = '9'.charCodeAt(0),
@@ -15,10 +14,10 @@ let DECODER = new TextDecoder('utf-8');
 
 class Chat {
 	constructor(buff) {
-		Filter.readFilteredWords(new GameBuffer(Utility.loadData("badenc.txt", 0, buff)));
-		Filter.readFilteredHosts(new GameBuffer(Utility.loadData("hostenc.txt", 0, buff)));
-		Filter.readFilteredHashFragments(new GameBuffer(Utility.loadData("fragmentsenc.txt", 0, buff)));
-		Filter.readFilteredTLDs(new GameBuffer(Utility.loadData("tldlist.txt", 0, buff)));
+		Filter.readFilteredWords(Buffer.from(Utility.loadData("badenc.txt", 0, buff)));
+		Filter.readFilteredHosts(Buffer.from(Utility.loadData("hostenc.txt", 0, buff)));
+		Filter.readFilteredHashFragments(Buffer.from(Utility.loadData("fragmentsenc.txt", 0, buff)));
+		Filter.readFilteredTLDs(Buffer.from(Utility.loadData("tldlist.txt", 0, buff)));
 	}
 
 	decode(input) {
@@ -830,13 +829,20 @@ let Filter = class{
    };
 
 	static readFilteredTLDs(buffer) {
-		if (buffer.availableBytes() < 5)
-			return;
-	    for (let i = 0; i < buffer.getUnsignedInt(); i++) {
-	        const score = buffer.getUnsignedByte();
-	        if (buffer.availableBytes() < 1)
-	        	return;
-	        let value = buffer.getString(buffer.getUnsignedByte());
+		// if (buffer.availableBytes() < 5)
+			// return;
+		let offset = 4;
+    	// offset += 4;
+	    for (let i = 0; i < buffer.readUInt32BE(0); i++) {
+	        const score = buffer.readUIntBE(offset, 1);
+	        offset += 1;
+	        // if (buffer.availableBytes() < 1)
+	        	// return;
+	        let wordLen = buffer.readUIntBE(offset, 1);
+	        offset += 1;
+	        let value = buffer.slice(offset, offset+wordLen);
+	        offset += wordLen;
+	        
 	        
 	        if (value) {
 	            Filter.tldList.push({
@@ -848,7 +854,7 @@ let Filter = class{
 	}
 
 	static readFilteredWords(buffer) {
-	    let wordCount = buffer.getUnsignedInt();
+	    let wordCount = buffer.readUInt32BE(0);
 	    // Filter.badList.length = wordCount;
 	    // Filter.badCharIds.length = wordCount;
 	    // Filter.readBuffer(buffer, Filter.badList, Filter.badCharIds);
@@ -861,12 +867,18 @@ let Filter = class{
 	}
 
 	static readFilteredHashFragments(buffer) {
-	    for (let i = 0; i < buffer.getUnsignedInt(); i++)
-	        Filter.hashFragments[i] = buffer.getUnsignedShort();
+		let offset = 0;
+		let len = buffer.readUInt32BE(offset);
+    	offset += 4;
+	    for (let i = 0; i < len; i++) {
+	        Filter.hashFragments[i] = buffer.readUIntBE(offset, 2);
+	    	offset += 2;
+	    }
 	};
 
 	static readFilteredHosts(buffer) {
-	    let wordCount = buffer.getUnsignedInt();
+		let offset = 0;
+	    let wordCount = buffer.readUInt32BE(0);
 	    // Filter.hostList.length = wordCount
 	    // Filter.hostCharIds.length = wordCount;
 	    // readBuffer(buffer, Filter.hostList, Filter.hostCharIds);
@@ -900,34 +912,35 @@ let Filter = class{
    }
 
 	static unmarshal(buffer, wordCount, wordList, idList) {
+		let offset = 4;
 		for (let i = 0; i < wordCount; i++) {
 			let currentWord = '';
-			let wordLen = buffer.getUnsignedByte();
-			if (buffer.availableBytes() < wordLen)
-				break;
-			wordList.push(buffer.getString(wordLen));
+			let wordLen = buffer.readUIntBE(offset, 1);
+			offset++;
+			wordList.push(buffer.slice(offset, offset+wordLen).toString());
+			offset += wordLen;
 
-			let idCount = buffer.getUnsignedInt();
-			if (buffer.availableBytes() < idCount * 2)
-				break;
+			let idCount = buffer.readUIntBE(offset, 4);
+			offset += 4;
 			for (let j = 0; j < idCount; j++)
-				idList.push([ buffer.getUnsignedByte(), buffer.getUnsignedByte() ]);
+				idList.push([ buffer.readUIntBE(offset++, 1), buffer.readUIntBE(offset++, 1) ]);
 		}
 	};
 	static readBuffer(buffer, wordCount, charIds) {
+		let offset = 4;
 		let wordList = new Array(wordCount);
 		for (let i = 0; i < wordList.length; i++) {
 			let currentWord = '';
-			let wordLen = buffer.getUnsignedByte();
-			if (buffer.availableBytes() < wordLen)
-				return null;
-			wordList[i] = buffer.getString(wordLen)
+			let wordLen = buffer.readUIntBE(offset, 1);
+			offset += 1;
+			wordList.push(buffer.slice(offset, offset+wordLen).toString());
+			offset += wordLen;
+			// wordList[i] = buffer.getString(wordLen)
 
-			charIds = new Array(buffer.getUnsignedInt());
-			if (buffer.availableBytes() < charIds.length * 2)
-				return null;
+			charIds = new Array(buffer.readUIntBE(offset, 4));
+			offset += 4;
 			for (let j = 0; j < charIds.length; j++)
-				charIds[j] = [ buffer.getUnsignedByte(), buffer.getUnsignedByte() ];
+				charIds[j] = [ buffer.readUIntBE(offset++, 1), buffer.readUIntBE(offset++, 1) ];
 		}
 	};
 

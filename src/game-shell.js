@@ -36,7 +36,6 @@ export default class GameShell {
 		};
 		this.middleButtonDown = false;
 		this.mouseScrollDelta = 0;
-		this.mouseActionTimeout = 0;
 		this.panelLogin = {};
 		this.panelGame = {};
 		// this.logoHeaderText = null;
@@ -143,7 +142,6 @@ export default class GameShell {
 			this.shopVisible = false;
 			this.tradeConfigVisible = false;
 			this.duelConfigVisible = false;
-			// this.c = 0;
 			this.dialogItemInput = 0;
 			this.abuseReportWindow = 0;
 			this.contactsInputFormIndex = 0;
@@ -281,15 +279,9 @@ export default class GameShell {
             case 37:
                 this.keyLeft = false;
                 break;
-            // case 38:
-            // 	this.keyUp = false;
-            // 	break;
             case 39:
                 this.keyRight = false;
                 break;
-            // case 40:
-            // 	this.keyDown = false;
-            // 	break;
             case 32:
                 this.keySpace = false;
                 break;
@@ -311,13 +303,12 @@ export default class GameShell {
 		e.preventDefault();
 		this.mouseX = e.offsetX;
 		this.mouseY = e.offsetY;
-		this.mouseActionTimeout = 0;
 	}
 	
 	mouseReleased(e) {
 		e.preventDefault();
-		// this.mouseX = e.offsetX;
-		// this.mouseY = e.offsetY;
+		this.mouseX = e.offsetX;
+		this.mouseY = e.offsetY;
 		
 		if (e.button === 1)
 			this.middleButtonDown = false;
@@ -327,8 +318,8 @@ export default class GameShell {
 	
 	mouseOut(e) {
 		e.preventDefault();
-		// this.mouseX = e.offsetX;
-		// this.mouseY = e.offsetY;
+		this.mouseX = e.offsetX;
+		this.mouseY = e.offsetY;
 		// this.mouseButtonDown = 0;
 		// this.middleButtonDown = false;
 		return false;
@@ -336,8 +327,8 @@ export default class GameShell {
 	
 	mousePressed(e) {
 		e.preventDefault();
-		// this.mouseX = e.offsetX;
-		// this.mouseY = e.offsetY;
+		this.mouseX = e.offsetX;
+		this.mouseY = e.offsetY;
 
 		// if (this.options.middleClickCamera && e.button === 1) {
 			// this.middleButtonDown = true;
@@ -346,25 +337,29 @@ export default class GameShell {
 			// return false;
 		// }
 		
+		if (e.button > 3 || e.button < 0) {
+			return false;
+		}
 
-		if(e.button === 0)
+		switch (e.button) {
+		case 0:
 			this.mouseButtonDown = 1;
-		else if(e.button === 2)
-			this.mouseButtonDown = 2;
-		else if (e.button === 1) {
+			break;
+		case 1:
 			this.mouseButtonDown = 3;
 			if (this.options.middleClickCamera) {
 				this.middleButtonDown = true;
 				this.originRotation = this.cameraRotation;
 				this.originMouseX = this.mouseX;
 			}
-		} else
-			return false;
-		
+			break;
+		case 2:
+			this.mouseButtonDown = 2;
+			break;
+		}
 		this.lastMouseButtonDown = this.mouseButtonDown;
-		this.mouseActionTimeout = 0;
+		
 		this.handleMouseDown(this.mouseButtonDown, this.mouseX, this.mouseY);
-
 		return false;
 	}
 	

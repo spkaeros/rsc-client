@@ -1,7 +1,6 @@
 import Color from './lib/graphics/color';
 import Font from './lib/graphics/font';
 import {Chat, Filter} from './word-filter';
-import GameBuffer from './game-buffer';
 import GameCharacter from './game-character';
 import GameConnection from './game-connection';
 import GameException from './lib/game-exception';
@@ -181,13 +180,6 @@ export default class mudclient extends GameConnection {
 			'Shilo village (members)', 'Underground pass (members)', 'Observatory quest (members)', 'Tourist trap (members)', 'Watchtower (members)', 'Dwarf Cannon (members)', 'Murder Mystery (members)', 'Digsite (members)', 'Gertrude\'s Cat (members)', 'Legend\'s Quest (members)'
 		];
 		this.healthBarCount = 0;
-		this.spriteMedia = 0;
-		this.spriteUtil = 0;
-		this.spriteItem = 0;
-		this.spriteProjectile = 0;
-		this.spriteTexture = 0;
-		this.spriteTextureWorld = 0;
-		this.spriteLogo = 0;
 		this.controlLoginStatus = 0;
 		this.controlLoginUser = 0;
 		this.controlLoginPass = 0;
@@ -366,7 +358,7 @@ export default class mudclient extends GameConnection {
 		this.receivedMessages = new Array(50);
 		this.duelConfirmVisible = false;
 		this.duelAccepted = false;
-		this.playerServerIndexes = new Int32Array(this.playersMax);
+		this.playersServerIndexes = new Int32Array(this.playersMax);
 		this.players = new Array(this.playersMax);
 		this.wallObjectAlreadyInMenu = new Int8Array(this.wallObjectsMax);
 		this.tileSize = 128;
@@ -431,9 +423,9 @@ export default class mudclient extends GameConnection {
 		this.duelSettingsWeapons = false;
 		this.bankVisible = false;
 		this.optionMouseButtonOne = false;
-		this.inventoryItemId = new Int32Array(35);
-		this.inventoryItemStackCount = new Uint32Array(35);
-		this.inventoryEquipped = new Array(35);
+		this.inventoryItemId = new Uint16Array(30);
+		this.inventoryItemStackCount = new Uint32Array(30);
+		this.inventoryEquipped = new Array(30);
 		this.knownPlayers = new Array(this.playersMax);
 		this.messageHistory = [];
 		this.reportAbuseMute = false;
@@ -448,9 +440,9 @@ export default class mudclient extends GameConnection {
 		this.healthBarX = new Int32Array(50);
 		this.healthBarY = new Int32Array(50);
 		this.healthBarMissing = new Int32Array(50);
-		this.playerServer = new Array(this.playersServerMax);
-		this.walkPathX = new Int32Array(this.pathStepsMax);
-		this.walkPathY = new Int32Array(this.pathStepsMax);
+		this.playersServer = new Array(this.playersServerMax);
+		this.walkPathX = new Int16Array(this.pathStepsMax);
+		this.walkPathY = new Int16Array(this.pathStepsMax);
 		this.wallObjectX = new Int32Array(this.wallObjectsMax);
 		this.wallObjectY = new Int32Array(this.wallObjectsMax);
 		this.npcsServer = new Array(this.npcsServerMax);
@@ -726,26 +718,21 @@ export default class mudclient extends GameConnection {
 			this.bankItemsCount[i] = this.newBankItemsCount[i];
 		}
 
+inventory:
 		for (let invIdx = 0; invIdx < this.inventoryItemsCount; invIdx++) {
 			if (this.bankItemCount >= this.bankItemsMax)
 				break;
 
 			let invId = this.inventoryItemId[invIdx];
-			let hasItemInInv = false;
 
 			for (let bankidx = 0; bankidx < this.bankItemCount; bankidx++) {
-				if (this.bankItems[bankidx] !== invId)
-					continue;
-
-				hasItemInInv = true;
-				break;
+				if (this.bankItems[bankidx] === invId) {
+					continue inventory;
+				}
 			}
-
-			if (!hasItemInInv) {
-				this.bankItems[this.bankItemCount] = invId;
-				this.bankItemsCount[this.bankItemCount] = this.inventoryItemStackCount[invIdx];
-				this.bankItemCount++;
-			}
+			this.bankItems[this.bankItemCount] = invId;
+			this.bankItemsCount[this.bankItemCount] = 0;//this.inventoryItemStackCount[invIdx];
+			this.bankItemCount++;
 		}
 	}
 
@@ -818,12 +805,12 @@ export default class mudclient extends GameConnection {
 			let scaleX = (39 * scale) / 100 | 0;
 			let scaleY = (27 * scale) / 100 | 0;
 
-			this.surface.drawActionBubble(x - ((scaleX / 2) | 0), y - scaleY, scaleX, scaleY, this.spriteMedia + 9, 85);
+			this.surface.drawActionBubble(x - ((scaleX / 2) | 0), y - scaleY, scaleX, scaleY, mudclient.spriteMedia + 9, 85);
 
 			let scaleXClip = Math.floor((36 * scale) / 100);
 			let scaleYClip = Math.floor((24 * scale) / 100);
 
-			this.surface._spriteClipping_from9(x - Math.floor(scaleXClip / 2), (y - scaleY + Math.floor(scaleY / 2)) - ((scaleYClip / 2) | 0), scaleXClip, scaleYClip, GameData.itemPicture[id] + this.spriteItem, GameData.itemMask[id], 0, 0, false);
+			this.surface._spriteClipping_from9(x - Math.floor(scaleXClip / 2), (y - scaleY + Math.floor(scaleY / 2)) - ((scaleYClip / 2) | 0), scaleXClip, scaleYClip, GameData.itemPicture[id] + mudclient.spriteItem, GameData.itemMask[id], 0, 0, false);
 		}
 
 		for (let j1 = 0; j1 < this.healthBarCount; j1++) {
@@ -860,7 +847,7 @@ export default class mudclient extends GameConnection {
 		this.gameModels = void 0;
 		this.objectModel = void 0;
 		this.wallObjectModel = void 0;
-		this.playerServer = void 0;
+		this.playersServer = void 0;
 		this.players = void 0;
 		this.npcsServer = void 0;
 		this.npcs = void 0;
@@ -1142,9 +1129,9 @@ export default class mudclient extends GameConnection {
 		this.surface.drawString('Your Inventory', dialogX + 216, dialogY + 27, 4, 0xffffff);
 
 		if (!this.tradeAccepted)
-			this.surface.drawSpriteID(dialogX + 217, dialogY + 238, this.spriteMedia + 25);
+			this.surface.drawSpriteID(dialogX + 217, dialogY + 238, mudclient.spriteMedia + 25);
 
-		this.surface.drawSpriteID(dialogX + 394, dialogY + 238, this.spriteMedia + 26);
+		this.surface.drawSpriteID(dialogX + 394, dialogY + 238, mudclient.spriteMedia + 26);
 
 		if (this.tradeRecipientAccepted) {
 			this.surface.drawStringCenter('Other player', dialogX + 341, dialogY + 246, 1, 0xffffff);
@@ -1160,7 +1147,7 @@ export default class mudclient extends GameConnection {
 			let slotX = 217 + dialogX + (itemIndex % 5) * 49;
 			let slotY = 31 + dialogY + ((itemIndex / 5) | 0) * 34;
 
-			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, this.spriteItem + GameData.itemPicture[this.inventoryItemId[itemIndex]], GameData.itemMask[this.inventoryItemId[itemIndex]], 0, 0, false);
+			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.inventoryItemId[itemIndex]], GameData.itemMask[this.inventoryItemId[itemIndex]], 0, 0, false);
 
 			if (GameData.itemStackable[this.inventoryItemId[itemIndex]] === 0) {
 				this.surface.drawString(this.inventoryItemStackCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 0xffff00);
@@ -1171,7 +1158,7 @@ export default class mudclient extends GameConnection {
 			let slotX = 9 + dialogX + (itemIndex & 3) * 49;
 			let slotY = 31 + dialogY + ((itemIndex / 4) | 0) * 34;
 
-			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, this.spriteItem + GameData.itemPicture[this.tradeItems[itemIndex]], GameData.itemMask[this.tradeItems[itemIndex]], 0, 0, false);
+			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.tradeItems[itemIndex]], GameData.itemMask[this.tradeItems[itemIndex]], 0, 0, false);
 
 			if (GameData.itemStackable[this.tradeItems[itemIndex]] === 0) {
 				this.surface.drawString(this.tradeItemCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 0xffff00);
@@ -1186,7 +1173,7 @@ export default class mudclient extends GameConnection {
 			let slotX = 9 + dialogX + (itemIndex & 3) * 49;
 			let slotY = 156 + dialogY + ((itemIndex / 4) | 0) * 34;
 
-			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, this.spriteItem + GameData.itemPicture[this.tradeRecipientItems[itemIndex]], GameData.itemMask[this.tradeRecipientItems[itemIndex]], 0, 0, false);
+			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.tradeRecipientItems[itemIndex]], GameData.itemMask[this.tradeRecipientItems[itemIndex]], 0, 0, false);
 
 			if (GameData.itemStackable[this.tradeRecipientItems[itemIndex]] === 0)
 				this.surface.drawString(this.tradeRecipientItemCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 0xffff00);
@@ -1224,7 +1211,7 @@ export default class mudclient extends GameConnection {
 
 		this.playerCount = 0;
 		this.players = new Array(this.playersMax);
-		this.playerServer = new Array(this.playersMax);
+		this.playersServer = new Array(this.playersMax);
 
 		this.npcCount = 0;
 		this.npcs = new Array(this.npcsMax);
@@ -1247,7 +1234,7 @@ export default class mudclient extends GameConnection {
 		let uiX = this.surface.width2 - 199;
 		let uiY = 36;
 
-		this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 5);
+		this.surface.drawSpriteID(uiX - 49, 3, mudclient.spriteMedia + 5);
 
 		let uiWidth = 196;
 		let uiHeight = 182;
@@ -1277,7 +1264,7 @@ export default class mudclient extends GameConnection {
 
 				let world = this.friendListOnline[i1] & 0xFF;
 				if (world !== 0) {
-					if (this.friendListOnline[i1] & 0xFF === 0xFF)
+					if (world === 0xFF)
 						s = '@gre@';
 					else
 						s = '@yel@';
@@ -1429,13 +1416,13 @@ export default class mudclient extends GameConnection {
 	}
 
 	createPlayer(serverIndex, x, y, anim) {
-		let player = this.playerServer[serverIndex];
+		let player = this.playersServer[serverIndex];
 		
 		if (!player) {
-			// this.playerServer.push(new GameCharacter);
-			player = this.playerServer[serverIndex] = new GameCharacter();
-			this.playerServer[serverIndex].serverIndex = serverIndex;
-			this.playerServer[serverIndex].appearanceTicket = 0;
+			// this.playersServer.push(new GameCharacter);
+			player = this.playersServer[serverIndex] = new GameCharacter();
+			this.playersServer[serverIndex].serverIndex = serverIndex;
+			this.playersServer[serverIndex].appearanceTicket = 0;
 		}
 
 		let flag = false;
@@ -1761,12 +1748,12 @@ export default class mudclient extends GameConnection {
 		this.surface._spriteClipping_from9(i + 55, j, 64, 102, GameData.animationNumber[this.appearanceHeadType] + 12, this.characterHairColours[this.appearanceHairColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
 		this.surface._spriteClipping_from9(i + 55, j, 64, 102, GameData.animationNumber[this.appearanceBodyGender] + 12, this.characterTopBottomColours[this.appearanceTopColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
 		this.surface._spriteClipping_from6(i + 55, j, 64, 102, GameData.animationNumber[this.appearance2Colour] + 12, this.characterTopBottomColours[this.appearanceBottomColour]);
-		this.surface.drawSpriteID(0, this.gameHeight, this.spriteMedia + 22);
+		this.surface.drawSpriteID(0, this.gameHeight, mudclient.spriteMedia + 22);
 		this.surface.draw(this.graphics, 0, 0);
 	}
 
 	drawItem(x, y, w, h, id, tx, ty) {
-		let picture = GameData.itemPicture[id] + this.spriteItem;
+		let picture = GameData.itemPicture[id] + mudclient.spriteItem;
 		let mask = GameData.itemMask[id];
 		this.surface._spriteClipping_from9(x, y, w, h, picture, mask, 0, 0, false);
 	}
@@ -2219,9 +2206,9 @@ export default class mudclient extends GameConnection {
 		}
 
 		// runescape logo
-		this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10);
-		this.surface._drawSprite_from5(this.spriteLogo, 0, 0, this.gameWidth, 200);
-		this.surface.drawWorld(this.spriteLogo);
+		this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[mudclient.spriteMedia + 10] / 2) | 0), 15, mudclient.spriteMedia + 10);
+		this.surface._drawSprite_from5(mudclient.spriteLogo, 0, 0, this.gameWidth, 200);
+		this.surface.drawWorld(mudclient.spriteLogo);
 
 		x = 9216;
 		y = 9216;
@@ -2250,9 +2237,9 @@ export default class mudclient extends GameConnection {
 			this.surface.drawLineAlpha(0, i1, 0, 194 - i1, this.gameWidth, 8);
 		}
 
-		this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10);
-		this.surface._drawSprite_from5(this.spriteLogo + 1, 0, 0, this.gameWidth, 200);
-		this.surface.drawWorld(this.spriteLogo + 1);
+		this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[mudclient.spriteMedia + 10] / 2) | 0), 15, mudclient.spriteMedia + 10);
+		this.surface._drawSprite_from5(mudclient.spriteLogo + 1, 0, 0, this.gameWidth, 200);
+		this.surface.drawWorld(mudclient.spriteLogo + 1);
 
 		for (let j1 = 0; j1 < 64; j1++) {
 			this.scene.removeModel(this.world.roofModels[0][j1]);
@@ -2286,9 +2273,9 @@ export default class mudclient extends GameConnection {
 		for (let l1 = 6; l1 >= 1; l1--)
 			this.surface.drawLineAlpha(0, l1, 0, 194, this.gameWidth, 8);
 
-		this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[this.spriteMedia + 10] / 2) | 0), 15, this.spriteMedia + 10);
-		this.surface._drawSprite_from5(this.spriteMedia + 10, 0, 0, this.gameWidth, 200);
-		this.surface.drawWorld(this.spriteMedia + 10);
+		this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - ((this.surface.spriteWidth[mudclient.spriteMedia + 10] / 2) | 0), 15, mudclient.spriteMedia + 10);
+		this.surface._drawSprite_from5(mudclient.spriteMedia + 10, 0, 0, this.gameWidth, 200);
+		this.surface.drawWorld(mudclient.spriteMedia + 10);
 	}
 
 	createLoginPanels() {
@@ -2362,7 +2349,7 @@ export default class mudclient extends GameConnection {
 	renderInventoryTab(nomenus) {
 		let uiX = this.surface.width2 - 248;
 
-		this.surface.drawSpriteID(uiX, 3, this.spriteMedia + 1);
+		this.surface.drawSpriteID(uiX, 3, mudclient.spriteMedia + 1);
 
 		for (let itemIndex = 0; itemIndex < this.inventoryMaxItemCount; itemIndex++) {
 			let slotX = uiX + (itemIndex % 5) * 49;
@@ -2374,7 +2361,7 @@ export default class mudclient extends GameConnection {
 				this.surface.drawBoxAlpha(slotX, slotY, 49, 34, Surface.rgbToLong(181, 181, 181), 128);
 
 			if (itemIndex < this.inventoryItemsCount) {
-				this.surface._spriteClipping_from9(slotX, slotY, 48, 32, this.spriteItem + GameData.itemPicture[this.inventoryItemId[itemIndex]], GameData.itemMask[this.inventoryItemId[itemIndex]], 0, 0, false);
+				this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.inventoryItemId[itemIndex]], GameData.itemMask[this.inventoryItemId[itemIndex]], 0, 0, false);
 
 				if (GameData.itemStackable[this.inventoryItemId[itemIndex]] === 0)
 					this.surface.drawString(this.inventoryItemStackCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 0xffff00);
@@ -2542,16 +2529,14 @@ export default class mudclient extends GameConnection {
 				this.visibleContextMenu = false;
 				this.menuItemClick(this.menuIndices[entry]);
 				this.mouseButtonClick = 0;
-				return;
-			}
-			// } else
-			if (this.mouseX > entryX - 2 && this.mouseY > entryY-15 && this.mouseY < entryY && this.mouseX < (entryX-2) + this.menuWidth) {
+				// return;
+			} else if (this.mouseX > entryX - 2 && this.mouseY > entryY-15 && this.mouseY < entryY && this.mouseX < (entryX-2) + this.menuWidth) {
 				color = 0xffff00;
 				if (this.isClicking()) {
 					this.visibleContextMenu = false;
 					this.menuItemClick(this.menuIndices[entry]);
 					this.mouseButtonClick = 0;
-					return;
+					// return;
 				}
 			}
 
@@ -2566,7 +2551,7 @@ export default class mudclient extends GameConnection {
 		let height = 152;
 
 		// Draw the minimap tab sprite on top of the tab bar sprite
-		this.surface.drawSpriteID(startX - 49, startY, this.spriteMedia + 2);
+		this.surface.drawSpriteID(startX - 49, startY, mudclient.spriteMedia + 2);
 		startX += 40;
 		startY += 33;
 		this.surface.drawBox(startX, startY, width, height, 0);
@@ -2586,7 +2571,7 @@ export default class mudclient extends GameConnection {
 		k1 = k5;
 
 		// landscape
-		this.surface.drawMinimapSprite(startX + Math.floor(width / 2) - k1, 36 + Math.floor(height / 2) + i3, this.spriteMedia - 1, i1 + 64 & 255, k);
+		this.surface.drawMinimapSprite(startX + Math.floor(width / 2) - k1, 36 + Math.floor(height / 2) + i3, mudclient.spriteMedia - 1, i1 + 64 & 255, k);
 
 		for (let i = 0; i < this.objectCount; i++) {
 			let l1 = (((this.objectX[i] * this.tileSize + 64) - this.localPlayer.currentX) * 3 * k) / 2048 | 0;
@@ -2647,7 +2632,7 @@ export default class mudclient extends GameConnection {
 		this.surface.drawCircle(startX + ((width / 2) | 0), 36 + ((height / 2) | 0), 2, 0xffffff, 255);
 
 		// compass
-		this.surface.drawMinimapSprite(startX + 19, 55, this.spriteMedia + 24, this.cameraRotation + 128 & 255, 128);
+		this.surface.drawMinimapSprite(startX + 19, 55, mudclient.spriteMedia + 24, this.cameraRotation + 128 & 255, 128);
 		this.surface.setBounds(0, 0, this.gameWidth, this.gameHeight + 12);
 
 		if (!nomenus) {
@@ -2737,8 +2722,8 @@ export default class mudclient extends GameConnection {
 		this.surface.drawStringCenter('Remember that not all players are trustworthy', dialogX + 234, dialogY + 230, 1, 0xffffff);
 
 		if (!this.tradeConfirmAccepted) {
-			this.surface.drawSpriteID((dialogX + 118) - 35, dialogY + 238, this.spriteMedia + 25);
-			this.surface.drawSpriteID((dialogX + 352) - 35, dialogY + 238, this.spriteMedia + 26);
+			this.surface.drawSpriteID((dialogX + 118) - 35, dialogY + 238, mudclient.spriteMedia + 25);
+			this.surface.drawSpriteID((dialogX + 352) - 35, dialogY + 238, mudclient.spriteMedia + 26);
 		} else {
 			this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, 0xffff00);
 		}
@@ -2961,7 +2946,7 @@ export default class mudclient extends GameConnection {
 						relX += (10 * ty) / 100 | 0;
 
 					// hit splat sprite
-					this.surface.drawSpriteID(Math.floor(w / 2) + relX - 12, Math.floor(h / 2) + y - 12, this.spriteMedia + 12);
+					this.surface.drawSpriteID(Math.floor(w / 2) + relX - 12, Math.floor(h / 2) + y - 12, mudclient.spriteMedia + 12);
 					this.surface.drawStringCenter(npc.damageTaken.toString(), Math.floor(w / 2) + relX - 1, Math.floor(h / 2) + y + 5, 3, 0xFFFFFF);
 				}
 			}
@@ -3159,7 +3144,7 @@ export default class mudclient extends GameConnection {
 				this.surface.drawBoxEdge(startX, startY, 50, 35, 0);
 
 				if (slot < this.bankItemCount && this.bankItems[slot] !== -1) {
-					this.surface._spriteClipping_from9(startX, startY, 48, 32, this.spriteItem + GameData.itemPicture[this.bankItems[slot]], GameData.itemMask[this.bankItems[slot]], 0, 0, false);
+					this.surface._spriteClipping_from9(startX, startY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.bankItems[slot]], GameData.itemMask[this.bankItems[slot]], 0, 0, false);
 					this.surface.drawString(this.bankItemsCount[slot].toString(), startX + 1, startY + 10, 1, 65280);
 					this.surface.drawStringRight(this.getInventoryCount(this.bankItems[slot]).toString(), startX + 47, startY + 29, 1, 65535);
 					let mouseX = this.mouseX - (Math.floor(this.gameWidth / 2) - Math.floor(dialogWidth / 2));
@@ -3700,10 +3685,10 @@ export default class mudclient extends GameConnection {
 		}
 
 		if (!this.duelOfferAccepted) {
-			this.surface.drawSpriteID(dialogX + 217, dialogY + 238, this.spriteMedia + 25);
+			this.surface.drawSpriteID(dialogX + 217, dialogY + 238, mudclient.spriteMedia + 25);
 		}
 
-		this.surface.drawSpriteID(dialogX + 394, dialogY + 238, this.spriteMedia + 26);
+		this.surface.drawSpriteID(dialogX + 394, dialogY + 238, mudclient.spriteMedia + 26);
 
 		if (this.duelOfferOpponentAccepted) {
 			this.surface.drawStringCenter('Other player', dialogX + 341, dialogY + 246, 1, 0xffffff);
@@ -3718,7 +3703,7 @@ export default class mudclient extends GameConnection {
 		for (let i = 0; i < this.inventoryItemsCount; i++) {
 			let x = 217 + dialogX + (i % 5) * 49;
 			let y = 31 + dialogY + ((i / 5) | 0) * 34;
-			this.surface._spriteClipping_from9(x, y, 48, 32, this.spriteItem + GameData.itemPicture[this.inventoryItemId[i]], GameData.itemMask[this.inventoryItemId[i]], 0, 0, false);
+			this.surface._spriteClipping_from9(x, y, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.inventoryItemId[i]], GameData.itemMask[this.inventoryItemId[i]], 0, 0, false);
 
 			if (GameData.itemStackable[this.inventoryItemId[i]] === 0) {
 				this.surface.drawString(this.inventoryItemStackCount[i].toString(), x + 1, y + 10, 1, 0xffff00);
@@ -3729,7 +3714,7 @@ export default class mudclient extends GameConnection {
 			let x = 9 + dialogX + (i & 3) * 49;
 			let y = 31 + dialogY + ((i / 4) | 0) * 34;
 
-			this.surface._spriteClipping_from9(x, y, 48, 32, this.spriteItem + GameData.itemPicture[this.duelOfferItemList[i].id], GameData.itemMask[this.duelOfferItemList[i].id], 0, 0, false);
+			this.surface._spriteClipping_from9(x, y, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.duelOfferItemList[i].id], GameData.itemMask[this.duelOfferItemList[i].id], 0, 0, false);
 
 			if (GameData.itemStackable[this.duelOfferItemList[i].id] === 0) {
 				this.surface.drawString(this.duelOfferItemList[i].amount.toString(), x + 1, y + 10, 1, 0xffff00);
@@ -3744,7 +3729,7 @@ export default class mudclient extends GameConnection {
 			let x = 9 + dialogX + (i & 3) * 49;
 			let y = 124 + dialogY + ((i / 4) | 0) * 34;
 
-			this.surface._spriteClipping_from9(x, y, 48, 32, this.spriteItem + GameData.itemPicture[this.duelOfferOpponentItemList[i].id], GameData.itemMask[this.duelOfferOpponentItemList[i].id], 0, 0, false);
+			this.surface._spriteClipping_from9(x, y, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.duelOfferOpponentItemList[i].id], GameData.itemMask[this.duelOfferOpponentItemList[i].id], 0, 0, false);
 
 				if (GameData.itemStackable[this.duelOfferOpponentItemList[i].id] === 0) {
 				this.surface.drawString(this.duelOfferOpponentItemList[i].amount.toString(), x + 1, y + 10, 1, 0xffff00);
@@ -3887,13 +3872,13 @@ export default class mudclient extends GameConnection {
 		let player = this.players[id];
 
 		// this means the character is invisible! MOD!!!
-		// More likely this is not a mod thing but actually to prevent the rendering
+		// EDIT: More likely this is not a mod thing but actually to prevent the rendering
 		// of players that have yet to create their avatar, and thus possess a bottom color
 		// of -1, which when represented as a uint8, becomes 0xFF
 		if (player.colourBottom === 0xFF)
 			return;
 
-		let l1 = player.animationCurrent + (this.cameraRotation + 16) / 32 & 7;
+		let l1 = player.animationCurrent + ((this.cameraRotation + 16) >>> 5) & 7;
 		let flag = false;
 		let i2 = l1;
 
@@ -3971,7 +3956,7 @@ export default class mudclient extends GameConnection {
 
 					let l5 = Math.floor((w * this.surface.spriteWidthFull[k5]) / this.surface.spriteWidthFull[GameData.animationNumber[l3]]);
 
-					k4 -= Math.floor((l5 - w) / 2);
+					k4 -= ((l5 - w) >>> 1);
 
 					let i6 = GameData.animationCharacterColour[l3];
 					let j6 = this.characterSkinColours[player.colourSkin];
@@ -3994,7 +3979,7 @@ export default class mudclient extends GameConnection {
 				this.receivedMessageMidPoint[this.receivedMessagesCount] = secondsToFrames(3);
 
 			this.receivedMessageHeight[this.receivedMessagesCount] = Math.floor(this.surface.textWidth(player.message, 1) / 300) * this.surface.textHeight(1);
-			this.receivedMessageX[this.receivedMessagesCount] = x + Math.floor(w / 2);
+			this.receivedMessageX[this.receivedMessagesCount] = x + (w >>> 1);
 			this.receivedMessageY[this.receivedMessagesCount] = y;
 			this.receivedMessages[this.receivedMessagesCount++] = player.message;
 		}
@@ -4002,10 +3987,10 @@ export default class mudclient extends GameConnection {
 		if (player.bubble) {
 			let scaleX = Math.floor((39 * ty) / 100);
 			let scaleY = Math.floor((27 * ty) / 100);
-			this.surface.drawActionBubble((x+Math.floor(w/2)) - Math.floor(scaleX / 2), y - scaleY, scaleX, scaleY, this.spriteMedia + 9, 85);
-			let scaleXClip = Math.floor((36 * ty) / 100);
-			let scaleYClip = Math.floor((24 * ty) / 100);
-			this.surface._spriteClipping_from9((x+Math.floor(w/2)) - Math.floor(scaleXClip / 2), y - scaleY + Math.floor(scaleY / 2) - Math.floor(scaleYClip / 2), scaleXClip, scaleYClip, GameData.itemPicture[player.bubble.id] + this.spriteItem, GameData.itemMask[player.bubble.id], 0, 0, false);
+			this.surface.drawActionBubble(x + (w>>>1) - (scaleX >>> 1), y - scaleY, scaleX, scaleY, mudclient.spriteMedia + 9, 85);
+			let scaleXItem = Math.floor((36 * ty) / 100);
+			let scaleYItem = Math.floor((24 * ty) / 100);
+			this.surface._spriteClipping_from9(x + (w >>> 1) - (scaleXItem >>> 1), y - scaleY + (scaleY >>> 1) - (scaleYItem >>> 1), scaleXItem, scaleYItem, mudclient.spriteItem + GameData.itemPicture[player.bubble.id], GameData.itemMask[player.bubble.id], 0, 0, false);
 		}
 
 		// if (player.bubbleTimeout > 0) {
@@ -4025,7 +4010,7 @@ export default class mudclient extends GameConnection {
 					healthX += Math.floor((20 * ty) / 100);
 				}
 
-				this.healthBarX[this.healthBarCount] = healthX + (w>>1);
+				this.healthBarX[this.healthBarCount] = healthX + (w>>>1);
 				this.healthBarY[this.healthBarCount] = y;
 				this.healthBarMissing[this.healthBarCount++] = Math.floor((player.healthCurrent * 30) / player.healthMax);
 
@@ -4038,15 +4023,15 @@ export default class mudclient extends GameConnection {
 						splatX += Math.floor((10 * ty) / 100);
 					}
 
-					this.surface.drawSpriteID(splatX + (w>>1) - 12, y + (h>>1) - 12, this.spriteMedia + 11);
-					this.surface.drawStringCenter(player.damageTaken.toString(), (splatX + (w>>1)) - 1, y + (h>>1) + 5, 3, 0xFFFFFF);
+					this.surface.drawSpriteID(splatX + (w>>>1) - 12, y + (h>>>1) - 12, mudclient.spriteMedia + 11);
+					this.surface.drawStringCenter(player.damageTaken.toString(), (splatX + (w>>>1)) - 1, y + (h>>>1) + 5, 3, 0xFFFFFF);
 				}
 			}
 		}
 
 		if (player.skullVisible === 1 && !player.bubble) {
 			// TODO: Wrong, really Y
-			let skullX = tx + x + Math.floor(w/2);
+			let skullX = tx + x + (w>>>1);
 
 			if (player.animationCurrent === 8) {
 				skullX -= Math.floor((20 * ty) / 100);
@@ -4056,9 +4041,9 @@ export default class mudclient extends GameConnection {
 
 			let j4 = Math.floor((16 * ty) / 100);
 //			let l4 = (16 * ty) / 100 | 0;
-			let length = Math.floor((16 * ty) / 100 | 0);
-			let middle = length>>1;
-			this.surface._spriteClipping_from5(skullX - middle, y - middle - Math.floor(length/2.5), length, length, this.spriteMedia + 13);
+			let length = Math.floor((16 * ty) / 100);
+			let middle = length>>>1;
+			this.surface._spriteClipping_from5(skullX - middle, y - middle - Math.floor(length/2.5), length, length, mudclient.spriteMedia + 13);
 		}
 	}
 
@@ -4072,20 +4057,20 @@ export default class mudclient extends GameConnection {
 
 		let buff = Utility.loadData('index.dat', 0, media);
 
-		this.surface.parseSprite(this.spriteMedia, Utility.loadData('inv1.dat', 0, media), buff, 1);
-		this.surface.parseSprite(this.spriteMedia + 1, Utility.loadData('inv2.dat', 0, media), buff, 6);
-		this.surface.parseSprite(this.spriteMedia + 9, Utility.loadData('bubble.dat', 0, media), buff, 1);
-		this.surface.parseSprite(this.spriteMedia + 10, Utility.loadData('runescape.dat', 0, media), buff, 1);
-		this.surface.parseSprite(this.spriteMedia + 11, Utility.loadData('splat.dat', 0, media), buff, 3);
-		this.surface.parseSprite(this.spriteMedia + 14, Utility.loadData('icon.dat', 0, media), buff, 8);
-		this.surface.parseSprite(this.spriteMedia + 22, Utility.loadData('hbar.dat', 0, media), buff, 1);
-		this.surface.parseSprite(this.spriteMedia + 23, Utility.loadData('hbar2.dat', 0, media), buff, 1);
-		this.surface.parseSprite(this.spriteMedia + 24, Utility.loadData('compass.dat', 0, media), buff, 1);
-		this.surface.parseSprite(this.spriteMedia + 25, Utility.loadData('buttons.dat', 0, media), buff, 2);
-		this.surface.parseSprite(this.spriteUtil, Utility.loadData('scrollbar.dat', 0, media), buff, 2);
-		this.surface.parseSprite(this.spriteUtil + 2, Utility.loadData('corners.dat', 0, media), buff, 4);
-		this.surface.parseSprite(this.spriteUtil + 6, Utility.loadData('arrows.dat', 0, media), buff, 2);
-		this.surface.parseSprite(this.spriteProjectile, Utility.loadData('projectile.dat', 0, media), buff, GameData.projectileSprite);
+		this.surface.parseSprite(mudclient.spriteMedia, Utility.loadData('inv1.dat', 0, media), buff, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 1, Utility.loadData('inv2.dat', 0, media), buff, 6);
+		this.surface.parseSprite(mudclient.spriteMedia + 9, Utility.loadData('bubble.dat', 0, media), buff, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 10, Utility.loadData('runescape.dat', 0, media), buff, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 11, Utility.loadData('splat.dat', 0, media), buff, 3);
+		this.surface.parseSprite(mudclient.spriteMedia + 14, Utility.loadData('icon.dat', 0, media), buff, 8);
+		this.surface.parseSprite(mudclient.spriteMedia + 22, Utility.loadData('hbar.dat', 0, media), buff, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 23, Utility.loadData('hbar2.dat', 0, media), buff, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 24, Utility.loadData('compass.dat', 0, media), buff, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 25, Utility.loadData('buttons.dat', 0, media), buff, 2);
+		this.surface.parseSprite(mudclient.spriteUtil, Utility.loadData('scrollbar.dat', 0, media), buff, 2);
+		this.surface.parseSprite(mudclient.spriteUtil + 2, Utility.loadData('corners.dat', 0, media), buff, 4);
+		this.surface.parseSprite(mudclient.spriteUtil + 6, Utility.loadData('arrows.dat', 0, media), buff, 2);
+		this.surface.parseSprite(mudclient.spriteProjectile, Utility.loadData('projectile.dat', 0, media), buff, GameData.projectileSprite);
 
 		let i = GameData.itemSpriteCount;
 
@@ -4093,27 +4078,27 @@ export default class mudclient extends GameConnection {
 			let k = Math.min(30, i);
 			i -= 30;
 
-			this.surface.parseSprite(this.spriteItem + (j - 1) * 30, Utility.loadData('objects' + j + '.dat', 0, media), buff, k);
+			this.surface.parseSprite(mudclient.spriteItem + (j - 1) * 30, Utility.loadData('objects' + j + '.dat', 0, media), buff, k);
 		}
 
-		this.surface.loadSprite(this.spriteMedia);
-		this.surface.loadSprite(this.spriteMedia + 9);
+		this.surface.loadSprite(mudclient.spriteMedia);
+		this.surface.loadSprite(mudclient.spriteMedia + 9);
 
 		for (let l = 11; l <= 26; l++) {
-			this.surface.loadSprite(this.spriteMedia + l);
+			this.surface.loadSprite(mudclient.spriteMedia + l);
 		}
 
 		for (let i1 = 0; i1 < GameData.projectileSprite; i1++) {
-			this.surface.loadSprite(this.spriteProjectile + i1);
+			this.surface.loadSprite(mudclient.spriteProjectile + i1);
 		}
 
 		for (let j1 = 0; j1 < GameData.itemSpriteCount; j1++) {
-			this.surface.loadSprite(this.spriteItem + j1);
+			this.surface.loadSprite(mudclient.spriteItem + j1);
 		}
 	}
 
 	drawChatMessageTabs() {
-		this.surface.drawSpriteID(0, this.gameHeight - 4, this.spriteMedia + 23);
+		this.surface.drawSpriteID(0, this.gameHeight - 4, mudclient.spriteMedia + 23);
 
 		this.surface.drawStringCenter('All messages', 54, this.gameHeight + 6, 0, this.messageTabFlashAll % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 0 ? 0xFFC832 : 0xC8C8FF));
 		this.surface.drawStringCenter('Chat history', 155, this.gameHeight + 6, 0, this.messageTabFlashHistory % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 1 ? 0xFFC832 : 0xC8C8FF));
@@ -4131,21 +4116,12 @@ export default class mudclient extends GameConnection {
 		if (this.runtimeException)
 			return;
 
-		this.spriteMedia = 2000;
-		this.spriteUtil = this.spriteMedia + 100;
-		this.spriteItem = this.spriteUtil + 50;
-		this.spriteLogo = this.spriteItem + 1000;
-		this.spriteProjectile = this.spriteLogo + 10;
-		this.spriteTexture = this.spriteProjectile + 50;
-		this.spriteTextureWorld = this.spriteTexture + 10;
-
-
 		this.surface = new SurfaceSprite(this.gameWidth, this.gameHeight + 12, 4000, this);
 		this.surface.mudclientref = this;
 		this.surface.setBounds(0, 0, this.gameWidth, this.gameHeight + 12);
 
 		Panel.drawBackgroundArrow = false;
-		Panel.spriteStart = this.spriteUtil;
+		Panel.spriteStart = mudclient.spriteUtil;
 
 		this.panelMagic = new Panel(this.surface, 5);
 
@@ -4179,7 +4155,7 @@ export default class mudclient extends GameConnection {
 		Ops.MC = this;
 
 		this.world = new World(this.scene, this.surface);
-		this.world.baseMediaSprite = this.spriteMedia;
+		this.world.baseMediaSprite = mudclient.spriteMedia;
 
 		await this.loadTextures();
 		if (this.runtimeException)
@@ -4211,7 +4187,7 @@ export default class mudclient extends GameConnection {
 	renderMagicTab(nomenus) {
 		let uiX = this.surface.width2 - 199;
 		let uiY = 36;
-		this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 4);
+		this.surface.drawSpriteID(uiX - 49, 3, mudclient.spriteMedia + 4);
 		let uiWidth = 196;
 		let uiHeight = 182;
 		let l = 0;
@@ -4271,7 +4247,7 @@ export default class mudclient extends GameConnection {
 
 				for (let i4 = 0; i4 < GameData.spellRunesRequired[i3]; i4++) {
 					let i5 = GameData.spellRunesId[i3][i4];
-					this.surface.drawSpriteID(uiX + 2 + i4 * 44, uiY + 150, this.spriteItem + GameData.itemPicture[i5]);
+					this.surface.drawSpriteID(uiX + 2 + i4 * 44, uiY + 150, mudclient.spriteItem + GameData.itemPicture[i5]);
 					let j5 = this.getInventoryCount(i5);
 					let k5 = GameData.spellRunesCount[i3][i4];
 					let s2 = '@red@';
@@ -4481,7 +4457,7 @@ export default class mudclient extends GameConnection {
 				this.surface.drawBoxEdge(slotX, slotY, 50, 35, 0);
 
 				if (this.shopItem[itemIndex] !== -1) {
-					this.surface._spriteClipping_from9(slotX, slotY, 48, 32, this.spriteItem + GameData.itemPicture[this.shopItem[itemIndex]], GameData.itemMask[this.shopItem[itemIndex]], 0, 0, false);
+					this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.shopItem[itemIndex]], GameData.itemMask[this.shopItem[itemIndex]], 0, 0, false);
 					this.surface.drawString(this.shopItemCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 65280);
 					this.surface.drawStringRight(this.getInventoryCount(this.shopItem[itemIndex]).toString(), slotX + 47, slotY + 10, 1, 65535);
 				}
@@ -4606,7 +4582,7 @@ export default class mudclient extends GameConnection {
 			this.surface.drawStringCenter(this.inputTextCurrent + '*', this.gameWidth / 2 | 0, 180, 5, 65535);
 
 			if (!this.sleepingStatusText) {
-				this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - 127, 230, this.spriteTexture + 1);
+				this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - 127, 230, mudclient.spriteTexture + 1);
 			} else {
 				this.surface.drawStringCenter(this.sleepingStatusText, this.gameWidth / 2 | 0, 260, 5, 0xff0000);
 			}
@@ -4635,7 +4611,7 @@ export default class mudclient extends GameConnection {
 			if (this.options.showRoofs) {
 				this.fogOfWar = true;
 
-				if (this.lastHeightOffset === 0 && (this.world.objectAdjacency.get(Math.floor(this.localPlayer.currentX / 128), Math.floor(this.localPlayer.currentY / 128)) & 0x80) === 0) {
+				if (this.lastHeightOffset === 0 && (this.world.objectAdjacency.get(this.localPlayer.currentX >>> 7, ((this.localPlayer.currentY >>> 7))) & 0x80) === 0) {
 					this.scene.addModel(this.world.roofModels[this.lastHeightOffset][i]);
 
 					if (this.lastHeightOffset === 0) {
@@ -4731,7 +4707,7 @@ export default class mudclient extends GameConnection {
 				if (player.attackingNpcServerIndex !== -1)
 					character = this.npcsServer[player.attackingNpcServerIndex];
 				else if (player.attackingPlayerServerIndex !== -1)
-					character = this.playerServer[player.attackingPlayerServerIndex];
+					character = this.playersServer[player.attackingPlayerServerIndex];
 
 				if (character) {
 					let sx = player.currentX;
@@ -4744,7 +4720,7 @@ export default class mudclient extends GameConnection {
 					let rz = Math.floor((selev * player.projectileRange + delev * (this.projectileFactor - player.projectileRange)) / this.projectileFactor);
 					let ry = Math.floor((sy * player.projectileRange + dy * (this.projectileFactor - player.projectileRange)) / this.projectileFactor);
 
-					this.scene.addSprite(this.spriteProjectile + player.incomingProjectileSprite, rx, rz, ry, 32, 32, 0);
+					this.scene.addSprite(mudclient.spriteProjectile + player.incomingProjectileSprite, rx, rz, ry, 32, 32, 0);
 					this.spriteCount++;
 				}
 			}
@@ -4825,16 +4801,15 @@ export default class mudclient extends GameConnection {
 			this.scene.clipFar2d = 3000;
 			this.scene.fogZFalloff = 1;
 			this.scene.fogZDistance = 2800;
-			this.cameraRotation = this.cameraAngle * 32;
+			this.cameraRotation = this.cameraAngle << 5;
 
 			let x = this.cameraAutoRotatePlayerX + this.cameraRotationX;
 			let y = this.cameraAutoRotatePlayerY + this.cameraRotationY;
 
-			this.scene.setCamera(x, -this.world.getElevation(x, y), y, 912, this.cameraRotation * 4, 0, 2000);
+			this.scene.setCamera(x, -this.world.getElevation(x, y), y, 912, this.cameraRotation << 2, 0, 2000);
 		} else {
-			if (this.optionCameraModeAuto && !this.fogOfWar) {
+			if (this.optionCameraModeAuto && !this.fogOfWar)
 				this.autorotateCamera();
-			}
 
 			if (!this.interlace) {
 				this.scene.clipFar3d = 2400;
@@ -4857,16 +4832,16 @@ export default class mudclient extends GameConnection {
 			let x = this.cameraAutoRotatePlayerX + this.cameraRotationX;
 			let y = this.cameraAutoRotatePlayerY + this.cameraRotationY;
 
-			this.scene.setCamera(x, -this.world.getElevation(x, y), y, 912, this.cameraRotation * 4, 0, this.cameraZoom * 2);
+			this.scene.setCamera(x, -this.world.getElevation(x, y), y, 912, this.cameraRotation << 2, 0, this.cameraZoom << 1);
 		}
 
 		this.scene.render();
 		this.renderLocalMobEffects();
 
 		if (this.mouseClickXStep > 0)
-			this.surface.drawSpriteID(this.mouseClickXX - 8, this.mouseClickXY - 8, this.spriteMedia + 14 + Math.floor((24 - this.mouseClickXStep) / 6));
+			this.surface.drawSpriteID(this.mouseClickXX - 8, this.mouseClickXY - 8, mudclient.spriteMedia + 14 + Math.floor((24 - this.mouseClickXStep) / 6));
 		else if (this.mouseClickXStep < 0)
-			this.surface.drawSpriteID(this.mouseClickXX - 8, this.mouseClickXY - 8, this.spriteMedia + 18 + Math.floor((24 + this.mouseClickXStep) / 6));
+			this.surface.drawSpriteID(this.mouseClickXX - 8, this.mouseClickXY - 8, mudclient.spriteMedia + 18 + Math.floor((24 + this.mouseClickXStep) / 6));
 
 		if (this.systemUpdate !== 0) {
 			let seconds = Math.floor(this.systemUpdate / 50);
@@ -4901,7 +4876,7 @@ export default class mudclient extends GameConnection {
 					this.wildAwarenessLvl = 2;
 
 				let wildlvl = Math.floor(wildY / 6) + 1; // one wilderness level per 6 vertical tiles
-				this.surface.drawSpriteID(453, this.gameHeight - (dy+56), this.spriteMedia + 13);
+				this.surface.drawSpriteID(453, this.gameHeight - (dy+56), mudclient.spriteMedia + 13);
 				this.surface.drawStringCenter('Wilderness', 465, this.gameHeight - (dy+20), 1, 0xffff00);
 				this.surface.drawStringCenter('Level: ' + wildlvl, 465, this.gameHeight - (dy+7), 1, 0xffff00);
 			} else if (wildY > -10 && this.wildAwarenessLvl === 0)
@@ -4925,7 +4900,7 @@ export default class mudclient extends GameConnection {
 		Panel.textListEntryHeightMod = 2;
 		this.panelGame[GamePanels.CHAT].render();
 		Panel.textListEntryHeightMod = 0;
-		this.surface.fadeThenDrawSpriteID(this.surface.width2 - 3 - 197, 3, this.spriteMedia, 128);
+		this.surface.fadeThenDrawSpriteID(this.surface.width2 - 3 - 197, 3, mudclient.spriteMedia, 128);
 		this.drawUi();
 		this.surface.worldVisible = false;
 		this.drawChatMessageTabs();
@@ -4957,7 +4932,6 @@ export default class mudclient extends GameConnection {
 		let indexDat = void 0;
 
 		entityBuff = await this.readDataFile('entity' + VERSION.ENTITY + '.jag', 'people and monsters', 30);
-
 		if (!entityBuff) {
 			this.runtimeException = new GameException("Error loading people and monster sprites!\n\n" + e.message, true);
 			return;
@@ -5155,7 +5129,7 @@ label0:
 			g1.setColor(Color.WHITE);
 			g1.drawString('Error - unable to load game!', 50, 50);
 			g1.drawString('To play RuneScape make sure you play from', 50, 100);
-			g1.drawString('http://rscgo.com', 50, 150);
+			g1.drawString('http://rsclassic.dev', 50, 150);
 
 			this.setTargetFps(1);
 			return;
@@ -5245,7 +5219,7 @@ label0:
 					entry += '';
 				}
 				if(item&&entry)
-				this.surface.drawStringCenter(entry, dialogX+351, dialogY+42+offsetY, 1, 0xFFFFFF);
+					this.surface.drawStringCenter(entry, dialogX+351, dialogY+42+offsetY, 1, 0xFFFFFF);
 				offsetY += 12;
 			}
 		}
@@ -5271,8 +5245,8 @@ label0:
 		this.surface.drawStringCenter("If you are sure click 'Accept' to begin the duel", dialogX + 234, dialogY + 230, 1, 0xffffff);
 
 		if (!this.duelAccepted) {
-			this.surface.drawSpriteID((dialogX + 118) - 35, dialogY + 238, this.spriteMedia + 25);
-			this.surface.drawSpriteID((dialogX + 352) - 35, dialogY + 238, this.spriteMedia + 26);
+			this.surface.drawSpriteID((dialogX + 118) - 35, dialogY + 238, mudclient.spriteMedia + 25);
+			this.surface.drawSpriteID((dialogX + 352) - 35, dialogY + 238, mudclient.spriteMedia + 26);
 		} else {
 			this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, 0xffff00);
 		}
@@ -5530,27 +5504,27 @@ label0:
 		this.surface.blackScreen();
 		if (this.welcomeState === WelcomeStates.NEW_USER) {
 			this.panelLogin[WelcomeStates.NEW_USER].render();
-			this.surface.drawSpriteID(0, this.gameHeight - 4, this.spriteMedia + 22);
+			this.surface.drawSpriteID(0, this.gameHeight - 4, mudclient.spriteMedia + 22);
 			this.surface.draw(this.graphics, 0, 0);
 			return;
 		}
 
 		let layerAlpha = (this.frameCounter * 2) % 3072;
 		if (layerAlpha < 1024) {
-			this.surface.drawSpriteID(0, 10, this.spriteLogo);
+			this.surface.drawSpriteID(0, 10, mudclient.spriteLogo);
 
 			if (layerAlpha > 768)
-				this.surface.fadeThenDrawSpriteID(0, 10, this.spriteLogo + 1, layerAlpha - 768);
+				this.surface.fadeThenDrawSpriteID(0, 10, mudclient.spriteLogo + 1, layerAlpha - 768);
 		} else if (layerAlpha < 2048) {
-			this.surface.drawSpriteID(0, 10, this.spriteLogo + 1);
+			this.surface.drawSpriteID(0, 10, mudclient.spriteLogo + 1);
 
 			if (layerAlpha > 1792)
-				this.surface.fadeThenDrawSpriteID(0, 10, this.spriteMedia + 10, layerAlpha - 1792);
+				this.surface.fadeThenDrawSpriteID(0, 10, mudclient.spriteMedia + 10, layerAlpha - 1792);
 		} else {
-			this.surface.drawSpriteID(0, 10, this.spriteMedia + 10);
+			this.surface.drawSpriteID(0, 10, mudclient.spriteMedia + 10);
 
 			if (layerAlpha > 2816)
-				this.surface.fadeThenDrawSpriteID(0, 10, this.spriteLogo, layerAlpha - 2816);
+				this.surface.fadeThenDrawSpriteID(0, 10, mudclient.spriteLogo, layerAlpha - 2816);
 		}
 
 		if (this.welcomeState === WelcomeStates.WELCOME) {
@@ -5562,7 +5536,7 @@ label0:
 		}
 
 		// blue bar
-		this.surface.drawSpriteID(0, this.gameHeight - 4, this.spriteMedia + 22);
+		this.surface.drawSpriteID(0, this.gameHeight - 4, mudclient.spriteMedia + 22);
 		this.surface.draw(this.graphics, 0, 0);
 	}
 
@@ -5570,7 +5544,7 @@ label0:
 		let uiX = this.surface.width2 - 199;
 		let uiY = 36;
 
-		this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 6);
+		this.surface.drawSpriteID(uiX - 49, 3, mudclient.spriteMedia + 6);
 
 		let uiWidth = 196;
 
@@ -5788,32 +5762,32 @@ label0:
 			let name = GameData.textureName[i];
 			let buff1 = Utility.loadData(name + '.dat', 0, buffTextures);
 
-			this.surface.parseSprite(this.spriteTexture, buff1, buffIndex, 1);
+			this.surface.parseSprite(mudclient.spriteTexture, buff1, buffIndex, 1);
 			// 128x128 magenta/pink box at 0,0
 			this.surface.drawBox(0, 0, 128, 128, 0xFF00FF);
-			this.surface.drawSpriteID(0, 0, this.spriteTexture);
+			this.surface.drawSpriteID(0, 0, mudclient.spriteTexture);
 
-			let width = this.surface.spriteWidthFull[this.spriteTexture];
+			let width = this.surface.spriteWidthFull[mudclient.spriteTexture];
 			let nameSub = GameData.textureSubtypeName[i];
 
 			if (nameSub && nameSub.length > 0) {
 				let buff2 = Utility.loadData(nameSub + '.dat', 0, buffTextures);
 
-				this.surface.parseSprite(this.spriteTexture, buff2, buffIndex, 1);
-				this.surface.drawSpriteID(0, 0, this.spriteTexture);
+				this.surface.parseSprite(mudclient.spriteTexture, buff2, buffIndex, 1);
+				this.surface.drawSpriteID(0, 0, mudclient.spriteTexture);
 			}
 
-			this.surface._drawSprite_from5(this.spriteTextureWorld + i, 0, 0, width, width);
+			this.surface._drawSprite_from5(mudclient.spriteTextureWorld + i, 0, 0, width, width);
 
 			let area = width * width;
 
 			// below replaces max green pixels with purple/pink (max red and max blue) pixels
 			for (let j = 0; j < area; j++)
-				if (this.surface.surfacePixels[this.spriteTextureWorld + i][j] === 0x00FF00)
-					this.surface.surfacePixels[this.spriteTextureWorld + i][j] = 0xFF00FF;
+				if (this.surface.surfacePixels[mudclient.spriteTextureWorld + i][j] === 0x00FF00)
+					this.surface.surfacePixels[mudclient.spriteTextureWorld + i][j] = 0xFF00FF;
 
-			this.surface.drawWorld(this.spriteTextureWorld + i);
-			this.scene.defineTexture(i, this.surface.spriteColoursUsed[this.spriteTextureWorld + i], this.surface.spritePalettes[this.spriteTextureWorld + i], (width >> 6) - 1);
+			this.surface.drawWorld(mudclient.spriteTextureWorld + i);
+			this.scene.defineTexture(i, this.surface.spriteColoursUsed[mudclient.spriteTextureWorld + i], this.surface.spritePalettes[mudclient.spriteTextureWorld + i], (width >> 6) - 1);
 		}
 	}
 
@@ -5859,17 +5833,17 @@ label0:
 		if (type === 0) {
 			// let j2 = 0x0000FF + time * 5 * 256;
 			// this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 20 + time * 2, 0x0000FF + time * 5 * 256, 0xFF - time * 5);
-			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 20 + time * 2, 0x00FF00 + time * 5 * 256, 0xFF - time * 5);
+			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 20 + (time << 1), 0x00FF00 + time * 0x500, 0xFF - time * 5);
 		}
 
 		if (type === 1) {
 			// let k2 = 0xFF0000 + time * 5 * 256;
-			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 10 + time, 0xFF0000 + time * 5 * 256, 0xFF - time * 5);
+			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 10 + time, 0xFF0000 + time * 0x500, 0xFF - time * 5);
 			// this.surface.drawCircle(x + ((w / 2) | 0), y + ((h / 2) | 0), 10 + time, k2, 0xFF - time * 5);
 		}
 		if (type === 2) {
 			// let k2 = 0xFF0000 + time * 5 * 256;
-			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 10 + time, 0xFF0000 + time * 5 * 256, 0xFF - time * 5);
+			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 10 + time, 0xFF0000 + time * 0x500, 0xFF - time * 5);
 			// this.surface.drawCircle(x + ((w / 2) | 0), y + ((h / 2) | 0), 10 + time, k2, 0xFF - time * 5);
 		}
 	}
@@ -5897,8 +5871,8 @@ label0:
 	updateObjectAnimation(i, s) {
 		let j = this.objectX[i];
 		let k = this.objectY[i];
-		let l = j - (this.localPlayer.currentX >> 7);
-		let i1 = k - (this.localPlayer.currentY >> 7);
+		let l = j - (this.localPlayer.currentX >>> 7);
+		let i1 = k - (this.localPlayer.currentY >>> 7);
 		let byte0 = 7;
 
 		if (j >= 0 && k >= 0 && j < 96 && k < 96 && l > -byte0 && l < byte0 && i1 > -byte0 && i1 < byte0) {
@@ -5927,6 +5901,26 @@ label0:
 		return this.mouseButtonClick === 3;
 	}
 
+	sortContextMenu() {
+		// lets reset the indices
+		for (let i = 0; i < this.menuItemsCount; i++)
+			this.menuIndices[i] = i;
+		// now we'll loop repeatedly from top to bottom of entry list, and if any adjacent nodes get moved, loop through the list all over
+		// we stop once we can iterate the entire entry set without reordering any entries.
+sorter:
+		while (true) {
+			for (let idx = 0; idx < this.menuItemsCount - 1; idx++) {
+				if (this.menuItemID[this.menuIndices[idx]] > this.menuItemID[this.menuIndices[idx+1]]) {
+					let higher = this.menuIndices[idx];
+					this.menuIndices[idx] = this.menuIndices[idx+1];
+					this.menuIndices[idx+1] = higher;
+					continue sorter;
+				}
+			}
+			break sorter;
+		}
+	}
+
 	handleDefaultClick() {
 		if (this.selectedSpell >= 0 || this.selectedItemInventoryIndex >= 0) {
 			this.menuItemText1[this.menuItemsCount] = 'Cancel';
@@ -5935,23 +5929,7 @@ label0:
 			this.menuItemsCount++;
 		}
 
-		// lets reset the indices
-		for (let i = 0; i < this.menuItemsCount; i++)
-			this.menuIndices[i] = i;
-
-		// now we'll loop repeatedly from top to bottom of entry list, and if any adjacent nodes get moved, loop through the list all over
-		// we stop ordering once we can iterate the entire entry set without reordering any entries.
-		for (let finished = false; !finished; ) {
-			finished = true;
-			for (let idx = 0; idx < this.menuItemsCount - 1; idx++) {
-				if (this.menuItemID[this.menuIndices[idx]] > this.menuItemID[this.menuIndices[idx+1]]) {
-					let higher = this.menuIndices[idx];
-					this.menuIndices[idx] = this.menuIndices[idx+1];
-					this.menuIndices[idx+1] = higher;
-					finished = false;
-				}
-			}
-		}
+		this.sortContextMenu();
 
 		if (this.menuItemsCount > 20)
 			this.menuItemsCount = 20;
@@ -6259,7 +6237,7 @@ label0:
 
 		if (mItemId === 900) {
 			this.walkToMob(this.localRegionX, this.localRegionY, mx, my, true);
-			this.clientStream.queue(Ops.CAST_GROUND(mx, my, mIdx));
+			this.clientStream.queue(Ops.CAST_GROUND(mx, my, this.selectedSpell));
 			this.selectedSpell = -1;
 		}
 
@@ -6271,7 +6249,7 @@ label0:
 		}
 
 		if (mItemId === 1000) {
-			this.clientStream.queue(Ops.CAST_SELF(mx, my, mIdx));
+			this.clientStream.queue(Ops.CAST_SELF(this.selectedSpell));
 			this.selectedSpell = -1;
 		}
 
@@ -6310,8 +6288,8 @@ label0:
 		// server tiles translate to mesh model tiles in multiples of 128
 		// the right shift of first 7 bits off the top of the value gives us the server coords.
 		// mesh tiles = server tiles * 128
-		let j = this.localPlayer.currentX >> 7;
-		let k = this.localPlayer.currentY >> 7;
+		let j = this.localPlayer.currentX >>> 7;
+		let k = this.localPlayer.currentY >>> 7;
 
 		// check within 2 tiles of our player
 		for (let l = 2; l > 0; l--) {
@@ -6408,12 +6386,8 @@ label0:
 				bitOffset += 8;
 				for (let mobIndex = 0; mobIndex < knownMobCount; mobIndex++) {
 					let mobToUpdate = this.knownPlayers[mobIndex + 1];
-					let changed = Utility.getBitMask(pdata, bitOffset, 1) !== 0;
-					bitOffset += 1;
-					if (changed) {
-						let moved = Utility.getBitMask(pdata, bitOffset, 1) === 0;
-						bitOffset += 1;
-						if (moved) {
+					if (Utility.getBitMask(pdata, bitOffset++, 1) !== 0) {
+						if (Utility.getBitMask(pdata, bitOffset++, 1) === 0) {
 							let direction = Utility.getBitMask(pdata, bitOffset, 3);
 							bitOffset += 3;
 							let step = mobToUpdate.waypointCurrent;
@@ -6425,24 +6399,18 @@ label0:
 								case 2:
 								case 3:
 									curX += this.tileSize;
-									break;
-								case 5:
-								case 6:
-								case 7:
-									curX -= this.tileSize;
-									break;
-							}
-							switch(direction) {
 								case 3:
 								case 4:
 								case 5:
 									curY += this.tileSize;
-									break;
+								case 5:
+								case 6:
+								case 7:
+									curX -= this.tileSize;
 								case 7:
 								case 0:
 								case 1:
 									curY -= this.tileSize;
-									break;
 							}
 
 							mobToUpdate.animationNext = direction;
@@ -6452,9 +6420,15 @@ label0:
 						} else {
 							let status = Utility.getBitMask(pdata, bitOffset, 4);
 							bitOffset += 2;
+							// Removing a mob uses only 2 bits, continue to next mob in list
 							if (status&0b1100 === 0b1100)
 								continue;
 
+							// this branch is mainly for combat initiation, as the
+							// bits needed to store a right fighting stance is more 
+							// than what's needed for walk directions...
+							// Sometimes we could see this if npcs change dir to face
+							// a player or etc too
 							mobToUpdate.animationNext = status;
 							bitOffset += 2;
 						}
@@ -6482,13 +6456,13 @@ label0:
 					let direction = Utility.getBitMask(pdata, bitOffset, 4);
 					bitOffset += 4;
 
-					let meshX = ((this.localRegionX + areaX) * this.tileSize) + 64;
-					let meshY = ((this.localRegionY + areaY) * this.tileSize) + 64;
+					let meshX = (this.localRegionX + areaX) * this.tileSize + 64;
+					let meshY = (this.localRegionY + areaY) * this.tileSize + 64;
 
 					this.createPlayer(serverIndex, meshX, meshY, direction);
 					// TODO: Erase for 235
 					// if (Utility.getBitMask(pdata, bitOffset++, 1) === 0)
-						// this.playerServerIndexes[newCount++] = serverIndex;
+						// this.playersServerIndexes[newCount++] = serverIndex;
 				}
 
 				// if (newCount > 0) {
@@ -6504,7 +6478,8 @@ label0:
 					if (Utility.getUnsignedByte(pdata[offset]) === 0xFF) {
 						offset++;
 						// The target should be removed when the first byte is maxed out
-						// determine mesh coordinates from the entity location deltas
+						// determine mesh-chunk (8x8 tiles in a square) coordinates from
+						// the entity location deltas
 						let deltamX = this.localRegionX + pdata[offset++] >> 3;
 						let deltamY = this.localRegionY + pdata[offset++] >> 3;
 
@@ -6544,13 +6519,15 @@ label0:
 									continue;
 								}
 
+								// TODO: Investigate if this handles objects covering 2 tiles
 								this.groundItemZ[this.groundItemCount] = GameData.objectElevation[this.objectId[k23]];
 								break;
 							}
 
 							this.groundItemCount++;
 						} else {
-							itemID &= 0x7FFF
+							// The bit for removing one specific ID at one specific tile was set
+							itemID &= 0x7FFF;
 
 							let savedItems = 0;
 							for (let item = 0; item < this.groundItemCount; item++) {
@@ -6630,29 +6607,36 @@ label0:
 
 						this.objectCount = listIndex;
 
-						if (id !== 60000) {
+						if (id !== 0xEA60) {
+							// this is kinda neat.  The game seems to figure out
+							// the orientation for a scenary object from the maps
+							// in the cache files.  One would assume it was detailed
+							// in the protocol, but it is not!
 							let direction = this.world.getTileDirection(deltaX, deltaY);
-							let width = 0;
-							let height = 0;
+							let height = GameData.objectHeight[id];
+							let width = GameData.objectWidth[id];
 
-							if (direction === 0 || direction === 4) {
-								width = GameData.objectWidth[id];
-								height = GameData.objectHeight[id];
-							} else {
+							if (direction !== 0 && direction !== 4) {
 								height = GameData.objectWidth[id];
 								width = GameData.objectHeight[id];
 							}
 
-							let mX = ((deltaX + deltaX + width)  * this.tileSize) >> 1;
+							let mX = ((deltaX + deltaX + width ) * this.tileSize) >> 1;
 							let mY = ((deltaY + deltaY + height) * this.tileSize) >> 1;
 							let modelIdx = GameData.objectModelIndex[id];
 							let model = this.gameModels[modelIdx].copy();
 
 							this.scene.addModel(model);
 
+							// index?
 							model.key = this.objectCount;
-							model.rotate(0, direction * 32, 0);
+							// Each direction has a granularity of 32 rotation units
+							// this shift acts same as direction*32
+							model.rotate(0, direction << 5, 0);
+							// Move the model up/down to wherever they need to be
 							model.translate(mX, -this.world.getElevation(mX, mY), mY);
+							// Standard daylight uses -50, -10, -50 as coords, 48,48 as ambience/magnitude, or something
+							// Strong possibility these are not really what the values represent just a novice with 3D math
 							model.createGouraudLightSource(true, 48, 48, -50, -10, -50);
 
 							this.world.removeObject2(deltaX, deltaY, id);
@@ -6680,7 +6664,7 @@ label0:
 				this.inventoryItemsCount = Utility.getUnsignedByte(pdata[offset++]);
 				for (let i = 0; i < this.inventoryItemsCount; i++) {
 					this.inventoryItemId[i] = Utility.getUnsignedShort(pdata, offset) & 0x7FFF;
-					this.inventoryEquipped[i] = (Utility.getUnsignedShort(pdata, offset) >>> 15) !== 0;
+					this.inventoryEquipped[i] = this.inventoryItemId[i] !== Utility.getUnsignedShort(pdata, offset);
 					offset += 2;
 
 					if (GameData.itemStackable[this.inventoryItemId[i]] !== 0) {
@@ -6701,7 +6685,7 @@ label0:
 				offset += 2;
 updateLoop:
 				for (let update = 0; update < updateCount; update++) {
-					let updatePlayer = this.playerServer[Utility.getUnsignedShort(pdata, offset)];
+					let updatePlayer = this.playersServer[Utility.getUnsignedShort(pdata, offset)];
 					offset += 2;
 
 					let updateType = pdata[offset++];
@@ -7153,8 +7137,8 @@ updateLoop:
 				let serverIndex = Utility.getUnsignedShort(pdata, offset);
 				offset += 2;
 
-				if (this.playerServer[serverIndex])
-					this.tradeRecipientName = this.playerServer[serverIndex].name;
+				if (this.playersServer[serverIndex])
+					this.tradeRecipientName = this.playersServer[serverIndex].name;
 
 				this.tradeConfigVisible = true;
 				this.tradeRecipientAccepted = false;
@@ -7315,8 +7299,8 @@ updateLoop:
 			if (opcode === S_OPCODES.DUEL_OPEN) {
 				let j5 = Utility.getUnsignedShort(pdata, 1);
 
-				if (this.playerServer[j5])
-					this.duelOpponentName = this.playerServer[j5].name;
+				if (this.playersServer[j5])
+					this.duelOpponentName = this.playersServer[j5].name;
 
 				this.duelConfigVisible = true;
 				this.duelOfferOpponentAccepted = false;
@@ -7462,7 +7446,7 @@ updateLoop:
 				}
 
 				this.inventoryItemId[index] = (id & 0x7FFF);
-				this.inventoryEquipped[index] = ((id & 0x8000) >>> 15) !== 0;
+				this.inventoryEquipped[index] = (id & 0x8000) !== 0;
 				this.inventoryItemStackCount[index] = stack;
 				if (index >= this.inventoryItemsCount)
 					this.inventoryItemsCount = index + 1;
@@ -7612,7 +7596,7 @@ updateLoop:
 				this.isSleeping = true;
 				this.inputTextCurrent = '';
 				this.inputTextFinal = '';
-				this.surface.readSleepWord(this.spriteTexture + 1, pdata);
+				this.surface.readSleepWord(mudclient.spriteTexture + 1, pdata);
 				this.sleepingStatusText = void 0;
 				return;
 			}
@@ -7678,59 +7662,59 @@ updateLoop:
 		let uiX = this.surface.width2 - 199;
 		let uiY = 36;
 
-		this.surface.drawSpriteID(uiX - 49, 3, this.spriteMedia + 3);
+		this.surface.drawSpriteID(uiX - 49, 3, mudclient.spriteMedia + 3);
 
 		let uiWidth = 196;
 		let uiHeight = 275;
 		let l = 0;
-		let k = l = Surface.rgbToLong(160, 160, 160);
+		let k = l = 0xA0A0A0;
 
 		if (this.uiTabPlayerInfoSubTab === 0)
-			k = Surface.rgbToLong(220, 220, 220);
+			k = 0xDCDCDC;
 		else
-			l = Surface.rgbToLong(220, 220, 220);
+			l = 0xDCDCDC;
 
-		this.surface.drawBoxAlpha(uiX, uiY, Math.floor(uiWidth / 2), 24, k, 128);
-		this.surface.drawBoxAlpha(uiX + Math.floor(uiWidth / 2), uiY, uiWidth / 2 | 0, 24, l, 128);
-		this.surface.drawBoxAlpha(uiX, uiY + 24, uiWidth, uiHeight - 24, Surface.rgbToLong(220, 220, 220), 128);
+		this.surface.drawBoxAlpha(uiX, uiY, uiWidth >>> 1, 24, k, 0x80);
+		this.surface.drawBoxAlpha(uiX + (uiWidth >>> 1), uiY, uiWidth >>> 1, 24, l, 0x80);
+		this.surface.drawBoxAlpha(uiX, uiY + 24, uiWidth, uiHeight - 24, 0xDCDCDC, 0x80);
 		this.surface.drawLineHoriz(uiX, uiY + 24, uiWidth, 0);
-		this.surface.drawLineVert(uiX + Math.floor(uiWidth / 2), uiY, 24, 0);
-		this.surface.drawStringCenter('Stats', uiX + Math.floor(uiWidth / 4), uiY + 16, 4, 0);
-		this.surface.drawStringCenter('Quests', uiX + Math.floor(uiWidth / 4) + Math.floor(uiWidth / 2), uiY + 16, 4, 0);
+		this.surface.drawLineVert(uiX + (uiWidth >>> 1), uiY, 24, 0);
+		this.surface.drawStringCenter('Stats', uiX + (uiWidth >>> 2), uiY + 16, 4, 0);
+		this.surface.drawStringCenter('Quests', uiX + (uiWidth >>> 2) + Math.floor(uiWidth >>> 1), uiY + 16, 4, 0);
 
 		if (this.uiTabPlayerInfoSubTab === 0) {
 			let i1 = 72;
 			let skillIndex = -1;
 
-			this.surface.drawString('Skills', uiX + 5, i1, 3, 0xffff00);
+			this.surface.drawString('Skills', uiX + 5, i1, 3, 0xFFFF00);
 
 			i1 += 13;
 
 			for (let l1 = 0; l1 < 9; l1++) {
-				let i2 = 0xffffff;
+				let color = 0xFFFFFF;
 
 				if (this.mouseX > uiX + 3 && this.mouseY >= i1 - 11 && this.mouseY < i1 + 2 && this.mouseX < uiX + 90) {
-					i2 = 0xff0000;
+					color = 0xFF0000;
 					skillIndex = l1;
 				}
 
-				this.surface.drawString(this.skillNameShort[l1] + ':@yel@' + this.playerStatCurrent[l1] + '/' + this.playerStatBase[l1], uiX + 5, i1, 1, i2);
-				i2 = 0xffffff;
+				this.surface.drawString(`${this.skillNameShort[l1]}:@yel@${this.playerStatCurrent[l1]}/${this.playerStatBase[l1]}`, uiX + 5, i1, 1, color);
+				color = 0xFFFFFF;
 
 				if (this.mouseX >= uiX + 90 && this.mouseY >= i1 - 13 - 11 && this.mouseY < (i1 - 13) + 2 && this.mouseX < uiX + 196) {
-					i2 = 0xff0000;
+					color = 0xFF0000;
 					skillIndex = l1 + 9;
 				}
 
-				this.surface.drawString(this.skillNameShort[l1 + 9] + ':@yel@' + this.playerStatCurrent[l1 + 9] + '/' + this.playerStatBase[l1 + 9], (uiX + Math.floor(uiWidth / 2)) - 5, i1 - 13, 1, i2);
+				this.surface.drawString(`${this.skillNameShort[l1 + 9]}:@yel@${this.playerStatCurrent[l1 + 9]}/${this.playerStatBase[l1 + 9]}`, (uiX + (uiWidth >>> 1)) - 5, i1 - 13, 1, color);
 				i1 += 13;
 			}
 
-			this.surface.drawString('Quest Points:@yel@' + this.playerQuestPoints, uiX + Math.floor(uiWidth / 2) - 5, i1 - 13, 1, 0xffffff);
+			this.surface.drawString('Quest Points:@yel@' + this.playerQuestPoints, uiX + Math.floor(uiWidth / 2) - 5, i1 - 13, 1, 0xFFFFFF);
 			i1 += 12;
-			this.surface.drawString('Fatigue: @yel@' + Math.floor((this.statFatigue * 100) / 750) + '%', uiX + 5, i1 - 13, 1, 0xffffff);
+			this.surface.drawString('Fatigue: @yel@' + Math.floor((this.statFatigue * 100) / 750) + '%', uiX + 5, i1 - 13, 1, 0xFFFFFF);
 			i1 += 8;
-			this.surface.drawString('Equipment Status', uiX + 5, i1, 3, 0xffff00);
+			this.surface.drawString('Equipment Status', uiX + 5, i1, 3, 0xFFFF00);
 			i1 += 12;
 
 			for (let j2 = 0; j2 < 3; j2++) {
@@ -7749,13 +7733,13 @@ updateLoop:
 				i1 += 12;
 
 				let expThresh = mudclient.experienceTable[0];
-				for (let lvl = 0; lvl < MAX_STAT-1; lvl++)
-					if (this.playerExperience[skillIndex] >= mudclient.experienceTable[lvl] / 4)
-						expThresh = mudclient.experienceTable[lvl + 1] / 4;
+				for (let lvl = 1; lvl < MAX_STAT-1; lvl++)
+					if (this.playerExperience[skillIndex] >= Math.floor(expThresh / 4))
+						expThresh = mudclient.experienceTable[lvl];
 
 				this.surface.drawString('Total xp: ' + Math.floor(this.playerExperience[skillIndex]), uiX + 5, i1, 1, 0xFFFFFF);
 				i1 += 12;
-				this.surface.drawString('Next level at: ' + expThresh, uiX + 5, i1, 1, 0xFFFFFF);
+				this.surface.drawString('Next level at: ' + Math.floor(expThresh / 4), uiX + 5, i1, 1, 0xFFFFFF);
 			} else {
 				this.surface.drawString('Overall levels', uiX + 5, i1, 1, 0xFFFF00);
 				i1 += 12;
@@ -8211,16 +8195,15 @@ updateLoop:
 //				this.mouseActionTimeout++;
 				await this.handleGameInput();
 		} catch (e) {
-			console.error(e);
-			this.runtimeException = new GameException(e, true);
-			// OutOfMemory
 			this.freeCacheMemory();
+			// OutOfMemory
+			this.runtimeException = new GameException(e, true);
+			console.error(e);
 		}
 
 		this.lastMouseButtonDown = 0;
-		this.middleButtonDown = false;
+		// this.middleButtonDown = false;
 		this.cameraRotationTime++;
-
 		if (this.messageTabFlashAll > 0)
 			this.messageTabFlashAll--;
 		if (this.messageTabFlashHistory > 0)
@@ -8297,8 +8280,8 @@ updateLoop:
 					this.panelLogin[WelcomeStates.NEW_USER].setTextHandle(this.controlRegisterStatus, '@yel@Your username must be between 3 and 12 characters long.');
 					return;
 				}
-				if (pass.length < 3 || pass.length > 20) {
-					this.panelLogin[WelcomeStates.NEW_USER].setTextHandle(this.controlRegisterStatus, '@yel@Your password must be between 3 and 20 characters long.');
+				if (pass.length < 5 || pass.length > 20) {
+					this.panelLogin[WelcomeStates.NEW_USER].setTextHandle(this.controlRegisterStatus, '@yel@Your password must be between 5 and 20 characters long.');
 					return;
 				}
 				if (pass !== confPass) {
@@ -8364,29 +8347,31 @@ updateLoop:
 		let k2 = GameData.wallObjectTextureBack[id];
 		let l2 = GameData.wallObjectHeight[id];
 		let gameModel = GameModel._from2(4, 1);
-
-		if (direction === 0) {
-			x2 = x + 1;
+		switch (direction) {
+		case 0:
+			x2++;
+			break;
+		case 1:
+			y2++;
+			break;
+		case 2:
+			x1++;
+			y2++;
+			break;
+		case 3:
+			x2++;
+			y2++;
+			break;
 		}
 
-		if (direction === 1) {
-			y2 = y + 1;
-		}
-
-		if (direction === 2) {
-			x1 = x + 1;
-			y2 = y + 1;
-		}
-
-		if (direction === 3) {
-			x2 = x + 1;
-			y2 = y + 1;
-		}
-
-		x1 *= this.tileSize;
-		y1 *= this.tileSize;
-		x2 *= this.tileSize;
-		y2 *= this.tileSize;
+		// x1 *= this.tileSize;
+		// y1 *= this.tileSize;
+		// x2 *= this.tileSize;
+		// y2 *= this.tileSize;
+		x1 <<= 7;
+		y1 <<= 7;
+		x2 <<= 7;
+		y2 <<= 7;
 
 		let i3 = gameModel.vertexAt(x1, -this.world.getElevation(x1, y1), y1);
 		let j3 = gameModel.vertexAt(x1, -this.world.getElevation(x1, y1) - l2, y1);
@@ -8395,11 +8380,12 @@ updateLoop:
 		let ai = new Int32Array([i3, j3, k3, l3]);
 
 		gameModel.createFace(4, ai, j2, k2);
+		// 60,24 is for ambience/magnitude presumptively
+		// TODO: Verify my assumptions
 		gameModel.createGouraudLightSource(false, 60, 24, -50, -10, -50);
 
-		if (x >= 0 && y >= 0 && x < 96 && y < 96) {
+		if (x >= 0 && y >= 0 && x < 96 && y < 96)
 			this.scene.addModel(gameModel);
-		}
 
 		gameModel.key = count + 10000;
 
@@ -8411,19 +8397,42 @@ updateLoop:
 	}
 }
 
-Object.defineProperty(mudclient, "experienceTable", {
-	get: () => {
-		if (!mudclient._experienceTable) {
-			mudclient._experienceTable = new Uint32Array(MAX_STAT);
-			let totalExp = 0;
-			for (let level = 1; level < MAX_STAT; level++) {
-				let exp = level + (300 * Math.pow(2, level / 7));
-				totalExp += exp;
-				// AND (NOT 3) will disable final 2 bits; identical semantics here to AND 0xFFFFFFC
-				mudclient._experienceTable[level-1] = totalExp & ~3;
+Object.defineProperties(mudclient, {
+	'spriteMedia': {
+		value: 2000,
+	},
+	'spriteUtil': {
+		value: 2100,
+	},
+	'spriteItem': {
+		value: 2150,
+	},
+	'spriteLogo': {
+		value: 3150,
+	},
+	'spriteProjectile': {
+		value: 3160,
+	},
+	'spriteTexture': {
+		value: 3210,
+	},
+	'spriteTextureWorld': {
+		value: 3220,
+	},
+	'experienceTable': {
+		value: (() => {
+			if (!mudclient._experienceTable) {
+				mudclient._experienceTable = new Uint32Array(MAX_STAT);
+				let totalExp = 0;
+				for (let level = 0; level < MAX_STAT-1; level++) {
+					let exp = level+1 + 300 * (2 ** ((level+1) / 7)) >>> 0;
+					totalExp += exp;
+					// AND (NOT 3) will disable final 2 bits; identical semantics here to AND 0xFFFFFFC
+					mudclient._experienceTable[level] = totalExp & (~3 >>> 0);
+				}
 			}
-		}
-		return mudclient._experienceTable;
+			return mudclient._experienceTable;
+		})(),
 	},
 });
 export {

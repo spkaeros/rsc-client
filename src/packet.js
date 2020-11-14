@@ -1,5 +1,6 @@
 import GameException from './lib/game-exception';
 import Timer from './timer';
+import rng from './lib/isaac';
 
 const txtEncoder = new TextEncoder('utf-8');
 
@@ -22,8 +23,7 @@ class Packet {
 		// the limitation is in the header encoding.  Length is encoded conditionally,
 		// and one branch subtracts 160 from the first byte (big-endian), before the shift resulting in
 		// a range of up to 24320, add 255 to this and you get 24575, our maximum encodable smart length.
-		this.data = new Uint8Array(BYTES_LIMIT+HEADER_LEN);
-		this.buff = new Uint8Array(BYTES_LIMIT+HEADER_LEN);
+		this.data = new Int8Array(BYTES_LIMIT+HEADER_LEN);
 		this.readLength = 0;
 		this.writeMarker = 0;
 		this.endMarker = HEADER_LEN;
@@ -69,23 +69,25 @@ class Packet {
 					// header
 					if (this.readLength === 0 && this.availableStream() >= 2) {
 						this.readTries = 0;
-						this.readLength = await this.getByte();
+						this.readLength = await this.UInt8();
 						if (this.readLength >= 160)
-							this.readLength = ((this.readLength - 160) << 8) | await this.getByte();
+							this.readLength = ((this.readLength - 160) << 8) | await this.UInt8();
 					}
 					// frame
 					if (this.readLength > 0 && this.availableStream() >= this.readLength) {
 						this.readTries = 0;
 						let readLen = this.readLength;
-						let buff = new Int8Array(readLen);
+						let buff = Buffer.alloc(readLen);
 						if (readLen < 160)
-							buff[--readLen] = await this.getByte();
+							buff[--readLen] = await this.UInt8();
 						if (readLen > 0)
-							await this.readBytes(readLen, buff);
+							await this.readStreamBytes(buff, 0, readLen);
 						this.readLength = 0;
 						this.reader.tickCount = 0;
 						this.readTries = 0;
-						return buff;
+						if (Packet.inCipher)
+							buff[0] = (buff[0] - (Packet.inCipher.rand()>>>0))&0xFF;
+						return Int8Array.from(buff);
 					}
 					
 					this.reader.tickCount = this.reader.tickThreshold - 1;
@@ -150,7 +152,7 @@ class Packet {
 	send(p) {
 		if (!p.data) {
 			console.warn("data-less packet, huge problem:" + p);
-	//		p.data = Int8Array.of([1, p.opcode + (Packet.isaacOut.rand()>>>0)&0xFF])
+	//		p.data = Uint8Array.of([1, p.opcode + (Packet.isaacOut.rand()>>>0)&0xFF])
 		}
 		this.writeStreamBytes(p.data, 0, p.writeMarker);
 	}
@@ -197,7 +199,6 @@ class Packet {
 			} catch (e) {
 				this.exceptionMessage = e.message;
 				this.didError = true;
-				console.log('tick()')
 			}
 		}
 
@@ -205,7 +206,8 @@ class Packet {
 			this.data = new Uint8Array(BYTES_LIMIT+3);
 
 		this.data[this.writeMarker+2] = op & 0xFF;
-		if (op !== 0 && Packet.isaacOut) this.data[this.writeMarker+2] = (this.data[this.writeMarker+2]+(Packet.isaacOut.rand()>>>0))&0xFF;
+		if (op !== 0 && Packet.outCipher)
+			this.data[this.writeMarker+2] = (this.data[this.writeMarker+2]+(Packet.outCipher.rand()>>>0))&0xFF;
 		this.endMarker = this.writeMarker + 3;
 		this.data[this.endMarker] = 0;
 		// set end caret to the buffer position directly following header bytes and opcode
@@ -219,35 +221,34 @@ class Packet {
 	}
 
 	// Reads an unsigned byte (uint8) from the network buffer and returns it.
-	async getByte() {
+	async UInt8() {
 		return await this.readStream() & 0xFF;
 	}
 
-	// Reads an unsigned byte (uint8) from the network buffer and returns it.
-	async getUByte() {
-		return await this.getByte();
+	async Int8() {
+		return await this.readStream();
 	}
 
 	// Reads a big-endian unsigned short integer (uint16) from the network buffer and returns it.
-	async getShort() {
-		return (await this.getUByte() << 8) | await this.getUByte();
+	async UInt16() {
+		return (await this.UInt8() << 8) | await this.UInt8();
 	}
 
 	// Reads a big-endian unsigned integer (uint32) from the network buffer and returns it.
-	async getInt() {
-		return (await this.getShort() << 16) | await this.getShort()
+	async UInt32() {
+		return (await this.UInt16() << 16) | await this.UInt16()
 	}
 
 	async getSmart08_32() {
-		let i = await this.getByte();
+		let i = await this.UInt8();
 		if (i >= 128)
-			return ((i-128)<<24) | (await this.getByte() << 16) | (await this.getByte() << 8) | await this.getByte();
+			return ((i-128)<<24) | (await this.UInt8() << 16) | (await this.UInt8() << 8) | await this.UInt8();
 		return i;
 	}
 
 	// Reads a big-endian unsigned long integer (uint64) from the network buffer and returns it.
 	async getLong() {
-		return 	((BigInt(await this.getInt()) << 32n) | BigInt(await this.getInt()));
+		return 	((BigInt(await this.UInt32()) << 32n) | BigInt(await this.UInt32()));
 		// let high = await this.getInt();
 		// let low = await this.getInt();
 		// return new Long(low, high, true);
@@ -259,13 +260,8 @@ class Packet {
 		this.putByte('\0');
 	}
 
-	putBigBuffer(b) {
-		this.putShort(b.length);
-		this.putBytes(b);
-	}
-
 	putBuffer(b) {
-		this.putByte(b.length);
+		this.putShort(b.length);
 		this.putBytes(b);
 	}
 
@@ -398,5 +394,34 @@ class Packet {
 	}
 
 }
+
+Object.defineProperties(Packet, {
+	'initCipher': {
+		value: seed => {
+			Packet.inCipher.seed(seed);
+			Packet.outCipher.seed(seed);
+		},
+	},
+	'inCipher': {
+		get: () => {
+			if (!Packet._isaacIn)
+				Packet._isaacIn = rng.isaac();
+			return Packet._isaacIn;
+		},
+		set: c => {
+			Packet._isaacIn = c;
+		},
+	},
+	'outCipher': {
+		get: () => {
+			if (!Packet._isaacOut)
+				Packet._isaacOut = rng.isaac();
+			return Packet._isaacOut;
+		},
+		set: c => {
+			Packet._isaacOut = c;
+		},
+	},
+});
 
 export { Packet as default }
