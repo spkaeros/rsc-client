@@ -1,43 +1,23 @@
-class FileDownloadStream {
-    constructor(file) {
-        this.url = file;
+import fetch from 'node-fetch';
 
-        this.xhr = new XMLHttpRequest();
-        this.xhr.responseType = 'arraybuffer';
-        this.xhr.open('GET', file, true);
+async function download(url) {
+	if (!url || !url.length) {
+		return;
+	}
 
-        this.buffer = null;
-        this.pos = 0;
-    }
-
-    async _loadResBytes() {
-        return new Promise((resolve, reject) => {
-            this.xhr.onerror = e => reject(e);
-
-            this.xhr.onload = () => {
-                if (this.xhr.status === 2) {
-                    reject(new Error(`unable to download ${this.url}. status code = ${this.xhr.status}`));
-                } else {
-                    resolve(new Int8Array(this.xhr.response));
-                }
-            };
-
-            this.xhr.send();
-        });
-    }
-
-    async readFully(dest, off = 0, len) {
-        if (typeof len === 'undefined') {
-            len = dest.length;
-        }
-
-        if (!this.buffer) {
-            this.buffer = await this._loadResBytes();
-        }
-
-        dest.set(this.buffer.slice(this.pos, this.pos + len), off);
-        this.pos += len;
-    }
+	return new Promise(async (resolve, reject) => {
+		await fetch(url).then((res) => {
+			if (res.status === 200)
+				return res.arrayBuffer();
+			reject(res);
+		}).then((data) => {
+			resolve(Buffer.from(data));
+		});
+	});
 }
 
-module.exports = FileDownloadStream;
+
+export {
+	download as default,
+	download,
+}

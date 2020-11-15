@@ -129,7 +129,6 @@ export default class GameConnection extends GameShell {
 
 			this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port), this);
 			this.clientStream.send(Ops.LOGIN(u, p, reconnecting));
-
 			let resp = await this.clientStream.readStream();
 			console.log('login response:' + resp&~64 + ' raw:' + resp);
 			switch ((resp&~64)) {

@@ -1,5 +1,4 @@
 import BZLib from './bzlib';
-import FileDownloadStream from './lib/net/file-download-stream';
 import Enum from './lib/enum';
 import RSA from './gamelib/rsa';
 
@@ -11,10 +10,6 @@ const C_BIG_Z = 'Z'.charCodeAt(0);
 const C_Z = 'z'.charCodeAt(0);
 
 class Utility {
-	static openFile(s) {
-		return new FileDownloadStream(s);
-	}
-	
 	/* buffer functions start */
 	static getBytes(buf, off = 0, len = buf.length) {
 		if (buf.length < off)

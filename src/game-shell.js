@@ -3,10 +3,12 @@ import Color from './lib/graphics/color';
 import Font from './lib/graphics/font';
 import Graphics from './lib/graphics/graphics';
 import Socket from './lib/net/socket';
+// import Socket from 'simple-websocket';
 import Surface from './surface';
 import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
 import VERSION from './version';
 import { TGA } from './lib/tga';
+import { download } from './lib/net/file-download-stream'
 
 const ModifierKeyNames = ['Control', 'Shift', 'Alt', 'CapsLock', 'OS', 'Delete', 'Insert', 'Tab', 'Unidentified', 'AudioVolumeMute', 'AudioVolumeUp', 'AudioVolumeDown',
 		'MediaTrackPrevious', 'MediaPlay', 'MediaTrackNext', 'BrowserSearch', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']
@@ -404,7 +406,7 @@ export default class GameShell {
 	async draw() {}
 
 	async sleep(ms) {
-		return new Promise(res => setInterval(res, ms));
+		return new Promise(res => setTimeout(res, ms));
 	}
 	
 	async run() {
@@ -526,7 +528,7 @@ export default class GameShell {
 			if (this.dumpRequested || this.showFps && this.targetFrameTime > 0)
 				this.fps = (1000*j) / (this.targetFrameTime << 8) | 0;
 			i1 &= 0xFF;
-			await this.draw();
+			this.draw();
 
 			this.mouseScrollDelta = 0;
 			if (this.dumpRequested) {
@@ -661,51 +663,35 @@ export default class GameShell {
 	}
 	
 	async readDataFile(file, description, percent) {
-		file = './static/cache/' + file;
-		
-		
-		this.updateLoadingStatus(percent, 'Loading ' + description + ' - 0%');
-		
-		let fileDownloadStream = Utility.openFile(file);
-		let header = new Int8Array(6);
-		
-		await fileDownloadStream.readFully(header, 0, 6);
-		
+		this.updateLoadingStatus(percent, `Loading ${description} - 0%`);
+		let fileData = await download(`./static/cache/${file}`);
+		let header = fileData.slice(0, 6);
 		let archiveSize = ((header[0] & 0xFF) << 16) + ((header[1] & 0xFF) << 8) + (header[2] & 0xFF);
 		let archiveSizeCompressed = ((header[3] & 0xFF) << 16) + ((header[4] & 0xFF) << 8) + (header[5] & 0xFF);
 		
-		this.updateLoadingStatus(percent, 'Loading ' + description + ' - 5%');
-		
-		let read = 0;
-		let archiveData = new Int8Array(archiveSizeCompressed);
-		
-		while (read < archiveSizeCompressed) {
-			let length = Math.min(archiveSizeCompressed - read, 8192);
-			await fileDownloadStream.readFully(archiveData, read, length);
-			read += length;
-
-			this.updateLoadingStatus(percent, 'Loading ' + description + ' - ' + (5 + (read * 95) / archiveSizeCompressed | 0) + '%');
+		let archiveData = fileData.slice(6);
+		if (archiveData.length < archiveSizeCompressed) {
+			return;
 		}
-		
-		
+		// this.updateLoadingStatus(percent, 'Loading ' + description + ' - ' + (5 + ((fileData.length - 6) * 95) / archiveSizeCompressed | 0) + '%');
+
 		this.updateLoadingStatus(percent, 'Unpacking ' + description);
 		if (archiveSizeCompressed !== archiveSize) {
-			// archive was bzip-compressed as a whole, like a jagball or something
-			let decompressed = new Int8Array(archiveSize);
+			// archive was bzip-compressed as a whole, as a jagball
+			let decompressed = Buffer.alloc(archiveSize);
 			BZLib.decompress(decompressed, archiveSize, archiveData, archiveSizeCompressed, 0);
 			return decompressed;
-		} else {
-			// Each entry has its own compression, or there is no compression involved here.
-			return archiveData;
 		}
+		// Each entry has its own compression, or there is no compression involved here.
+		return archiveData;
 	}
 	
 	getGraphics() {
 		return this._graphics;
 	}
 	
-	async createSocket(s, i) {
-		let socket = new Socket(s, i);
+	async createSocket(host, port) {
+		let socket = new Socket(host, port);
 		await socket.connect();
 		return socket;
 	}
