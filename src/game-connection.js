@@ -30,6 +30,7 @@ export default class GameConnection extends GameShell {
 		this.ignoreList = new BigUint64Array(GameConnection.socialListSize);
 		this.privateMessageIds = new Uint32Array(GameConnection.socialListSize);
 		this.timeoutCheck = Timer.fromSeconds(5);
+		this.clientStream = new NetworkStream();
 	}
 	
 	async registerAccount(username, password) {
@@ -37,18 +38,20 @@ export default class GameConnection extends GameShell {
 			let user = Utility.formatAndTruncate(username, 12);
 			let pass = Utility.formatAndTruncate(password, 20);
 
-			if (this.clientStream)
+
+			if (!this.clientStream.closed)
 				this.clientStream.closeStream();
 			
 			this.updateWelcomeStatuses('Please wait...', 'creating new account...');
-			this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace('http', 'ws') + "//" + window.location.hostname, this.port), this);
+			// this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace('http', 'ws') + "//" + window.location.hostname, this.port), this);
+			await this.clientStream.connect(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port);
 			this.clientStream.send(Ops.REGISTER(user, pass));
 			let response = await this.clientStream.readStream();
 			console.log('newplayer response: ' + response);
 			this.clientStream.closeStream();
 			switch(response) {
 			case 2: // success
-				this.resetLoginVars();
+				this.resetLoginPanels();
 				await this.login(user, pass, false)
 				return;
 			case 13: // username taken
@@ -123,19 +126,18 @@ export default class GameConnection extends GameShell {
 			else
 				this.updateWelcomeStatuses('Please wait...', 'Connecting to server');
 
-
-			if (this.clientStream)
+			if (!this.clientStream.closed)
 				this.clientStream.closeStream();
-
-			this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port), this);
+			// this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port), this);
+			await this.clientStream.connect(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port);
 			this.clientStream.send(Ops.LOGIN(u, p, reconnecting));
 			let resp = await this.clientStream.readStream();
-			console.log('login response:' + resp&~64 + ' raw:' + resp);
+			console.debug('login response:' + resp&(~64) + " (" + resp + ")");
 			switch ((resp&~64)) {
 			case 25:
 			case 24:
 				this.autoLoginTimeout = 0;
-				this.moderatorLevel = (resp&~64)-23;
+				this.moderatorLevel = (resp&(~64))-23;
 				this.resetWorldState();
 				return;
 			case 0:
@@ -145,7 +147,7 @@ export default class GameConnection extends GameShell {
 				return;
 			case 1:
 				if (reconnecting)
-					this.resetLoginVars();
+					this.resetLoginPanels();
 				this.autoLoginTimeout = 0;
 				return;
 			case -1:
@@ -228,14 +230,14 @@ export default class GameConnection extends GameShell {
 	closeConnection() {
 		if (this.clientStream) {
 			try {
-				this.clientStream.send(Ops.DISCONNECT());
-				this.clientStream.closeStream();
+				this.clientStream.queue(Ops.DISCONNECT());
+				// this.clientStream.closeStream();
 			} catch (e) {
 				console.error(e);
 			}
 		}
 		
-		this.resetLoginVars();
+		this.resetLoginPanels();
 	}
 	
 	async lostConnection() {
@@ -263,13 +265,13 @@ export default class GameConnection extends GameShell {
 		this.graphics.fillRect(Math.floor(this.surface.width2 / 2) - 140, Math.floor(this.surface.height2 / 2) - 25, 280, 50);
 		// text
 		let font = Font.HELVETICA.bold(15);
-		this.drawString(this.graphics, s, font, Math.floor(this.surface.width2 / 2), Math.floor(this.surface.height2 / 2) - 10);
-		this.drawString(this.graphics, s1, font, Math.floor(this.surface.width2 / 2), Math.floor(this.surface.height2/2) + 10);
+		this.drawString(this.graphics, s, font, this.surface.width2 >>> 1, (this.surface.height2 >>> 1) - 10);
+		this.drawString(this.graphics, s1, font, this.surface.width2 >>> 1, (this.surface.height2 >>> 1) + 10);
 	}
 	
 	async checkConnection() {
 		this.timeoutCheck.tick(() => {
-			this.clientStream.queue(Ops.PING());
+			this.clientStream.send(Ops.PING());
 		})
 
 		if (this.clientStream.hasPacket()) {
@@ -278,6 +280,10 @@ export default class GameConnection extends GameShell {
 		
 		try {
 			this.clientStream.tick();
+			if (this.clientStream.didError) {
+				await this.lostConnection();
+				return;
+			}
 		} catch (e) {
 			console.error(e.message);
 			console.warn('Error in socket write subroutine:', e)
@@ -377,7 +383,7 @@ export default class GameConnection extends GameShell {
 			for (let uuid of this.privateMessageIds)
 				if (uuid === pmUuid)
 					return;
-			this.privateMessageIds[GameConnection.privateMessageUuid] = pmUuid;
+			this.privateMessageIds[this.privateMessageUuid] = pmUuid;
 			this.showServerMessage('@pri@' + Utility.hashToUsername(fromHash) + ': tells you ' + this.chatSystem.decode(data.slice(offset)));
 			return;
 		}
@@ -498,21 +504,16 @@ export default class GameConnection extends GameShell {
 		super.stop();
 		return;
 	}
+
+	get privateMessageUuid() {
+		if (!this._privateMessageUuid)
+			this._privateMessageUuid = 0;
+		this._privateMessageUuid = (this._privateMessageUuid++) % this.socialListSize;
+
+		return this._privateMessageUuid;
+	}
 }
 
 Object.defineProperty(GameConnection, 'socialListSize', {
 	value: 200,
-});
-
-Object.defineProperties(GameConnection, {
-	'privateMessageUuid': {
-		get: () => {
-			if (!GameConnection._privateMessageUuid)
-				GameConnection._privateMessageUuid = 0;
-			GameConnection._privateMessageUuid = (++GameConnection._privateMessageUuid) % GameConnection.socialListSize;
-
-			return GameConnection._privateMessageUuid;
-		},
-		set: void 0,
-	},
 });

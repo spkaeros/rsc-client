@@ -1,16 +1,23 @@
 import Packet from './packet';
+import Socket from './lib/net/socket';
 
 class NetworkStream extends Packet {
-	constructor(socket) {
+	constructor() {
 		super();
 		this.closing = false;
 		this.closed = false;
-		this.socket = socket;
+		// this.socket = socket;
+	}
+	
+	async connect(host, port) {
+		this.closing = this.closed = false;
+		this.socket = await createSocket(host, port);
 	}
 
 	closeStream() {
 		this.closing = true;
-		this.socket.close();
+		if (this.socket)
+			this.socket.close();
 		this.closed = true;
 	}
 
@@ -42,6 +49,12 @@ class NetworkStream extends Packet {
 
 		this.socket.write(buff, off, len);
 	}
+}
+
+async function createSocket(host, port) {
+	let socket = new Socket(host, port);
+	await socket.connect();
+	return socket;
 }
 
 export { NetworkStream as default };

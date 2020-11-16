@@ -2,23 +2,19 @@ import BZLib from './bzlib';
 import Enum from './lib/enum';
 import RSA from './gamelib/rsa';
 
-const C_0 = '0'.charCodeAt(0);
-const C_9 = '9'.charCodeAt(0);
-const C_A = 'a'.charCodeAt(0);
-const C_BIG_A = 'A'.charCodeAt(0);
-const C_BIG_Z = 'Z'.charCodeAt(0);
-const C_Z = 'z'.charCodeAt(0);
+const C_0 = '0'.charCodeAt(0), C_9 = '9'.charCodeAt(0), C_A = 'a'.charCodeAt(0), C_BIG_A = 'A'.charCodeAt(0),
+	C_BIG_Z = 'Z'.charCodeAt(0), C_Z = 'z'.charCodeAt(0);
 
 class Utility {
 	/* buffer functions start */
-	static getBytes(buf, off = 0, len = buf.length) {
-		if (buf.length < off)
-			// Fallback to returning entire buffer, decoded as a UTF-8 char-stream, if offset was out of bounds
+	static getBytes(buf, off = 0, len = (buf.length - off)) {
+		// Fallback to returning entire buffer, decoded as a UTF-8 char-stream, if offset was out of bounds
+		if (off >= len)
 			return buf.slice();
-		if (buf.length < off+len)
-			// Fallback to returning buf[off:], decoded as a UTF-8 char-stream, if length was out of bounds
+		// Fallback to returning buf[off:], decoded as a UTF-8 char-stream, if length was out of bounds
+		if (off+len >= buf.length)
 			return buf.slice(off);
-		// inputs were seemingly sane and valid; slice buf[off:off+len] from the buffer and return it decoded as a UTF-8 char-stream
+		// inputs were seemingly sane and valid; slice buf[off:off+len] from the buffer and return it
 		return buf.slice(off, off+len);
 	}
 

@@ -6,6 +6,39 @@ import { Utility } from '../utility';
 import { encryptBytes } from './rsa';
 
 class Ops {
+	// I have already got TLS encryption active by default here, but in the name of protocol compatibility,
+	// I have also left the code in the login block which is responsible for initializing JaGEx cryptography
+	// primitives alone.
+	// To be clear, this is identical to the login packet in the mc235 network protocol.  The single difference is that
+	// I pad out the XTEA block to encrypt the entire username 100% of the time, where mc235 will leave most of a username
+	// as plaintext if it doesn't align with the size of an XTEA block (8 bytes in each block).
+	static LOGIN(username, password, reconnecting = false) {
+		let keyWords = Buffer.alloc(6);
+		crypto.getRandomValues(keyWords);
+		Packet.initCipher(keyWords.slice(0, 4));
+		let keys = Buffer.alloc(24);
+		for (let i = 0; i < 4; i++)
+			keys.writeUInt32BE(keyWords[i], i<<2);
+		let p = new Packet(OPS.LOGIN);
+		p.startAccess();
+		p.putBool(reconnecting);
+		p.putInt(VERSION.CLIENT);
+		// RSA block structure is as follows:
+		//  -  Single constant byte with value 0xA, likely used as a checksum to identify when the block failed decyption
+		//  -  16 random bytes, making up 4x32bit integers; used to seed ISAAC opcode cipher and XTEA username block
+		//  -  Password as plaintext string, always padded to take 20 bytes long using a single whitespace char (0x32), terminated by a NULL byte.
+		//  -  8 more random bytes, this could either be a nonce, or used as an IV to ensure the block is semantically secure.
+		p.putBuffer(Utility.rsaEncrypt(Buffer.concat([Buffer.of(10), keys.slice(0, 16), Buffer.from(password, 'utf-8'), Buffer.alloc(19-password.length, 0x20), Buffer.of(0), keys.slice(16, 24)])));
+		// XTEA block structure as follows:
+		//  - Single NULL byte
+		//  - 24 random bytes of data, this is probably an IV to make sure the XTEA block is semantically secure, but also could be a nonce.
+		//  - Username, encoded as a UTF-8 string, using a NULL terminating byte.
+		//  - Single NULL byte
+		p.putBuffer(xtea.encrypt(Buffer.concat([Buffer.of(0), keys, Buffer.from(username), Buffer.of(0)]), keys));
+		p.stopAccess();
+		return p;
+	}
+
 	static COMMAND(s) {
 		let p = new Packet(OPS.COMMAND);
 		p.startAccess();
@@ -60,7 +93,7 @@ class Ops {
 		p.startAccess();
 		p.putShort(slot);
 		p.putInt(amount);
-		p.putInt(withdraw ? 0x12345678 : 0x87654321)
+		p.putInt(withdraw ? 0x12345678 : 0x87654321);
 		p.stopAccess();
 		return p;
 	}
@@ -94,6 +127,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static REMOVE_FRIEND(u) {
 		let p = new Packet(OPS.FRIEND_REMOVE);
 		p.startAccess();
@@ -101,6 +135,7 @@ class Ops {
 		p.stopAccess();
 		return p;
 	}
+
 	static REMOVE_IGNORE(u) {
 		let p = new Packet(OPS.IGNORE_REMOVE);
 		p.startAccess();
@@ -131,29 +166,6 @@ class Ops {
 		p.putBoolean(priv);
 		p.putBoolean(trade);
 		p.putBoolean(duel);
-		p.stopAccess();
-		return p;
-	}
-
-	static LOGIN(username, password, reconnecting = false) {
-		// I deprecated the security of the traditional Jagex protocol (rsa+isaac) in favor of traditional TLS mechanisms
-		// which are inherently more secure and also we gain the support for it through built-in standardized libraries automatically
-		// Even though we no longer need to, I still encrypt the login block for the reason that one may wish to provide non-TLS
-		// client support and this will protect the user login credentials in this case.
-
-		// 45 bytes??  set it to 64 just for safety
-		let keyWords = Buffer.alloc(6);
-		crypto.getRandomValues(keyWords);
-		Packet.initCipher(keyWords.slice(0, 4));
-		let keys = Buffer.alloc(24);
-		for (let i = 0; i < 4; i++)
-			keys.writeUInt32BE(keyWords[i], i<<2);
-		let p = new Packet(OPS.LOGIN);
-		p.startAccess();
-		p.putBool(reconnecting);
-		p.putInt(VERSION.CLIENT);
-		p.putBuffer(Utility.rsaEncrypt(Buffer.concat([Buffer.of(10), keys.slice(0, 16), Buffer.from(password, 'utf-8'), Buffer.alloc(19-password.length, 0x20), Buffer.of(0), keys.slice(16, 24)])));
-		p.putBuffer(xtea.encrypt(Buffer.concat([Buffer.of(0), keys, Buffer.from(username), Buffer.of(0)]), keys));
 		p.stopAccess();
 		return p;
 	}

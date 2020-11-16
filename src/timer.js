@@ -6,35 +6,42 @@ import {GameException} from './lib/game-exception';
 // which should perform the task we want done at the specified interval, and subsequently reset the counter to do it all over again.
 // Ticks are to be considered as 20ms long increments of time.  Every second is 50 ticks, so 1 minute is 3000 ticks.
 class Timer {
-	constructor(tickThreshold = 50) {
+	constructor(tickThreshold = 50, cb) {
 		this.tickCount = 0;
 		this.tickThreshold = tickThreshold;
+		this.cb = cb;
+		this.index = Timer.current = Timer.current + 1;
 	}
 
-	async tick(callback) {
-		if (this.tickThreshold === -1)
-			return void 0;
+	async tick(callback = this.cb) {
+		if (!this.enabled)
+			return;
 
 		if (++this.tickCount >= this.tickThreshold) {
 			this.tickCount = 0;
 			try {
 				return await callback();
 			} catch(exception) {
-				console.error(exception);
-				return void 0;
+				throw exception;
+				return;
 			}
 		}
-		return void 0;
+		return;
 	}
 
 	disable() {
 		this.tickThreshold = -1;
 	}
+
+	get enabled() {
+		return this.tickThreshold !== -1;
+	}
 }
 
 Object.defineProperty(Timer, "fromSeconds", {
 	value: (i) => {
-		return new Timer(i*50);
+		let timer = new Timer(i*50);
+		return timer;
 	},
 	// writable: false,
 	// configurable: false,

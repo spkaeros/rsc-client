@@ -73,10 +73,14 @@ export function formatNumber(n) {
 }
 
 export function remove(arr,elem) {
-	for (let t in arr) {
+	for (let t = 0; t < arr.length; t += 1) {
 		if (arr[t] === elem) {
-			arr = arr.slice(0, t).concat(arr.slice(t+1));
-			return arr.slice(0, t).concat(arr.slice(t+1));
+			if (t < arr.length-1) {
+				arr = arr.slice(0, t).concat(arr.slice(t+1));
+			} else {
+				arr = arr.slice(0, t);
+			}
+			return arr;
 		}
 	}
 	return;
@@ -99,10 +103,11 @@ export default class mudclient extends GameConnection {
 		super(canvas);
 		this.welcomed = false;
 		this.prayers = [ false, false, false, false, false, false, false, false, false, false, false, false, false, false ];
-		this.lastLog = [];
-		this.lastLogIdx = -1;
+		this.chatHistory = [];
 		this.tickables = [];
 		this.tickablesCaret = 0;
+		this.combatTimer = new Timer(-1);
+		this.addTimer(this.combatTimer);
 		this.pathStepsMax = 8000;
 		this.entitysMax = ENTITY_LIMIT;
 		this.playersMax = ENTITY_LIMIT;
@@ -231,7 +236,7 @@ export default class mudclient extends GameConnection {
 		this.controlRegisterCheckbox = 0;
 		this.controlLoginSavePass = 0;
 		this.controlRegisterStatus = 0;
-		this.combatTimeout = 0;
+		// this.combatTimeout = 0;
 		this.optionMenuCount = 0;
 		this.reportAbuseOffence = 0;
 		this.cameraRotationTime = 0;
@@ -883,12 +888,12 @@ inventory:
 			this.mouseButtonClick = 0;
 			return;
 		}
-		if (this.bankVisible && this.combatTimeout === 0) {
+		if (this.bankVisible && !this.combatTimer.enabled) {
 			this.renderBank();
 			this.mouseButtonClick = 0;
 			return;
 		}
-		if (this.shopVisible && this.combatTimeout === 0) {
+		if (this.shopVisible && !this.combatTimer.enabled) {
 			this.renderShop();
 			this.mouseButtonClick = 0;
 			return;
@@ -937,6 +942,7 @@ inventory:
 		if (this.localPlayer.isFighting())
 			this.renderFightModeSelect();
 
+		// Actuates the onhover behaviors observed with the top right buttons
 		this.openHoveredTab();
 
 		let noVisibleMenus = !this.showOptionMenu && !this.visibleContextMenu;
@@ -1189,7 +1195,7 @@ inventory:
 		this.systemUpdate = 0;
 		this.combatStyle = 0;
 		// this.logoutTimeout = 0;
-		// this.resetLoginVars()
+		// this.resetLoginPanels()
 
 		this.resetPMText();
 		this.surface.blackScreen();
@@ -1208,11 +1214,9 @@ inventory:
 		}
 		this.wallObjectCount = 0;
 		this.groundItemCount = 0;
-
 		this.playerCount = 0;
 		this.players = new Array(this.playersMax);
 		this.playersServer = new Array(this.playersMax);
-
 		this.npcCount = 0;
 		this.npcs = new Array(this.npcsMax);
 		this.npcsServer = new Array(this.npcsMax);
@@ -1224,6 +1228,8 @@ inventory:
 		this.shopVisible = false;
 		this.bankVisible = false;
 		this.isSleeping = false;
+		this.visibleContextMenu = false;
+		this.showOptionMenu = false;
 		this.friendListOnline = new Array(GameConnection.socialListSize);
 		this.friendListHashes = new BigUint64Array(GameConnection.socialListSize);
 		this.ignoreList = new BigUint64Array(GameConnection.socialListSize);
@@ -1401,8 +1407,8 @@ inventory:
 		if (this.gameState !== GameStates.WORLD)
 			return;
 
-		if (this.combatTimeout > 0) {
-			if (this.combatTimeout > secondsToFrames(9)) {
+		if (this.combatTimer.enabled) {
+			if (this.combatTimer.tickCount < secondsToFrames(1)) {
 				this.showMessage("@cya@You can't logout during combat!", 3);
 				return;
 			}
@@ -1411,7 +1417,7 @@ inventory:
 		}
 
 		// this.clientStream.newPacket(C_OPCODES.LOGOUT);
-		this.clientStream.send(Ops.LOGOUT());
+		this.clientStream.queue(Ops.LOGOUT());
 		this.logoutBoxFrames = secondsToFrames(20);
 	}
 
@@ -1419,7 +1425,6 @@ inventory:
 		let player = this.playersServer[serverIndex];
 		
 		if (!player) {
-			// this.playersServer.push(new GameCharacter);
 			player = this.playersServer[serverIndex] = new GameCharacter();
 			this.playersServer[serverIndex].serverIndex = serverIndex;
 			this.playersServer[serverIndex].appearanceTicket = 0;
@@ -1767,12 +1772,22 @@ inventory:
 		if (this.logoutBoxFrames > 0)
 			this.logoutBoxFrames--;
 
-		if (this.combatTimeout > 0)
-			this.combatTimeout--;
-
 		if (this.localPlayer.isFighting())
-			this.combatTimeout = secondsToFrames(10);
+			this.combatTimer.tickThreshold = secondsToFrames(10);
 
+		for (let t = 0; t < this.tickables.length; t += 1) {
+			let tickable = this.tickables[t];
+			if (tickable && tickable.enabled) {
+				if (tickable.cb) {
+					await tickable.tick();
+				} else {
+					await tickable.tick(() => {
+						tickable.disable();
+						// this.removeTimer(tickable);
+					});
+				}
+			}
+		}
 		if (this.deathScreenTimeout > 0) {
 			if (--this.deathScreenTimeout === 0) {
 				this.showMessage('You have been granted another life. Be more careful this time!', 3);
@@ -1956,13 +1971,13 @@ inventory:
 		if (this.panelGame[GamePanels.CHAT].isClicked(this.controlTextListAll)) {
 			let s = this.panelGame[GamePanels.CHAT].getText(this.controlTextListAll);
 			if (s.length > 0) {
-				this.panelGame[GamePanels.CHAT].setTextHandle(this.controlTextListAll, '');
-				this.lastLog.push(s);
-				this.lastLogIdx = -1;
+				this.chatHistoryIndex = -1;
+				this.chatHistory.push(s);
 
-				if (/^::/.test(s)) {
+				this.panelGame[GamePanels.CHAT].setTextHandle(this.controlTextListAll, '');
+				if (/^::.*/.test(s)) {
 					let cmd = s.substring(2);
-					if ( /^closecon$/i.test(cmd) ) {
+					if ( /^closeconn?$/i.test(cmd) ) {
 						this.clientStream.closeStream();
 						return;
 					}
@@ -1970,7 +1985,7 @@ inventory:
 						this.closeConnection();
 						return;
 					}
-					if ( /^(lostcon|dc)$/i.test(cmd) ) {
+					if ( /^(lostconn?|dc)$/i.test(cmd) ) {
 						await this.lostConnection();
 						return;
 					}
@@ -3027,7 +3042,7 @@ inventory:
 		return npc;
 	}
 
-	resetLoginVars() {
+	resetLoginPanels() {
 		this.welcomeState = WelcomeStates.WELCOME;
 		this.gameState = GameStates.LOGIN;
 		this.logoutBoxFrames = 0;
@@ -6277,7 +6292,7 @@ sorter:
 
 	async lostConnection() {
 		if (this.logoutBoxFrames !== 0) {
-			this.resetLoginVars();
+			this.resetLoginPanels();
 			return;
 		}
 
@@ -7654,7 +7669,7 @@ updateLoop:
 			}
 
 			this.clientStream.closeStream();
-			this.resetLoginVars();
+			this.resetLoginPanels();
 		}
 	}
 
@@ -7934,6 +7949,8 @@ updateLoop:
 					} else if (type === 3) {
 						let s1 = '';
 						let levelDiff = -1;
+						if (!this.npcs[idx])
+							continue;
 						let id = this.npcs[idx].typeID;
 
 						if (GameData.npcAttackable[id] > 0) {
