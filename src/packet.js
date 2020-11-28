@@ -54,7 +54,8 @@ class Packet {
 					if (this.didError) {
 						this.reset();
 						this.writeMarker = HEADER_LEN;
-						this.socketException = new GameException(this.exceptionMessage);
+						this.didError = true;
+						this.socketException = new GameException(Error(this.exceptionMessage));
 						this.pqueue = [];
 						return this.socketException;
 					}
@@ -62,8 +63,10 @@ class Packet {
 						this.reader.tickCount = 0;
 						this.exceptionMessage = 'time-out';
 						this.didError = true;
-						throw new Error(this.exceptionMessage);
-						return void 0;
+						this.socketException = new GameException(Error(this.exceptionMessage));
+						this.pqueue = [];
+						this.reset();
+						return this.socketException;
 					}
 
 					// header
@@ -86,7 +89,7 @@ class Packet {
 						this.reader.tickCount = 0;
 						this.readTries = 0;
 						if (Packet.inCipher)
-							buff[0] = (buff[0] - (Packet.inCipher.rand()>>>0))&0xFF;
+							buff[0] = (buff[0] - Packet.inCipher.random())&0xFF;
 						return Int8Array.from(buff);
 					}
 					
@@ -114,7 +117,7 @@ class Packet {
 			if (this.didError) {
 				this.reset();
 				this.writeMarker = HEADER_LEN;
-				this.socketException = new GameException(this.exceptionMessage);
+				this.socketException = new GameException(Error(this.exceptionMessage));
 				this.pqueue = [];
 				return;
 			}
@@ -150,10 +153,8 @@ class Packet {
 	}
 
 	send(p) {
-		if (!p.data) {
+		if (!p.data)
 			console.warn("data-less packet, huge problem:" + p);
-	//		p.data = Uint8Array.of([1, p.opcode + (Packet.isaacOut.rand()>>>0)&0xFF])
-		}
 		this.writeStreamBytes(p.data, 0, p.writeMarker);
 	}
 
@@ -205,12 +206,12 @@ class Packet {
 		if (!this.data)
 			this.data = new Uint8Array(BYTES_LIMIT+3);
 
-		this.data[this.writeMarker+2] = op & 0xFF;
+		this.data[this.writeMarker + 2] = op & 0xFF;
 		if (op !== 0 && Packet.outCipher)
-			this.data[this.writeMarker+2] = (this.data[this.writeMarker+2]+(Packet.outCipher.rand()>>>0))&0xFF;
+			this.data[this.writeMarker + 2] = (op + Packet.outCipher.random()) & 0xFF;
+		// set end caret to the buffer position directly following header bytes and opcode
 		this.endMarker = this.writeMarker + 3;
 		this.data[this.endMarker] = 0;
-		// set end caret to the buffer position directly following header bytes and opcode
 	}
 
 	reset() {
@@ -405,7 +406,7 @@ Object.defineProperties(Packet, {
 	'inCipher': {
 		get: () => {
 			if (!Packet._isaacIn)
-				Packet._isaacIn = rng.isaac();
+				Packet._isaacIn = rng();
 			return Packet._isaacIn;
 		},
 		set: c => {
@@ -415,7 +416,7 @@ Object.defineProperties(Packet, {
 	'outCipher': {
 		get: () => {
 			if (!Packet._isaacOut)
-				Packet._isaacOut = rng.isaac();
+				Packet._isaacOut = rng();
 			return Packet._isaacOut;
 		},
 		set: c => {

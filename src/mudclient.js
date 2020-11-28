@@ -1,6 +1,7 @@
 import Color from './lib/graphics/color';
 import Font from './lib/graphics/font';
 import {Chat, Filter} from './word-filter';
+import chatCipher from './chat-cipher';
 import GameCharacter from './game-character';
 import GameConnection from './game-connection';
 import GameException from './lib/game-exception';
@@ -1190,12 +1191,11 @@ inventory:
 	}
 
 	resetWorldState() {
+		this.resetLoginPanels();
 		this.welcomeState = WelcomeStates.WELCOME;
 		this.gameState = GameStates.WORLD;
 		this.systemUpdate = 0;
 		this.combatStyle = 0;
-		// this.logoutTimeout = 0;
-		// this.resetLoginPanels()
 
 		this.resetPMText();
 		this.surface.blackScreen();
@@ -1284,7 +1284,7 @@ inventory:
 
 		if (this.uiTabSocialSubTab === 1) {
 			for (let j1 = 0; j1 < this.ignoreListCount; j1++) {
-				this.panelSocialList.addListEntry(this.controlListSocialPlayers, j1, '@yel@' + Utility.hashToUsername(this.ignoreList[j1]) + '~439~@whi@Remove         WWWWWWWWWW');
+				this.panelSocialList.addListEntry(this.controlListSocialPlayers, j1, '@yel@' + Utility.hashToUsername(this.ignoreList[j1]) + '~'+(this.width2 - 73)+'~@whi@Remove         WWWWWWWWWW');
 			}
 		}
 
@@ -1417,7 +1417,7 @@ inventory:
 		}
 
 		// this.clientStream.newPacket(C_OPCODES.LOGOUT);
-		this.clientStream.queue(Ops.LOGOUT());
+		this.clientStream.send(Ops.LOGOUT());
 		this.logoutBoxFrames = secondsToFrames(20);
 	}
 
@@ -1884,7 +1884,7 @@ inventory:
 				this.cameraAutoRotatePlayerY += (this.localPlayer.currentY - this.cameraAutoRotatePlayerY) / (16 + (((this.cameraZoom - 500) / 15) | 0)) | 0;
 
 			if (this.optionCameraModeAuto) {
-				let pivotAngle = this.cameraAngle * 32;
+				let pivotAngle = this.cameraAngle << 5;
 				if (pivotAngle === this.cameraRotation)
 					this.autoAngleFrameStep = 0;
 				else {
@@ -2747,22 +2747,16 @@ inventory:
 			if (this.mouseX < dialogX || this.mouseY < dialogY || this.mouseX > dialogX + 468 || this.mouseY > dialogY + 262) {
 				this.tradeConfirmVisible = false;
 				this.clientStream.queue(Ops.DECLINE_TRADE());
-				// this.clientStream.newPacket(C_OPCODES.TRADE_DECLINE);
-				// this.clientStream.sendPacket();
 			}
 
 			if (this.mouseX >= (dialogX + 118) - 35 && this.mouseX <= dialogX + 118 + 70 && this.mouseY >= dialogY + 238 && this.mouseY <= dialogY + 238 + 21) {
 				this.tradeConfirmAccepted = true;
 				this.clientStream.queue(Ops.ACCEPT_TRADE_TWO());
-				// this.clientStream.newPacket(C_OPCODES.TRADE_CONFIRM_ACCEPT);
-				// this.clientStream.sendPacket();
 			}
 
 			if (this.mouseX >= (dialogX + 352) - 35 && this.mouseX <= dialogX + 353 + 70 && this.mouseY >= dialogY + 238 && this.mouseY <= dialogY + 238 + 21) {
 				this.tradeConfirmVisible = false;
 				this.clientStream.queue(Ops.DECLINE_TRADE());
-				// this.clientStream.newPacket(C_OPCODES.TRADE_DECLINE);
-				// this.clientStream.sendPacket();
 			}
 
 			this.mouseButtonClick = 0;
@@ -5102,7 +5096,7 @@ label0:
 			// p.putByte(this.appearanceSkinColour);
 			// p.stopAccess();
 			// this.clientStream.add(p);
-			this.clientStream.send(Ops.CHANGE_APPEARANCE(this.appearanceHeadGender, this.appearanceHeadType, this.appearanceBodyGender,
+			this.clientStream.queue(Ops.CHANGE_APPEARANCE(this.appearanceHeadGender, this.appearanceHeadType, this.appearanceBodyGender,
 					this.appearance2Colour, this.appearanceHairColour, this.appearanceTopColour, this.appearanceBottomColour, this.appearanceSkinColour));
 			this.surface.blackScreen();
 			this.showAppearanceChange = false;
@@ -5747,9 +5741,6 @@ label0:
 					this.settingsBlockDuel = 1 - this.settingsBlockDuel;
 					this.sendPrivacySettings(this.settingsBlockChat, this.settingsBlockPrivate, this.settingsBlockTrade, this.settingsBlockDuel);
 				}
-//				if (this.mouseX > panelX && this.mouseX < panelX + width &&
-//						this.mouseY > panelY - 12 && this.mouseY < panelY + 4)
-//					this.sendLogout();
 			}
 
 			panelY += 60;
@@ -6410,22 +6401,28 @@ sorter:
 							let curY = mobToUpdate.waypointsY[step];
 
 							switch(direction) {
-								case 1:
-								case 2:
-								case 3:
-									curX += this.tileSize;
-								case 3:
-								case 4:
-								case 5:
-									curY += this.tileSize;
-								case 5:
-								case 6:
-								case 7:
-									curX -= this.tileSize;
-								case 7:
-								case 0:
-								case 1:
-									curY -= this.tileSize;
+							case 1:
+							case 2:
+							case 3:
+								curX += this.tileSize;
+								break;
+							case 5:
+							case 6:
+							case 7:
+								curX -= this.tileSize;
+								break;
+							}
+							switch(direction) {
+							case 3:
+							case 4:
+							case 5:
+								curY += this.tileSize;
+								break;
+							case 7:
+							case 0:
+							case 1:
+								curY -= this.tileSize;
+								break;
 							}
 
 							mobToUpdate.animationNext = direction;
@@ -6713,10 +6710,17 @@ updateLoop:
 							updatePlayer.bubble = new Bubble(id);
 					} else if (updateType === 1) {
 						// chat
-						let messageLength = pdata[offset++];
+						// let messageLength = pdata[offset++];
+						let msgSize = Utility.getUnsignedByte(pdata[offset++]);
+						if (msgSize >= 128)
+							msgSize = ((msgSize-128) << 8) | Utility.getUnsignedByte(pdata[offset++]);
+						let data = pdata.slice(offset);
+						let cryptMsg = chatCipher().decipher({buffer: data, size: msgSize, encSize: data.length});
+						let msg = this.chatSystem.normalize(cryptMsg.msg);
+						offset += cryptMsg.encSize;
 						if (updatePlayer) {
-							let msg = this.chatSystem.normalize(this.chatSystem.decode(pdata.slice(offset, offset+messageLength)));
-							offset += messageLength;
+							// let msg = this.chatSystem.normalize(this.chatSystem.decode(pdata.slice(offset, offset+messageLength)));
+							// offset += messageLength;
 							for (let idx = 0; idx < this.ignoreList.length; idx++)
 								if (this.ignoreList[idx] === updatePlayer.hash)
 									continue updateLoop;
@@ -6785,9 +6789,17 @@ updateLoop:
 						}
 					} else if (updateType === 6) {
 						// quest-chat
-						let mLen = pdata[offset++] & 0xFF;
-						let msg = this.chatSystem.normalize(this.chatSystem.decode(pdata.slice(offset, offset+mLen)));
-						offset += mLen;
+						let msgSize = Utility.getUnsignedByte(pdata[offset++]);
+						if (msgSize >= 128)
+							msgSize = ((msgSize-128) << 8) | Utility.getUnsignedByte(pdata[offset++]);
+						let data = pdata.slice(offset);
+						let cryptMsg = chatCipher().decipher({buffer: data, size: msgSize, encSize: data.length});
+						offset += cryptMsg.encSize;
+
+						// let mLen = pdata[offset++] & 0xFF;
+						let msg = this.chatSystem.normalize(cryptMsg.msg);
+						// let msg = this.chatSystem.normalize(this.chatSystem.decode(pdata.slice(offset, offset+mLen)));
+						// offset += mLen;
 						if (updatePlayer) {
 							updatePlayer.messageTimeout = secondsToFrames(3);
 							updatePlayer.message = msg;
@@ -6898,28 +6910,28 @@ updateLoop:
 							let curY = npc.waypointsY[step];
 
 							switch(direction) {
-								case 1:
-								case 2:
-								case 3:
-									curX += this.tileSize;
-									break;
-								case 5:
-								case 6:
-								case 7:
-									curX -= this.tileSize;
-									break;
+							case 1:
+							case 2:
+							case 3:
+								curX += this.tileSize;
+								break;
+							case 5:
+							case 6:
+							case 7:
+								curX -= this.tileSize;
+								break;
 							}
 							switch(direction) {
-								case 3:
-								case 4:
-								case 5:
-									curY += this.tileSize;
-									break;
-								case 7:
-								case 0:
-								case 1:
-									curY -= this.tileSize;
-									break;
+							case 3:
+							case 4:
+							case 5:
+								curY += this.tileSize;
+								break;
+							case 7:
+							case 0:
+							case 1:
+								curY -= this.tileSize;
+								break;
 							}
 
 							npc.animationNext = direction;
@@ -6987,10 +6999,12 @@ updateLoop:
 						offset += 2;
 						let msgSize = Utility.getUnsignedByte(pdata[offset++]);
 						if (msgSize >= 128)
-							msgSize = (msgSize << 8) | Utility.getUnsignedByte(pdata[offset++]);
-						offset += msgSize;
+							msgSize = ((msgSize-128) << 8) | Utility.getUnsignedByte(pdata[offset++]);
+						let data = pdata.slice(offset);
+						let cryptMsg = chatCipher().decipher({buffer: data, size: msgSize, encSize: data.length});
+						updatingNpc.message = this.chatSystem.normalize(cryptMsg.msg);
+						offset += cryptMsg.encSize;
 						updatingNpc.messageTimeout = secondsToFrames(3);
-						updatingNpc.message = this.chatSystem.normalize(this.chatSystem.decode(Utility.getBytes(pdata, offset, msgSize)));
 						if (target === this.localPlayer.serverIndex)
 							this.showMessage('@yel@' + GameData.npcName[updatingNpc.typeID] + ': ' + updatingNpc.message, 5);
 					} else if (updateType === 2) {
@@ -7005,12 +7019,11 @@ updateLoop:
 				return;
 			}
 			if (opcode === S_OPCODES.OPTION_LIST) {
-				let count = Utility.getUnsignedByte(pdata[offset++]);
-				this.optionMenuCount = count;
-				for (let i = 0; i < count; i++) {
-					let length = Utility.getUnsignedByte(pdata[offset++]);
-					this.optionMenuEntry[i] = this.chatSystem.decode(Utility.getBytes(pdata, offset, length));
-					offset += length;
+				this.optionMenuCount = Utility.getUnsignedByte(pdata[offset++]);
+				for (let i = 0; i < this.optionMenuCount; i++) {
+					let strLen = Utility.getUnsignedByte(pdata[offset]);
+					this.optionMenuEntry[i] = this.chatSystem.decode(Utility.getBytes(pdata, offset+1, offset+1+strLen));
+					offset += strLen+1;
 				}
 
 				this.showOptionMenu = true;
@@ -7216,7 +7229,7 @@ updateLoop:
 					this.shopItemPrice[itemIndex] = pdata[off++];
 				}
 
-				// shopType === 1 -> is a general shop
+				// shopType === 1 means this is a general shop
 				if (shopType === 1) {
 					let l28 = 39;
 

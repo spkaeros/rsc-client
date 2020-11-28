@@ -11,6 +11,10 @@ import Ops from './gamelib/packets';
 import S_OPCODES from './opcodes/server';
 import C_OPCODES from './opcodes/client';
 import Timer from './timer';
+import ChatCipher from './chat-cipher';
+
+let encoder = new TextEncoder('utf-8');
+let decoder = new TextDecoder('utf-8');
 
 export default class GameConnection extends GameShell {
 	constructor(canvas) {
@@ -126,8 +130,10 @@ export default class GameConnection extends GameShell {
 			else
 				this.updateWelcomeStatuses('Please wait...', 'Connecting to server');
 
-			if (!this.clientStream.closed)
+			if (!this.clientStream.closed) {
 				this.clientStream.closeStream();
+				this.clientStream = new NetworkStream();
+			}
 			// this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port), this);
 			await this.clientStream.connect(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port);
 			this.clientStream.send(Ops.LOGIN(u, p, reconnecting));
@@ -244,7 +250,6 @@ export default class GameConnection extends GameShell {
 		// this.closeConnection();
 		try {
 			this.socketException = new GameException(Error('Lost connection - attempting to re-establish...'), false);
-			throw this.socketException;
 		} catch (e) {
 			console.info('Network connection lost; re-establishing...');
 			console.error(e);
@@ -280,29 +285,27 @@ export default class GameConnection extends GameShell {
 		
 		try {
 			this.clientStream.tick();
-			if (this.clientStream.didError) {
-				await this.lostConnection();
-				return;
-			}
+			// if (this.clientStream.didError) {
+				// throw this.socketException;
+			// }
 		} catch (e) {
 			console.error(e.message);
 			console.warn('Error in socket write subroutine:', e)
-			await this.lostConnection();
+			this.closeConnection();
 			return;
 		}
 
 		try {
 			let buffer = await this.clientStream.nextPacket();
-			if (this.clientStream.didError) {
-				await this.lostConnection();
-				return;
-			}
+			// if (this.clientStream.didError) {
+				// throw this.socketException;
+			// }
 			if (!buffer || buffer.length <= 0)
 				return;
 			this.handlePacket(buffer);
 		} catch(e) {
 			console.warn('Error in socket read subroutine:', e)
-			await this.lostConnection();
+			this.closeConnection();
 			return;
 		}
 	}
@@ -489,11 +492,14 @@ export default class GameConnection extends GameShell {
 	}
 	
 	sendPrivateMessage(u, buff, len = buff.length) {
+		// let msg = ChatCipher.encipher(decoder.decode(buff.slice(0, len)));
+		
 		this.clientStream.queue(Ops.PM(u, buff));
 	}
 	
 	sendChatMessage(buff, len = buff.length) {
-		this.clientStream.queue(Ops.CHAT(buff));
+		let msg = ChatCipher().encipher(decoder.decode(buff.slice(0, len)));
+		this.clientStream.queue(Ops.CHAT(msg.buffer, msg.size));
 	}
 	
 	sendCommandString(s) {

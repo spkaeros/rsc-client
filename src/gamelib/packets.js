@@ -59,7 +59,11 @@ class Ops {
 	static CHAT(s, len = s.length) {
 		let p = new Packet(OPS.CHAT);
 		p.startAccess();
-		p.putBytes(s, 0, len);
+		if (len >= 0x80)
+			p.putShort(len + 0x8000);
+		else
+			p.putByte(len);
+		p.putBytes(s, 0, s.length);
 		p.stopAccess();
 		return p;
 	}
