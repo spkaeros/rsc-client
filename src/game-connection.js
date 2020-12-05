@@ -316,7 +316,12 @@ export default class GameConnection extends GameShell {
 		let opcode = Utility.getUnsignedByte(data[offset++]);
 		// console.info(`Incoming Packet: <opcode:${opcode};size:${size}>`);
 		if (opcode === S_OPCODES.MESSAGE) {
-			this.showServerMessage(this.chatSystem.decode(data.slice(offset)));
+			let msgType = Utility.getUnsignedByte(data, offset++);
+			let metaData = Utility.getUnsignedByte(data, offset++);
+			// bit 0x1 of metadata is for whether or not this message had sender username assigned to it
+			// bit 0x2 of metadata is for whether or not this message had a color code assigned to it
+			let msg = Utility.getString(data, offset);
+			this.showServerMessage(msg);
 			return;
 		}
 		if (opcode === S_OPCODES.CLOSE_CONNECTION){

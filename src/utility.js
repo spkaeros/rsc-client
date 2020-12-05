@@ -44,6 +44,23 @@ class Utility {
 		return (Utility.getUnsignedByte(data[off]) << 16 | Utility.getUnsignedShort(data, off+1));
 	}
 
+	static getSmart0816(data, off) {
+		let msgSize = Utility.getUnsignedByte(data[off++]);
+		if (msgSize >= 128)
+			msgSize = ((msgSize - 128) << 8) | Utility.getUnsignedByte(data[off++]);
+		return msgSize;
+	}
+
+	static getString(pdata, off) {
+		if (pdata[off++]&0xFF !== 0) {
+			return "";
+		}
+		let s = "";
+		for (let i = pdata[off++] & 0xFF; i !== 0; i = pdata[off++] & 0xFF)
+			s += String.fromCharCode(i);
+		return s;
+	}
+
 	static getUnsignedLong(data, off) {
 		return BigInt(Utility.getUnsignedByte(data[off])) << 56n |
 				BigInt(Utility.getUnsignedByte(data[off+1])) << 48n |

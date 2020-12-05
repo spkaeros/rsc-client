@@ -78,15 +78,23 @@ msgIter:
 					code = C_SPACE;
 				}
 			} else if (code === C_AT) {
-				if (index <= msg.length-5 && msg[index+4] === code) {
-					for (let posOff = index; posOff < msg.length; posOff++)
-						if(msg[index+posOff] === C_AT) {
-							index += posOff+1;
-							letterMod = UPPER_MODIFIER;
-							continue msgIter;
-						}
-					
+				if (index <= msg.length-5 && msg[index+4] === C_AT) {
+					index += 5;
 					letterMod = UPPER_MODIFIER;
+					continue;
+					// code = C_SPACE;
+					// for (index = index+1; index < msg.length; index += 1) {
+						// if (msg[index] === C_AT) {
+							// 
+						// }
+					// }
+						// if(msg[index+posOff] === C_AT) {
+							// index += posOff+1;
+							// letterMod = UPPER_MODIFIER;
+							// continue msgIter;
+						// }
+					
+					// letterMod = UPPER_MODIFIER;
 					// msg = msg.slice(0,index).concat(msg.slice(index+5));
 				} else // Ignore all non-colour related `@` characters as spaces
 					code = C_SPACE;
@@ -99,9 +107,9 @@ msgIter:
 			}
 			if (letterMod !== 0 && code >= C_A && code <= C_Z) {
 				code ^= letterMod;
-				letterMod = 0;
 			}
 			message = message.concat(String.fromCharCode(code));
+			letterMod = 0;
 		}
 		return message;
 	}
@@ -125,7 +133,7 @@ let Filter = class{
         for (let i = Filter.badList.length - 1; i > -1; i--)
 	    	if (Filter.badList[i] && Filter.badCharIds[i])
 	            Filter.apply(input, Filter.badList[i], Filter.badCharIds[i]);
-        // for (let i = 0; i < 2; i++) {
+        // for (let i = 0; i < 2; i++) { 
             // for (let j = Filter.badList.length - 1; j >= 0; j--) {
                 // Filter.apply(input, Filter.badList[j], Filter.badCharIds[j]);
             // }

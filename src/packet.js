@@ -230,6 +230,17 @@ class Packet {
 		return await this.readStream();
 	}
 
+	async getString() {
+		if (this.Uint8() !== 0) {
+			return "";
+		}
+		let s = "";
+		for (let i = this.Uint8(); i !== 0; i = this.Uint8())
+			s += String.fromCharCode(i);
+
+		return s;
+	}
+
 	// Reads a big-endian unsigned short integer (uint16) from the network buffer and returns it.
 	async UInt16() {
 		return (await this.UInt8() << 8) | await this.UInt8();

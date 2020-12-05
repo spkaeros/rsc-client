@@ -6711,9 +6711,11 @@ updateLoop:
 					} else if (updateType === 1) {
 						// chat
 						// let messageLength = pdata[offset++];
-						let msgSize = Utility.getUnsignedByte(pdata[offset++]);
+						let msgIcon = Utility.getUnsignedByte(pdata, offset++);
+						let msgSize = Utility.getSmart0816(pdata, offset);
+						offset += 1;
 						if (msgSize >= 128)
-							msgSize = ((msgSize-128) << 8) | Utility.getUnsignedByte(pdata[offset++]);
+							offset += 1;
 						let data = pdata.slice(offset);
 						let cryptMsg = chatCipher().decipher({buffer: data, size: msgSize, encSize: data.length});
 						let msg = this.chatSystem.normalize(cryptMsg.msg);
@@ -6726,7 +6728,7 @@ updateLoop:
 									continue updateLoop;
 
 							updatePlayer.messageTimeout = secondsToFrames(3);
-							updatePlayer.message = msg;
+							updatePlayer.message = cryptMsg.msg;
 							this.showMessage(updatePlayer.name + ': ' + updatePlayer.message, 2);
 						}
 					} else if (updateType === 2) {
@@ -6768,9 +6770,11 @@ updateLoop:
 						if (updatePlayer) {
 							updatePlayer.appearanceTicket = Utility.getUnsignedShort(pdata, offset);
 							offset += 2;
-							updatePlayer.hash = Utility.getUnsignedLong(pdata, offset);
+							// updatePlayer.hash = Utility.getUnsignedLong(pdata, offset);
+							updatePlayer.name = Utility.getString(pdata, offset);
+							offset += 4 + (updatePlayer.name.length*2);
 							// updatePlayer.name = Utility.hashToUsername(updatePlayer.hash);
-							offset += 8;
+							// offset += 8;
 
 							let equipmentSprites = Utility.getUnsignedByte(pdata[offset++]);
 							for (let count = 0; count < 12; count++)
@@ -6789,9 +6793,10 @@ updateLoop:
 						}
 					} else if (updateType === 6) {
 						// quest-chat
-						let msgSize = Utility.getUnsignedByte(pdata[offset++]);
+						let msgSize = Utility.getSmart0816(pdata, offset);
+						offset += 1;
 						if (msgSize >= 128)
-							msgSize = ((msgSize-128) << 8) | Utility.getUnsignedByte(pdata[offset++]);
+							offset += 1;
 						let data = pdata.slice(offset);
 						let cryptMsg = chatCipher().decipher({buffer: data, size: msgSize, encSize: data.length});
 						offset += cryptMsg.encSize;
@@ -6802,7 +6807,7 @@ updateLoop:
 						// offset += mLen;
 						if (updatePlayer) {
 							updatePlayer.messageTimeout = secondsToFrames(3);
-							updatePlayer.message = msg;
+							updatePlayer.message = cryptMsg.msg;
 
 							if (updatePlayer === this.localPlayer)
 								this.showMessage(updatePlayer.name + ': ' + updatePlayer.message, 5);
@@ -6900,7 +6905,6 @@ updateLoop:
 				this.npcCount = 0;
 				for (let cur = 0; cur < localCount; cur++) {
 					let npc = this.npcsCache[cur];
-					// if (!npc) continue;
 					if (Utility.getBitMask(pdata, bitOffset++, 1) !== 0) {
 						if (Utility.getBitMask(pdata, bitOffset++, 1) === 0) {
 							let direction = Utility.getBitMask(pdata, bitOffset, 3);
@@ -6997,12 +7001,13 @@ updateLoop:
 					if (updateType === 1) {
 						let target = Utility.getUnsignedShort(pdata, offset);
 						offset += 2;
-						let msgSize = Utility.getUnsignedByte(pdata[offset++]);
+						let msgSize = Utility.getSmart0816(pdata, offset);
+						offset += 1;
 						if (msgSize >= 128)
-							msgSize = ((msgSize-128) << 8) | Utility.getUnsignedByte(pdata[offset++]);
+							offset += 1;
 						let data = pdata.slice(offset);
 						let cryptMsg = chatCipher().decipher({buffer: data, size: msgSize, encSize: data.length});
-						updatingNpc.message = this.chatSystem.normalize(cryptMsg.msg);
+						updatingNpc.message = /*this.chatSystem.normalize(*/cryptMsg.msg/*)*/;
 						offset += cryptMsg.encSize;
 						updatingNpc.messageTimeout = secondsToFrames(3);
 						if (target === this.localPlayer.serverIndex)
@@ -7021,9 +7026,10 @@ updateLoop:
 			if (opcode === S_OPCODES.OPTION_LIST) {
 				this.optionMenuCount = Utility.getUnsignedByte(pdata[offset++]);
 				for (let i = 0; i < this.optionMenuCount; i++) {
-					let strLen = Utility.getUnsignedByte(pdata[offset]);
-					this.optionMenuEntry[i] = this.chatSystem.decode(Utility.getBytes(pdata, offset+1, offset+1+strLen));
-					offset += strLen+1;
+					// let strLen = Utility.getUnsignedByte(pdata[offset++]);
+					let option = Utility.getString(pdata, offset);
+					this.optionMenuEntry[i] = option;
+					offset += option.length+2;
 				}
 
 				this.showOptionMenu = true;

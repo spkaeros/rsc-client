@@ -42,7 +42,9 @@ class Ops {
 	static COMMAND(s) {
 		let p = new Packet(OPS.COMMAND);
 		p.startAccess();
+		p.putByte(0);
 		p.putString(s);
+		p.putByte(0);
 		p.stopAccess();
 		return p;
 	}

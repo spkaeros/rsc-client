@@ -94,7 +94,7 @@ let isaac = (function(){
 	/* private: 32-bit integer safe adder */
 	function add(x, y) {
 		var lsb = (x & 0xffff) + (y & 0xffff);
-		var msb = (x >>>	 16) + (y >>>	 16) + (lsb >>> 16);
+		var msb = (x >>> 16) + (y >>> 16) + (lsb >>> 16);
 		return (msb << 16) | (lsb & 0xffff);
 	}
 
@@ -168,7 +168,7 @@ let isaac = (function(){
 	}
 
 	function nextSet() {
-		prng(); gnt = 255;
+		prng(); gnt = 256;
 	}
 
 	/* public: isaac generator, n = number of run */
@@ -189,19 +189,20 @@ let isaac = (function(){
 					case 2: acc ^= acc <<	 2; break;
 					case 3: acc ^= acc >>> 16; break;
 				}
-				acc				= add(m[(i +	128) & 0xff], acc); x = m[i];
-				m[i] =	 y = add(m[(x >>>	2) & 0xff], add(acc, brs));
-				r[i] = brs = add(m[(y >>> 10) & 0xff], x);
+				acc  =       add(m[(i + 128) & 0xFF], acc); x = m[i];
+				m[i] =	 y = add(m[(x >>> 2) & 0xFF], add(acc, brs));
+				r[i] = brs = add(m[(y >>> 10) & 0xFF], x);
 			}
 		}
 	}
 
 	/* public: return a random number between */
 	function rand() {
-		let next = r[gnt--];
+		// let next = r[gnt--];
 		if (gnt <= 0)
 			nextSet();
-		return next;
+		gnt--;
+		return r[gnt];
 	}
 
 	/* public: return internals in an object*/

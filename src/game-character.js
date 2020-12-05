@@ -164,10 +164,12 @@ class GameCharacter {
 	}
 
 	get hash() {
-		if (!this._hash)
+		if (!this._hash) {
 			if (this._name)
-				return Utility.usernameToHash(this._name);
-			return 0n;
+				this._hash = Utility.usernameToHash(this._name);
+			else
+				return 0n;
+		}
 		return this._hash;
 	}
 
