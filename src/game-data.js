@@ -1,34 +1,43 @@
 import ndarray from 'ndarray';
 import {Utility} from './utility';
+import JagArchive from './lib/jag';
 
 class GameData {
 	static getModelIndex(s) {
 		s = s.toLowerCase();
-		if (s === 'na')
-			return 0;
+		// if (s === 'na')
+			// return 0;
+		let model = GameData.Models[s];
+		if (!GameData.Models[s])
+			GameData.Models[s] = GameData.modelCount++;
+		// if (model)
+			// return model;
+		// GameData.Models[s] = GameData.modelCount++;
+		// GameData.modelName[GameData.modelCount - 1] = s;
 
-		for (let i = 0; i < GameData.modelCount; i++)
-			if (GameData.modelName[i].toLowerCase() === s)
-				return i;
+		// for (let i = 0; i < GameData.modelCount; i++)
+			// if (GameData.modelName[i].toLowerCase() === s.toLowerCase())
+				// return i;
 
 		// if not found, we must make a new model definition
-		GameData.modelName[GameData.modelCount++] = s;
+		// GameData.modelName[Models[s]] = s;
 
-		return GameData.modelCount - 1;
+		return GameData.Models[s];
 	}
 
 	static getUnsignedByte() {
-		return GameData.dataInteger[GameData.offset++] & 0xFF;
+		// return GameData.dataInteger[GameData.offset++] & 0xFF;
+		return GameData.dataInteger.readUInt8(GameData.offset++);
 	}
 
 	static getUnsignedShort() {
-		let i = Utility.getUnsignedShort(GameData.dataInteger, GameData.offset);
+		let i = GameData.dataInteger.readUInt16BE(GameData.offset);
 		GameData.offset += 2;
 		return i;
 	}
 
 	static getUnsignedInt() {
-		let i = Utility.getUnsignedInt(GameData.dataInteger, GameData.offset);
+		let i = GameData.dataInteger.readUInt32BE(GameData.offset);
 		GameData.offset += 4;
 
 		// TODO: Used at all?
@@ -47,10 +56,11 @@ class GameData {
 		return s;
 	}
 
-	static loadDefinitions(buffer, isMembers) {
-		GameData.dataString = Utility.loadData('string.dat', 0, buffer);
+	static loadDefinitions(archive, isMembers) {
+		
+		GameData.dataString = Buffer.from(archive.get('string.dat').data);
 		GameData.stringOffset = 0;
-		GameData.dataInteger = Utility.loadData('integer.dat', 0, buffer);
+		GameData.dataInteger = Buffer.from(archive.get('integer.dat').data);
 		GameData.offset = 0;
 
 		let i = 0;
@@ -542,5 +552,6 @@ GameData.dataString = null;
 GameData.dataInteger = null;
 GameData.stringOffset = 0;
 GameData.offset = 0;
+GameData.Models = {};
 
 export { GameData as default };

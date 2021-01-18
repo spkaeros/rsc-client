@@ -1,4 +1,4 @@
-export { import('./client') as client, import('./server') as server };
+module.exports = { client:require('./client'), server:require('./server') };
 // server -> client
 // module.exports.client = require('./client');
 

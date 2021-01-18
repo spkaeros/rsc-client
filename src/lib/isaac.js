@@ -34,62 +34,22 @@
  * ISAAC succesfully passed TestU01
  *
  * ----------------------------------------------------------------------
+ *
+ * Minorly modified to fit the behavior expected of the JaGEx RSClassic network protocol
+ * by Zach Knight.  Nothing has been modified algorithmically, just what order in which 
+ * we use the result stream (descending order), a helper function to return each word as
+ * unsigned, and also to allow multiple instantiations where the original forced a global
+ * module state which is almost never desired behavior for a module like this.
  */
 
-
-/* js string (ucs-2/utf16) to a 32-bit integer (utf-8 chars, little-endian) array */
-String.prototype.toIntArray = function() {
-	var w1, w2, u, r4 = [], r = [], i = 0;
-	var s = this + '\0\0\0'; // pad string to avoid discarding last chars
-	var l = s.length - 1;
-
-	while(i < l) {
-		w1 = s.charCodeAt(i++);
-		w2 = s.charCodeAt(i+1);
-		if			 (w1 < 0x0080) {
-			// 0x0000 - 0x007f code point: basic ascii
-			r4.push(w1);
-		} else if(w1 < 0x0800) {
-			// 0x0080 - 0x07ff code point
-			r4.push(((w1 >>>	6) & 0x1f) | 0xc0);
-			r4.push(((w1 >>>	0) & 0x3f) | 0x80);
-		} else if((w1 & 0xf800) != 0xd800) {
-			// 0x0800 - 0xd7ff / 0xe000 - 0xffff code point
-			r4.push(((w1 >>> 12) & 0x0f) | 0xe0);
-			r4.push(((w1 >>>	6) & 0x3f) | 0x80);
-			r4.push(((w1 >>>	0) & 0x3f) | 0x80);
-		} else if(((w1 & 0xfc00) == 0xd800)
-					 && ((w2 & 0xfc00) == 0xdc00)) {
-			// 0xd800 - 0xdfff surrogate / 0x10ffff - 0x10000 code point
-			u = ((w2 & 0x3f) | ((w1 & 0x3f) << 10)) + 0x10000;
-			r4.push(((u >>> 18) & 0x07) | 0xf0);
-			r4.push(((u >>> 12) & 0x3f) | 0x80);
-			r4.push(((u >>>	6) & 0x3f) | 0x80);
-			r4.push(((u >>>	0) & 0x3f) | 0x80);
-			i++;
-		} else {
-			// invalid char
-		}
-		/* add integer (four utf-8 value) to array */
-		if(r4.length > 3) {
-			// little endian
-			r.push((r4.shift() <<	0) | (r4.shift() <<	8) |
-						 (r4.shift() << 16) | (r4.shift() << 24));
-		}
-	}
-
-	return r;
-}
-
-/* isaac module pattern */
-let isaac = (function(){
+let isaac = () => {
 	/* private: internal states */
-	let m = Array(256), // internal memory
-			acc = 0,				// accumulator
-			brs = 0,				// last result
-			cnt = 0,				// counter
-			r = Array(256), // result array
-			gnt = 0;				// generation counter
+	let m   = Array(256), // internal state
+		r   = Array(256), // output stream state
+		acc = 0,		  // accumulator, a source of entropy diffusion
+		brs = 0,		  // prev result state, also probable source of diffusion
+		cnt = 0,		  // result counter, to add entropy and guarentee longer result cycles
+		gnt = 0;		  // output stream offset
 
 	/* private: 32-bit integer safe adder */
 	function add(x, y) {
@@ -111,7 +71,7 @@ let isaac = (function(){
 
 		/* seeding the seeds of love */
 		a = b = c = d =
-		e = f = g = h = 0x9E3779B9; /* the golden ratio */
+		e = f = g = h = 0x9E3779B9; /* the 4-byte word representation of the golden ratio */
 
 		if(s && typeof(s) === 'string')
 			s = s.toIntArray();
@@ -167,10 +127,6 @@ let isaac = (function(){
 		nextSet();
 	}
 
-	function nextSet() {
-		prng(); gnt = 256;
-	}
-
 	/* public: isaac generator, n = number of run */
 	function prng(n) {
 		let x, y;
@@ -196,34 +152,32 @@ let isaac = (function(){
 		}
 	}
 
-	/* public: return a random number between */
-	function rand() {
-		// let next = r[gnt--];
+	/* public: generate the next 256 words in our output stream and reset the output stream caret */
+	function nextSet() {
+		prng(); gnt = 256;
+	}
+
+	/* public: return a random 4-byte word */
+	function next() {
 		if (gnt <= 0)
 			nextSet();
 		gnt--;
 		return r[gnt];
 	}
-
-	/* public: return internals in an object*/
-	function internals() {
-		return {a: acc, b: brs, c: cnt, m: m, r: r};
-	}
 	
+	/* public: return a random 4-byte unsigned word */
 	function random() {
-		// unsigned right-shift of length 0 makes the number unsigned before we return it
-		return rand()>>>0;
+		return next()>>>0;
 	}
 
 	/* return class object */
 	return {
-		'reset': reset,
-		'seed':	seed,
-		'prng':	prng,
-		'rand':	rand,
-		'random':	random,
-		'internals': internals
+		'reset':		reset,
+		'seed':			seed,
+		'prng':			prng,
+		'rand':			next,
+		'random':		random,
 	};
-});
+};
 
-export { isaac as default }
+module.exports = isaac;

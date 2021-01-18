@@ -3,6 +3,13 @@ import Scene from './scene';
 
 const COLOUR_TRANSPARENT = 12345678;
 
+function TwoD (prototype, rows, cols) {
+	let arr = [];
+	for (let i = 0; i < rows; i += 1)
+		arr.push(new (prototype.constructor)(cols));
+	return arr;
+}
+
 class GameModel {
     constructor() {
         this.numVertices = 0;
@@ -77,7 +84,7 @@ class GameModel {
         this.vertexTransformedX = null;
         this.vertexTransformedY = null;
         this.vertexTransformedZ = null;
-        this.faceTransStateThing = null;
+        this.faceTransStateThing = TwoD(Int32Array.prototype, 0, 0);
         this.faceBoundLeft = null;
         this.faceBoundRight = null;
         this.faceBoundBottom = null;
@@ -124,11 +131,7 @@ class GameModel {
         gameModel.allocate(numVertices, numFaces);
 
         // TODO: maybe make gameModel an int32 array
-        gameModel.faceTransStateThing = [];
-
-        for (let v = 0; v < gameModel.numFaces; v++) {
-            gameModel.faceTransStateThing.push(new Int32Array([0]));
-        }
+        gameModel.faceTransStateThing = TwoD(Int32Array.prototype, gameModel.numFaces, 1);
 
         return gameModel;
     }
@@ -181,84 +184,89 @@ class GameModel {
         gameModel.lightDirectionMagnitude = 256;
         gameModel.lightDiffuse = 32;
         gameModel.lightAmbience = 32;
+        data = Buffer.from(data);
 
-        let j = Utility.getUnsignedShort(data, offset);
+        let vertices = data.readUInt16BE(offset);//Utility.getUnsignedShort(data, offset);
         offset += 2;
-        let k = Utility.getUnsignedShort(data, offset);
+        let faces = data.readUInt16BE(offset);//Utility.getUnsignedShort(data, offset);
         offset += 2;
 
-        gameModel.allocate(j, k);
+        gameModel.allocate(vertices, faces);
 
-        gameModel.faceTransStateThing = [];
-        gameModel.faceTransStateThing.length = k;
-        
-        for (let i = 0; i < k; i += 1) {
-            gameModel.faceTransStateThing[i] = [0];
-        }
+        gameModel.faceTransStateThing = TwoD(Int32Array.prototype, faces, 1);
+        // gameModel.faceTransStateThing = [];
+        // gameModel.faceTransStateThing.length = faces;
+        // 
+        // for (let i = 0; i < faces; i += 1) {
+            // gameModel.faceTransStateThing[i] = [0];
+        // }
 
-        for (let l = 0; l < j; l++) {
-            gameModel.vertexX[l] = Utility.getSignedShort(data, offset);
+        for (let l = 0; l < vertices; l++) {
+            gameModel.vertexX[l] = data.readInt16BE(offset);//Utility.getSignedShort(data, offset);
             offset += 2;
         }
 
-        for (let i1 = 0; i1 < j; i1++) {
-            gameModel.vertexY[i1] = Utility.getSignedShort(data, offset);
+        for (let i1 = 0; i1 < vertices; i1++) {
+            gameModel.vertexY[i1] = data.readInt16BE(offset);//Utility.getSignedShort(data, offset);
             offset += 2;
         }
 
-        for (let j1 = 0; j1 < j; j1++) {
-            gameModel.vertexZ[j1] = Utility.getSignedShort(data, offset);
+        for (let j1 = 0; j1 < vertices; j1++) {
+            gameModel.vertexZ[j1] = data.readInt16BE(offset);//Utility.getSignedShort(data, offset);
             offset += 2;
         }
 
-        gameModel.numVertices = j;
+        gameModel.numVertices = vertices;
 
-        for (let k1 = 0; k1 < k; k1++) {
-            gameModel.faceNumVertices[k1] = data[offset++] & 0xff;
+        for (let k1 = 0; k1 < faces; k1++) {
+            gameModel.faceNumVertices[k1] = data.readUInt8(offset);//data[offset++] & 0xFF;
+            offset += 1;
         }
 
-        for (let l1 = 0; l1 < k; l1++) {
-            gameModel.faceFillFront[l1] = Utility.getSignedShort(data, offset);
+        for (let l1 = 0; l1 < faces; l1++) {
+            gameModel.faceFillFront[l1] = data.readInt16BE(offset);//Utility.getSignedShort(data, offset);
             offset += 2;
 
-            if (gameModel.faceFillFront[l1] === 32767) {
+            if (gameModel.faceFillFront[l1] === 0x7FFF) {
                 gameModel.faceFillFront[l1] = gameModel.magic;
             }
         }
 
-        for (let i2 = 0; i2 < k; i2++) {
-            gameModel.faceFillBack[i2] = Utility.getSignedShort(data, offset);
+        for (let i2 = 0; i2 < faces; i2++) {
+            gameModel.faceFillBack[i2] = data.readInt16BE(offset);//Utility.getSignedShort(data, offset);
             offset += 2;
 
-            if (gameModel.faceFillBack[i2] === 32767) {
+            if (gameModel.faceFillBack[i2] === 0x7FFF) {
                 gameModel.faceFillBack[i2] = gameModel.magic;
             }
         }
 
-        for (let j2 = 0; j2 < k; j2++) {
-            let k2 = data[offset++] & 0xff;
+        for (let j2 = 0; j2 < faces; j2++) {
+            let k2 = data.readUInt8(offset);//data[offset++] & 0xff;
+            offset += 1;
 
-            if (k2 === 0) {
+            if (!k2) {
                 gameModel.faceIntensity[j2] = 0;
             } else {
                 gameModel.faceIntensity[j2] = gameModel.magic;
             }
         }
 
-        for (let l2 = 0; l2 < k; l2++) {
+        for (let l2 = 0; l2 < faces; l2++) {
             gameModel.faceVertices[l2] = new Int32Array(gameModel.faceNumVertices[l2]);
 
             for (let i3 = 0; i3 < gameModel.faceNumVertices[l2]; i3++) {
-                if (j < 256) {
-                    gameModel.faceVertices[l2][i3] = data[offset++] & 0xff;
+                if (vertices < 256) {
+                    gameModel.faceVertices[l2][i3] = data.readUInt8(offset);//data[offset++] & 0xff;
+                    offset += 1;
                 } else {
-                    gameModel.faceVertices[l2][i3] = Utility.getUnsignedShort(data, offset);
+                    gameModel.faceVertices[l2][i3] = data.readUInt16BE(offset);//Utility.getUnsignedShort(data, offset);
                     offset += 2;
                 }
             }
         }
 
-        gameModel.numFaces = k;
+        gameModel.numFaces = faces;
         gameModel.transformState = 1;
         
         return gameModel;
@@ -423,8 +431,9 @@ class GameModel {
         this.allocate(numV, numF);
 
         if (transState) {
-            this.faceTransStateThing = [];
-            this.faceTransStateThing.length = numF;
+			this.faceTransStateThing = TwoD(Int32Array.prototype, numF, 1)
+            // this.faceTransStateThing = [];
+            // this.faceTransStateThing.length = numF;
         }
 
         for (let i = 0; i < count; i++) {
@@ -607,7 +616,8 @@ class GameModel {
             this.lightDirectionX = x;
             this.lightDirectionY = y;
             this.lightDirectionZ = z;
-            this.lightDirectionMagnitude = Math.sqrt(x * x + y * y + z * z) | 0;
+            // this.lightDirectionMagnitude = Math.sqrt(x * x + y * y + z * z) | 0;
+	        this.lightDirectionMagnitude = Math.sqrt(x**2 + y**2 + z**2) | 0;
             this.light();
         }
     }
@@ -631,7 +641,8 @@ class GameModel {
         this.lightDirectionX = x;
         this.lightDirectionY = y;
         this.lightDirectionZ = z;
-        this.lightDirectionMagnitude = Math.sqrt(x * x + y * y + z * z) | 0;
+        // this.lightDirectionMagnitude = Math.sqrt(x * x + y * y + z * z) | 0;
+        this.lightDirectionMagnitude = Math.sqrt(x**2 + y**2 + z**2) | 0;
         this.light();
     }
 
@@ -937,7 +948,7 @@ class GameModel {
                 normY >>= 1;
             }
 
-            let normMag = (256 * Math.sqrt(normX * normX + normY * normY + normZ * normZ)) | 0;
+            let normMag = (256 * Math.sqrt(normX ** 2 + normY ** 2 + normZ ** 2)) | 0;
 
             if (normMag <= 0) {
                 normMag = 1;
@@ -1165,3 +1176,4 @@ GameModel.base64Alphabet[163] = 62;
 GameModel.base64Alphabet[36] = 63;
 
 export { GameModel as default };
+// module.exports = GameModel;

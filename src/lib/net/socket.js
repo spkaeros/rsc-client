@@ -101,9 +101,7 @@ class Socket {
 				this.client.removeEventListener('message', msg);
 				this.client.removeEventListener('error', handleErr);
 				this.client.removeEventListener('close', close);
-				Promise.resolve().then(async () => {
-					resolve(await this.readByte());
-				});
+				this.readByte().then(b => resolve(b)).catch(e => reject(e));
 			};
 			this.client.addEventListener('error', handleErr);
 			this.client.addEventListener('close', close);
@@ -149,9 +147,7 @@ class Socket {
 				this.client.removeEventListener('message', msg);
 				this.client.removeEventListener('error', handleErr);
 				this.client.removeEventListener('close', close);
-				Promise.resolve().then(async () => {
-					resolve(await this.readBytes(dst, off, len));
-				});
+				this.readBytes(dst, off, len).then(b => resolve(b)).catch(e => reject(e));
 			};
 			this.client.addEventListener('error', handleErr);
 			this.client.addEventListener('close', close);

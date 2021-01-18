@@ -1,15 +1,19 @@
-import {Font} from './font';
-import {Color} from './color';
+let Font = require("./font");
+let Color = require("./color");
 
 class Graphics {
     constructor(canvas) {
         this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
+        this.ctx = canvas.getContext('2d', {
+        	powerPreference: 'high-performance',
+        	antialias: true,
+        	desynchronized: true,
+        });
     }
 
     setColor(color) {
-        this.ctx.fillStyle = color.toCanvasStyle();
-        this.ctx.strokeStyle = color.toCanvasStyle();
+        this.ctx.strokeStyle = this.ctx.fillStyle = String(color);
+        //this.ctx.strokeStyle = String(color);
     }
 
     fillRect(x, y, width, height) {
@@ -21,7 +25,7 @@ class Graphics {
     }
 
     setFont(font) {
-        this.ctx.font = String(font);
+        this.ctx.font = font.string;
     }
 
     drawString(s, x, y) {
@@ -41,4 +45,4 @@ class Graphics {
     }
 }
 
-export { Graphics as default };
+module.exports = Graphics;

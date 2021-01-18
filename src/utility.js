@@ -1,6 +1,6 @@
-import BZLib from './bzlib';
-import Enum from './lib/enum';
-import RSA from './gamelib/rsa';
+let BZLib = require('./bzlib');
+let Enum = require('./lib/enum');
+let RSA = require('./rsa');
 
 const C_0 = '0'.charCodeAt(0), C_9 = '9'.charCodeAt(0), C_A = 'a'.charCodeAt(0), C_BIG_A = 'A'.charCodeAt(0),
 	C_BIG_Z = 'Z'.charCodeAt(0), C_Z = 'z'.charCodeAt(0);
@@ -19,8 +19,6 @@ class Utility {
 	}
 
 	static rsaEncrypt(data) {
-		// if (Utility.wasmMod)
-			// return Utility.wasmMod.e
 		return RSA(Uint8Array.from(data.slice()));
 	}
 	
@@ -73,12 +71,11 @@ class Utility {
 	}
 
 	static getSignedShort(data, off) {
-		let one = Utility.getUnsignedShort(data, off);
-		// mimic 16-bit signed integer behavior
-		if (one >= 0x8000)
-			return one-0x10000;
-
-		return one;
+		let i = Utility.getUnsignedShort(data, off);
+		if (i >= 0x8000)
+			i -= 0x10000;
+		
+		return i;
 	}
 
 	static getSmart08_32(data, off) {
@@ -87,57 +84,47 @@ class Utility {
 		if (one >= 0x80) // check length, if we exceed 
 			return (one-0x80)<<24 | Utility.getUnsignedByte(data[off + 1]) << 16 | Utility.getUnsignedByte(data[off + 2]) << 8 | Utility.getUnsignedByte(data[off + 3]);
 
-		return one&~0x80;
+		return one-0x80;
 	}
 
-	static getBitMask(buff, off, len) {
+	static getSmartShort(data, off) {
+		let one = Utility.getUnsignedByte(data[off]);
+		// Check if we need to read the rest of the data
+		if (one >= 0x80) // check length, if we exceed 
+			return (one-0x80) << 24 | Utility.getUnsignedByte(data[off + 1]) << 16 | Utility.getUnsignedByte(data[off + 2]) << 8 | Utility.getUnsignedByte(data[off + 3]);
+
+		return (one << 8) | Utility.getUnsignedByte(data[off+1]);
+	}
+
+	static getBitMask(data, off, len) {
 		let k = off >>> 3;
 		let l = 8 - (off & 7);
 		let i1 = 0;
 		
 		for (; len > l; l = 8) {
-			i1 += (buff[k++] & bitmasks[l]) << len - l;
+			i1 += (data[k++] & bitmasks[l]) << len - l;
 			len -= l;
 		}
 
 		if (len === l)
-			i1 += buff[k] & bitmasks[l];
+			i1 += data[k] & bitmasks[l];
 		else
-			i1 += buff[k] >> l - len & bitmasks[len];
+			i1 += data[k] >> l - len & bitmasks[len];
 		return i1;
 	}
-/*
-	static getBitMask(data, off, len) {
-		let k = off >> 3;
-		let l = 8 - (off & 7);
-		let ret = 0;
-
-		for (let l = 8 - (off & 7); l <= len; len -= l, l = 8) {
-			ret += (data[k++] & bitmasks[l]) << len - l;
-			len -= l;
-		}
-
-		if (len === l)
-			ret += data[k] & bitmasks[l];
-		else
-			ret += data[k] >> l - len & bitmasks[len];
-		return ret;
-	}
-*/
 	/* buffer functions end */ 
 
 	/* hash functions start */
 	static recoveryToHash(answer) {
-		if (Utility.wasmMod)
-			return Utility.wasmMod.hashRecoveryAnswer(answer);
+		if (global.wasmMod)
+			return global.wasmMod.hashRecoveryAnswer(answer);
 		answer = answer.toLowerCase().trim();
 
-		// let hash = new Long(0);
 		let hash = 0n;
 		let index = 0n;
 		for (let i = 0; i < answer.length; i++) {
 			let rune = answer.charCodeAt(i);
-			if (rune >= C_A && rune <= C_Z || rune >= C_0 && rune <= C_9) {
+			if (/([a-z]|[A-Z]|[0-9])/.match(rune)) {// >= C_A && rune <= C_Z || rune >= C_0 && rune <= C_9) {
 				hash = hash * 47n * (hash - BigInt(rune*6) - BigInt(index*7));
 				hash += BigInt(rune - 32) + BigInt(index * rune);
 				// hash = hash.mul(47).mul(hash.sub(rune * 6).sub(index * 7));
@@ -167,8 +154,8 @@ class Utility {
 	}
 
 	static usernameToHash(s) {
-		if (Utility.wasmMod)
-			return Utility.wasmMod.usernameToHash(s);
+		if (global.wasmMod)
+			return global.wasmMod.usernameToHash(s);
 		// polyfill to encode base37 string hashes
 		// used if wasm just happens not to be supported for any reason
 		let username = '';
@@ -199,8 +186,8 @@ class Utility {
 	}
 
 	static hashToUsername(hash) {
-		if (Utility.wasmMod)
-			return Utility.wasmMod.hashToUsername(hash);
+		if (global.wasmMod)
+			return global.wasmMod.hashToUsername(hash);
 		// polyfill to decode base37 string hashes
 		// used if wasm just happens not to be supported for any reason
 		if (hash <= 0n)
@@ -225,119 +212,20 @@ class Utility {
 	}
 	/* hash functions end */
 
-	static getDataFileOffset(name, data) {
-		let targetHash = Utility.hashFileName(name);
-		let metaOffset = 0;
-		let count = Utility.getUnsignedShort(data, metaOffset);
-		metaOffset += 2;
-		let offset = count * 10 + metaOffset;
-		for (let entry = 0; entry < count; entry++) {
-			// let fileHash = (data[entry * 10 + 2] & 0xff) << 24 | (data[entry * 10 + 3] & 0xff) << 16 | (data[entry * 10 + 4] & 0xff) << 8 | data[entry * 10 + 5] & 0xff;
-			// let fileSize = (data[entry * 10 + 9] & 0xff) << 16 | (data[entry * 10 + 10] & 0xff) << 8 | data[entry * 10 + 11] & 0xff;
-			let fileHash = Utility.getUnsignedInt(data, metaOffset);
-			metaOffset += 4;
-			let fileSize = Utility.getUTriByte(data, metaOffset);
-			metaOffset += 3;
-			let fileSizeCompressed = Utility.getUTriByte(data, metaOffset);
-			metaOffset += 3;
-
-			if (fileHash === targetHash)
-				return offset;
-
-			offset += fileSizeCompressed;
-		}
-
-		return 0;
-	}
-
 	static hashFileName(fileName) {
-		if (Utility.wasmMod)
-			return  Utility.wasmMod.hashFileName(fileName);
+		if (global.wasmMod)
+			return  global.wasmMod.hashFileName(fileName);
 		let targetHash = 0;
 		fileName = fileName.toUpperCase();
 		for (let i = 0; i < fileName.length; i++)
 			targetHash = (((targetHash * 61) | 0) + fileName.charCodeAt(i)) - 32;
 		return targetHash;
 	}
-
-	static getDataFileLength(name, data) {
-		let targetHash = Utility.hashFileName(name);
-		let metaOffset = 0;
-		let count = Utility.getUnsignedShort(data, metaOffset);
-		metaOffset += 2;
-		let offset = count * 10 + metaOffset;
-		for (let i1 = 0; i1 < count; i1++) {
-			// let fileHash = (data[i1 * 10 + 2] & 0xff) << 24 | (data[i1 * 10 + 3] & 0xff) << 16 | (data[i1 * 10 + 4] & 0xff) << 8 | data[i1 * 10 + 5] & 0xff;
-			// let fileSize = (data[i1 * 10 + 6] & 0xff) << 16 | (data[i1 * 10 + 7] & 0xff) << 8 | data[i1 * 10 + 8] & 0xff;
-			// let fileSizeCompressed = (data[i1 * 10 + 9] & 0xff) << 16 | (data[i1 * 10 + 10] & 0xff) << 8 | data[i1 * 10 + 11] & 0xff;
-			let fileHash = Utility.getUnsignedInt(data, metaOffset);
-			metaOffset += 4;
-			let fileSize = Utility.getUTriByte(data, metaOffset);
-			metaOffset += 3;
-			let fileSizeCompressed = Utility.getUTriByte(data, metaOffset);
-			metaOffset += 3;
-
-			if (fileHash === targetHash)
-				return fileSize;
-
-			offset += fileSizeCompressed;
-		}
-
-		return 0;
-	}
-
-	static loadData(s, i, abyte0) {
-		return Utility.unpackData(s, i, abyte0, null);
-	}
-
-	static unpackData(file, dstOff, data, fileData) {
-		let targetHash = Utility.hashFileName(file);
-		// console.log(targetHash);
-		let metaOffset = 0;
-		let count = Utility.getUnsignedShort(data, metaOffset);
-		metaOffset += 2;
-		let offset = count * 10 + metaOffset;
-		for (let entry = 0; entry < count; entry++) {
-			// let fileHash = ((archiveData[entry * 10 + 2] & 0xff) << 24) + ((archiveData[entry * 10 + 3] & 0xff) << 16) + ((archiveData[entry * 10 + 4] & 0xff) << 8) + (archiveData[entry * 10 + 5] & 0xff) | 0;
-			// let fileSize = ((archiveData[entry * 10 + 6] & 0xff) << 16) + ((archiveData[entry * 10 + 7] & 0xff) << 8) + (archiveData[entry * 10 + 8] & 0xff) | 0;
-			// let fileSizeCompressed = ((archiveData[entry * 10 + 9] & 0xff) << 16) + ((archiveData[entry * 10 + 10] & 0xff) << 8) + (archiveData[entry * 10 + 11] & 0xff) | 0;
-			let fileHash = Utility.getUnsignedInt(data, metaOffset);
-			metaOffset += 4;
-			let fileSize = Utility.getUTriByte(data, metaOffset);
-			metaOffset += 3;
-			let fileSizeCompressed = Utility.getUTriByte(data, metaOffset);
-			metaOffset += 3;
-
-			if (fileHash === targetHash) {
-				if (!fileData)
-					fileData = new Uint8Array(fileSize + dstOff);
-
-				if (fileSize !== fileSizeCompressed) {
-					BZLib.decompress(fileData, fileSize, data, fileSizeCompressed, offset);
-					return fileData;
-				}
-
-				for (let j = 0; j < fileSize; j++)
-					fileData[j] = data[offset + j];
-
-				return fileData;
-			}
-
-			offset += fileSizeCompressed;
-		}
-
-		return null;
-	}
-
-	static initializeWasm(wasm) {
-		Utility.wasmMod = wasm;
-	}
-	
 }
 
-let bitmasks = new Int32Array(33);
+let bitmasks = new Int32Array(32);
 for (let i in bitmasks)
-	bitmasks[i] = (1<<i)-1;
+	bitmasks[i] = (1 << i) - 1;
 
 class State extends Enum {
 	constructor(s) {
@@ -432,4 +320,9 @@ let WelcomeStates = {
 	EXISTING_USER: new WelcomeState('Existing User view'),
 };
 
-export { Utility as Utility, EngineStates as EngineStates, GameStates as GameStates, GamePanels as GamePanels, WelcomeStates as WelcomeStates };
+module.exports = Utility;
+module.exports.Utility = Utility;
+module.exports.GameStates = GameStates;
+module.exports.GamePanels = GamePanels;
+module.exports.WelcomeStates = WelcomeStates;
+module.exports.EngineStates = EngineStates;

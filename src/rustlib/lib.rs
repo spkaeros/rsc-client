@@ -3,6 +3,14 @@ use wasm_bindgen::prelude::*;
 
 static DEBUG: bool = false;
 
+static CODE_0: u64 = '0' as u64;
+static CODE_9: u64 = '9' as u64;
+
+static CODE_A: u64 = 'a' as u64;
+static CODE_Z: u64 = 'z' as u64;
+
+static CODE_BIG_A: u8 = 'A' as u8;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -17,13 +25,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn debug(a: &str);
 }
-
-// cfg_if! {
-// if #[cfg(feature = "wee_alloc")] {
-// #[global_allocator]
-// static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-// }
-// }
 
 macro_rules! cout {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
@@ -59,9 +60,9 @@ pub fn username_to_hash(_name: String) -> u64 {
     for ch in _name.to_lowercase().as_bytes().iter() {
         let codepoint = *ch as u64;
         hash *= 37;
-        if codepoint >= ('a' as u64) && codepoint <= ('z' as u64) {
+        if codepoint >= CODE_A && codepoint <= CODE_Z {
             hash += 1 + codepoint - 97;
-        } else if codepoint >= ('0' as u64) && codepoint <= ('9' as u64) {
+        } else if codepoint >= CODE_0 && codepoint <= CODE_9 {
             hash += 27 + codepoint - 48;
             cdbg!("[WASM] next codepoint:{}", codepoint);
         }
@@ -100,24 +101,24 @@ pub fn hash_to_username(mut _hash: u64) -> String {
                 cdbg!(
                     "[WASM] remainder:{}, next codepoint:{}",
                     codepoint,
-                    (codepoint + ('A' as u8)) - 1
+                    (codepoint + CODE_BIG_A) - 1
                 );
-                _username.push(char::from(codepoint + ('A' as u8) - 1));
+                _username.push(char::from(codepoint + CODE_BIG_A - 1));
             } else {
                 cdbg!(
                     "[WASM] remainder:{}, next codepoint:{}",
                     codepoint,
-                    (codepoint + ('a' as u8)) - 1
+                    (codepoint + (CODE_A as u8)) - 1
                 );
-                _username.push(char::from(codepoint + ('a' as u8) - 1));
+                _username.push(char::from(codepoint + (CODE_A as u8) - 1));
             }
         } else {
             cdbg!(
                 "[WASM] remainder:{}, next codepoint:{}",
                 codepoint,
-                (codepoint + ('0' as u8)) - 1
+                (codepoint + (CODE_0 as u8)) - 27
             );
-            _username.push(char::from(codepoint + ('0' as u8) - 27));
+            _username.push(char::from(codepoint + (CODE_0 as u8) - 27));
         }
     }
     cdbg!("[WASM] result:{}, hash:{}", _username, _hash);
@@ -132,14 +133,13 @@ pub fn hash_recovery_answer(_answer: String) -> u64 {
     for ch in _answer.to_ascii_lowercase().as_bytes().iter() {
         let codepoint = *ch as u64;
 
-        if codepoint >= ('a' as u64) && codepoint <= ('z' as u64)
-            || codepoint >= ('0' as u64) && codepoint <= ('9' as u64)
+        if codepoint >= CODE_A && codepoint <= CODE_Z
+            || codepoint >= CODE_0 && codepoint <= CODE_9
         {
             hash = hash * 47 * (hash - (codepoint * 6) - (idx * 7));
             hash += codepoint - 32 + idx * codepoint;
             idx += 1;
         }
-        //		idx++
     }
 
     hash

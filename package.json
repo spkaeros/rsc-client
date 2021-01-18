@@ -1,11 +1,11 @@
 {
   "name": "rsc-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "rusty runescape classic web client",
   "main": "./index.js",
   "scripts": {
-    "pack": "webpack -p",
-    "serve": "webpack-dev-server"
+    "release": "webpack -p --progress",
+    "debug": "webpack -d --progress"
   },
   "repository": {
     "type": "git",
@@ -14,14 +14,26 @@
   "keywords": [
     "runescape",
     "classic",
+    "rs",
+    "rs1",
     "rsc",
+    "rsclassic",
+    "web",
     "client",
-    "mmorpg",
-    "game"
+    "webclient",
+    "game",
+    "rpg",
+    "multiuser",
+    "dungeon",
+    "mud",
+    "multiplayer",
+    "online",
+    "mmorpg"
   ],
-  "author": "2003Scape Team",
+  "author": "Zach Knight, 2003Scape Team",
   "collaborators": [
-    "Zach Knight <zach.knight@protonmail.com>"
+    "Zach Knight <zach.knight@protonmail.com>",
+    "2003scape Team"
   ],
   "license": "Unlicense AND AGPL-3.",
   "bugs": {
@@ -29,23 +41,17 @@
   },
   "homepage": "https://github.com/spkaeros/rsc-client#readme",
   "devDependencies": {
+    "@mrsoir/wasmpack": "^0.1.101",
+    "@wasm-tool/wasm-pack-plugin": "1.0.1",
     "alawmulaw": "^5.0.2",
     "binaryen": "^94.0.0",
-    "big-integer": "^1.6.48",
+    "html-webpack-plugin": "^3.2.0",
+    "import-size": "^1.0.2",
     "ndarray": "^1.0.19",
     "text-encoding": "^0.7.0",
-    "html-webpack-plugin": "^3.2.0",
-    "@wasm-tool/wasm-pack-plugin": "1.0.1",
-    "webpack": "^4.29.4",
-    "webpack-cli": "^3.1.1",
-    "webpack-dev-server": "^3.1.0",
-    "import-size": "^1.0.2"
-  },
-  "dependencies": {
-    "@mrsoir/wasmpack": "^0.1.101",
-    "buffer": "^5.6.0",
-    "node-fetch": "^2.6.1",
-    "simple-websocket": "^9.0.0",
-    "xtea": "^1.0.0"
+    "webpack": "^4.44.2",
+    "webpack-cli": "^4.3.1",
+    "xtea": "^1.0.0",
+    "node-fetch": "^2.6.1"
   }
 }

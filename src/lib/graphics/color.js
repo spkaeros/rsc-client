@@ -1,252 +1,50 @@
-class Color {
-	static fromLong(color = 0xFF<<24) {
-		return new Color((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, 0xFF);
-	}
 
-	/* end of static type members */
+function Color(r,g,b,a=0xFF) {
+	return {
+		r: r,
+		g: g,
+		b: b,
+		a: a,
+		get number() {
+			return (r << 0x10) | (g << 0x8) | b;
+		},	
+		get string() {
+			return `rgba(${r},${g},${b},${a})`;
+		},
+		toString() {
+			return this.string;
+		},
+		toNumber() {
+			return this.number;
+		},
+	};
+};
 
-	constructor (r,g,b,a=0xFF) {
-		this.r = r;
-		this.g = g;
-		this.b = b;
-		this.a = a;
-	}
-
-	toCanvasStyle() {
-		return `rgba(${this.r},${this.g}, ${this.b}, ${this.a})`;
-	}
-
-	toString() {
-		return this.toCanvasStyle();
-	}
-
-	// Drops alpha, returns RBG
-	toRGB() {
-		return (this.r << 16) | (this.g << 8) | (this.b & 0xFF);
-	}
-
-	// Returns RGBA
-	toRGBA() {
-		return this.toRGB() << 8 | (this.a & 0xFF);
-	}
-
-	toABGR() {
-		return (this.a << 24) | this.toBGR();
-	}
-
-	toBGR() {
-		return (this.b << 16) | (this.g << 8) | (this.r & 0xFF);
-	}
+function fromNumber(n) {
+	return new Color(n >>> 0x10 & 0xFF, n >>> 0x8 & 0xFF, n & 0xFF, 0xFF);
 }
 
-Object.defineProperty(Color, 'blue', {
-	get:() => {
-		return Color.fromLong(0x0000FF);
-	},
-	set:undefined,
-});
+function random() {
+	return new Color(Math.random() * 0x100 >>> 0, Math.random() * 0x100 >>> 0, Math.random() * 0x100 >>> 0, 0xFF)
+}
 
-Object.defineProperty(Color, 'BLUE', {
-	get:() => {
-		return Color.fromLong(0x0000FF);
-	},
-	set:undefined,
-});
+var colors = {
+	'blue': 0xFF, 'green': 0xFF00, 'red': 0xFF0000, 'pink': 0xFFAFAF, 'light_gray': 0xC0C0C0,
+	'silver': 0xC6C6C6, 'gray': 0x808080, 'shadow_gray': 0x848484, 'dark_gray': 0x404040,
+	'cyan': 0x00FFFF, 'magenta': 0xFF00FF, 'yellow': 0xFFFF00, 'orange': 0xFFC800, 'black':0x0,
+	'white': 0xFFFFFF, 'light_red': 0xFF9040, 'dark_red': 0xC00000, 'auburn': 0xFFB000,
+	'dark_orange': 0xFF7000, 'darker_orange':0xFF8000, 'scarlet': 0xFF3000, 'yellow_green': 0xC0FF00,
+	'lime_green': 0x80ff00,'chartreuse': 0x40ff00, 'golden_yellow': 0xFFE000, 'lime_green': 0xA0E000,
+	'medium_green': 0x8000, 'bright_green': 0xE000, 'aqua_marine': 0x00A080, 'sky_blue': 0x0080FF,
+	'ocean_blue': 0x0080FF, 'deep_blue': 0x0030F0, 'deep_magenta': 0xE000E0, 'shadow_black': 0x303030,
+	'light_brown': 0x604000, 'dark_brown': 0x805000, 'tan': 0x906020, 'butter_rum': 0x997326,
+	'marigold': 0xB38C40, 'flesh': 0xCCB366, 'pale_white': 0xECDED0, 'medium_blue': 0x0000C0,
+	'panelbg_active': 0xDCDCDC, 'panelbg_inactive': 0xA0A0A0,
+};
+for (var colorName in colors) {
+	Color[colorName] = Color[colorName.toUpperCase()] = fromNumber(colors[colorName]);
+}
 
-Object.defineProperty(Color, 'green', {
-	get:() => {
-		return Color.fromLong(0x00FF00);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'GREEN', {
-	get:() => {
-		return Color.fromLong(0x00FF00);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'red', {
-	get:() => {
-		return Color.fromLong(0xFF0000);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'RED', {
-	get:() => {
-		return Color.fromLong(0xFF0000);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'pink', {
-	get:() => {
-		return Color.fromLong(0xFFAFAF);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'PINK', {
-	get:() => {
-		return Color.fromLong(0xFFAFAF);
-	},
-	set:undefined,
-});
-Object.defineProperty(Color, 'LIGHT_GRAY', {
-	get:() => {
-		return Color.fromLong(0xC0C0C0);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'lightGray', {
-	get:() => {
-		return Color.fromLong(0xC0C0C0);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'SILVER', {
-	get:() => {
-		return Color.fromLong(0xC6C6C6);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'silver', {
-	get:() => {
-		return Color.fromLong(0xC6C6C6);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'SHADOW_GRAY', {
-	get:() => {
-		return Color.fromLong(0x848484);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'shadowGray', {
-	get:() => {
-		return Color.fromLong(0x848484);
-	},
-	set:undefined,
-});
-
-
-Object.defineProperty(Color, 'GRAY', {
-	get:() => {
-		return Color.fromLong(0x808080);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'gray', {
-	get:() => {
-		return Color.fromLong(0x808080);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'DARK_GRAY', {
-	get:() => {
-		return Color.fromLong(0x404040);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'darkGray', {
-	get:() => {
-		return Color.fromLong(0x404040);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'CYAN', {
-	get:() => {
-		return Color.fromLong(0x00FFFF);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'cyan', {
-	get:() => {
-		return Color.fromLong(0x00FFFF);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'magenta', {
-	get:() => {
-		return Color.fromLong(0xFF00FF);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'MAGENTA', {
-	get:() => {
-		return Color.fromLong(0xFF00FF);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'YELLOW', {
-	get:() => {
-		return Color.fromLong(0xFFFF00);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'yellow', {
-	get:() => {
-		return Color.fromLong(0xFFFF00);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'orange', {
-	get:() => {
-		return Color.fromLong(0xFFC800);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'ORANGE', {
-	get:() => {
-		return Color.fromLong(0xFFC800);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'black', {
-	get:() => {
-		return Color.fromLong(0x0);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'BLACK', {
-	get:() => {
-		return Color.fromLong(0x0);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'white', {
-	get:() => {
-		return Color.fromLong(0xFFFFFF);
-	},
-	set:undefined,
-});
-
-Object.defineProperty(Color, 'WHITE', {
-	get:() => {
-		return Color.fromLong(0xFFFFFF);
-	},
-	set:undefined,
-});
-
-export { Color as default };
+module.exports = Color;
+module.exports.fromNumber = fromNumber;
+module.exports.random = random;

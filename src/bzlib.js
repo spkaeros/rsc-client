@@ -1,21 +1,8 @@
-function init2DInt8Array(x, y) {
-    const a = [];
-
-    for (let i = 0; i < x; i += 1) {
-        a.push(new Int8Array(y));
-    }
-
-    return a;
-}
-
-function init2DInt32Array(x, y) {
-    const a = [];
-
-    for (let i = 0; i < x; i += 1) {
-        a.push(new Int32Array(y));
-    }
-
-    return a;
+function make2D(proto, rows, columns) {
+	let a=[];
+	for (let i=0; i < rows; i++)
+		a.push(new (proto.constructor)(columns));
+	return a;
 }
 
 class BZState {
@@ -55,10 +42,10 @@ class BZState {
         this.selector = new Int8Array(18002); 
         this.selectorMtf = new Int8Array(18002); 
 
-        this.len = init2DInt8Array(6, 258);
-        this.limit = init2DInt32Array(6, 258);
-        this.base = init2DInt32Array(6, 258);
-        this.perm = init2DInt32Array(6, 258);
+        this.len = make2D(Int8Array.prototype, 6, 258);
+        this.limit = make2D(Int32Array.prototype, 6, 258);
+        this.base = make2D(Int32Array.prototype, 6, 258);
+        this.perm = make2D(Int32Array.prototype, 6, 258);
 
         this.minLens = new Int32Array(6);
     }
@@ -663,3 +650,6 @@ class BZLib {
 }
 
 module.exports = BZLib;
+
+
+

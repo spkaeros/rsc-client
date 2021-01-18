@@ -3,7 +3,7 @@ import Font from './lib/graphics/font';
 import {Chat, Filter} from './word-filter';
 import chatCipher from './chat-cipher';
 import GameCharacter from './game-character';
-import GameConnection from './game-connection';
+import { GameConnection } from './game-connection';
 import GameException from './lib/game-exception';
 import GameData from './game-data';
 import GameModel from './game-model';
@@ -13,14 +13,19 @@ import Scene from './scene';
 import StreamAudioPlayer from './stream-audio-player';
 import Surface from './surface';
 import SurfaceSprite from './surface-sprite';
-import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
 import World from './world';
 import Timer from './timer';
 import Packet from './packet';
-import VERSION from './version';
 import S_OPCODES from './opcodes/server';
 import C_OPCODES from './opcodes/client';
-import Ops from './gamelib/packets';
+import Ops from './packets';
+import CommandHandler from './game-commands';
+import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
+import { CONFIG, FILTER, MEDIA, SOUNDS, ENTITY, MODELS, TEXTURES, MAPS } from './version';
+import download from './lib/net/file-download-stream';
+import JagArchive from './lib/jag';
+
+// let Ops = require('./gamelib/packets');
 
 const NPC_GIANT_BAT = 43;
 const MAX_STAT = 200;
@@ -31,6 +36,33 @@ const ZOOM_OUTDOORS = 750;
 const MOB_REMOVED_MASK = 0xC;
 const ENTITY_LIMIT = 500;
 const WINDMILL = 74;
+const ROTATE_NORTH = 0x80;
+const ANIMATION_FRAMES_MAX = 27;
+
+// Returns an @***@ color code that progresses as follows to indicate relative danger of combat:
+//  High danger: red
+//  Medium danger: darker orange
+//  Low danger: orangish yellow
+//  Rough equals: white
+//  Mild Advantage: yellowish green
+//  Medium Advantage: Darker greenish-yellow
+//  Easy: Green
+// Every indicator here signifies a difference of 3 combat levels.
+function combatColor(us, them) {
+	let combatDelta = us - them;
+	let deltaIdx = Math.floor(Math.abs(combatDelta) / 3);
+
+	if (us === 0 || them === 0 || combatDelta === 0)
+		return `@whi@`;
+
+	// difference in level so high not worth narrowing past this level
+	if (deltaIdx >= 3)
+		return `@${combatDelta < 0 ? "red" : "gre"}@`;
+
+	// adds yellow to the two primary color indicators, progressively
+	// this shows just about how different their level appears to be to ours
+	return `@${(combatDelta < 0 ? "o" : "g")}r${(deltaIdx+1)}@`;
+}
 
 export function getCookie (cname) {
 	const name = `${cname}=`;
@@ -102,6 +134,16 @@ export function fromCharArray(a) {
 export default class mudclient extends GameConnection {
 	constructor(canvas) {
 		super(canvas);
+		this.gameCommands = new CommandHandler();
+		this.gameCommands.add(/^(closeconn?|disconn?|dc)$/i, function() {
+			global.ctx.clientStream.closeStream
+		});
+		this.gameCommands.add(/^logout$/i, function() {
+			global.ctx.closeConnection
+		});
+		this.gameCommands.add(/^(lc|lostconn?|loseconn?)$/i, function() {
+			global.ctx.lostConnection
+		});
 		this.welcomed = false;
 		this.prayers = [ false, false, false, false, false, false, false, false, false, false, false, false, false, false ];
 		this.chatHistory = [];
@@ -243,16 +285,21 @@ export default class mudclient extends GameConnection {
 		this.cameraRotationTime = 0;
 		this.duelOpponentItemsCount = 0;
 		this.duelItemsCount = 0;
-		this.characterSkinColours = Int32Array.from([0xecded0, 0xccb366, 0xb38c40, 0x997326, 0x906020]);
+		this.characterSkinColours = Int32Array.from([
+			Color.PALE_WHITE.number, Color.FLESH.number, Color.MARIGOLD.number, Color.BUTTER_RUM.number,
+			Color.TAN.number
+		]);
 		this.duelOfferOpponentItemCount = 0;
 		this.characterTopBottomColours = Int32Array.from([
-			0xff0000, 0xff8000, 0xffe000, 0xa0e000, 57344, 32768, 41088, 45311, 33023, 12528,
-			0xe000e0, 0x303030, 0x604000, 0x805000, 0xffffff
+			Color.RED.number, Color.DARKER_ORANGE.number, Color.GOLDEN_YELLOW.number, Color.LIME_GREEN.number,
+			Color.BRIGHT_GREEN.number, Color.MEDIUM_GREEN.number, Color.AQUA_MARINE.number, Color.SKY_BLUE.number,
+			Color.OCEAN_BLUE.number, Color.DEEP_BLUE.number, Color.DEEP_MAGENTA.number, Color.SHADOW_BLACK.number,
+			Color.LIGHT_BROWN.number, Color.DARK_BROWN.number, Color.WHITE.number,
 		]);
 		this.itemsAboveHeadCount = 0;
 		this.wildAwarenessLvl = 0;
 		this.selectedItemInventoryIndex = 0;
-		this.soundData = void 0;
+		this.soundArchive = void 0;
 		this.statFatigue = 0;
 		this.fatigueSleeping = 0;
 		this.tradeRecipientConfirmItemsCount = 0;
@@ -279,7 +326,7 @@ export default class mudclient extends GameConnection {
 		this.planeHeight = 0;
 		this.planeMultiplier = 0;
 		this.playerQuestPoints = 0;
-		this.characterHairColours = Int32Array.from([0xFFC030, 0xFFA040, 0x805030, 0x604020, 0x303030, 0xFF6020, 0xFF4000, 0xFFFFFF, 0x00FF00, 0x00FFFF]);
+		this.characterHairColours = Int32Array.from([0xFFC030, 0xFFA040, 0x805030, 0x604020, 0x303030, 0xFF6020, 0xFF4000, Color.WHITE.number, Color.GREEN.number, Color.CYAN.number]);
 		this.bankActivePage = 0;
 		this.daysSinceLogin = 0;
 		this.equipmentStatNames = ['Armour', 'WeaponAim', 'WeaponPower', 'Magic', 'Prayer'];
@@ -466,11 +513,10 @@ export default class mudclient extends GameConnection {
 	}
 
 	playSoundFile(s) {
-		if (!this.audioPlayer)
+		if (!this.audioPlayer || !this.soundArchive || !this.members || this.optionSoundDisabled)
 			return;
-
-		if (!this.optionSoundDisabled)
-			this.audioPlayer.writeStream(this.soundData, Utility.getDataFileOffset(s + '.pcm', this.soundData), Utility.getDataFileLength(s + '.pcm', this.soundData));
+		let sound = this.soundArchive.get(`${s}.pcm`);
+		this.audioPlayer.writeStream(sound.data, 0, sound.length);
 	}
 
 	renderReportAbuse() {
@@ -488,8 +534,8 @@ export default class mudclient extends GameConnection {
 		if (this.mouseButtonClick !== 0 && this.reportAbuseOffence !== 0) {
 			this.mouseButtonClick = 0;
 			this.reportAbuseState = 2;
-			this.inputTextCurrent = '';
-			this.inputTextFinal = '';
+			this.inputBuffer = '';
+			this.submittedInput = '';
 			return;
 		}
 
@@ -509,147 +555,147 @@ export default class mudclient extends GameConnection {
 			}
 		}
 
-		this.surface.drawBox(56, 35, 400, 290, 0);
-		this.surface.drawBoxEdge(56, 35, 400, 290, 0xffffff);
+		this.surface.drawBox(56, 35, 400, 290, Color.BLACK.number);
+		this.surface.drawBoxEdge(56, 35, 400, 290, Color.WHITE.number);
 		y = 50;
-		this.surface.drawStringCenter('This form is for reporting players who are breaking our rules', 256, y, 1, 0xffffff);
+		this.surface.drawStringCenter('This form is for reporting players who are breaking our rules', 256, y, 1, Color.WHITE.number);
 		y += 15;
-		this.surface.drawStringCenter('Using it sends a snapshot of the last 60 secs of activity to us', 256, y, 1, 0xffffff);
+		this.surface.drawStringCenter('Using it sends a snapshot of the last 60 secs of activity to us', 256, y, 1, Color.WHITE.number);
 		y += 15;
-		this.surface.drawStringCenter('If you misuse this form, you will be banned.', 256, y, 1, 0xff8000);
+		this.surface.drawStringCenter('If you misuse this form, you will be banned.', 256, y, 1, Color.DARKER_ORANGE.number);
 		y += 15;
 		y += 10;
-		this.surface.drawStringCenter('First indicate which of our 12 rules is being broken. For a detailed', 256, y, 1, 0xffff00);
+		this.surface.drawStringCenter('First indicate which of our 12 rules is being broken. For a detailed', 256, y, 1, Color.YELLOW.number);
 		y += 15;
-		this.surface.drawStringCenter('explanation of each rule please read the manual on our website.', 256, y, 1, 0xffff00);
+		this.surface.drawStringCenter('explanation of each rule please read the manual on our website.', 256, y, 1, Color.YELLOW.number);
 		y += 15;
 
 		let textColour = 0;
 
 		if (this.reportAbuseOffence === 1) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('1: Offensive language', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 2) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('2: Item scamming', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 3) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('3: Password scamming', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 4) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('4: Bug abuse', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 5) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('5: Jagex Staff impersonation', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 6) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('6: Account sharing/trading', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 7) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('7: Macroing', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 8) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
-		this.surface.drawStringCenter('8: Mutiple logging in', 256, y, 1, textColour);
+		this.surface.drawStringCenter('8: Multiple logging in', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 9) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('9: Encouraging others to break rules', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 10) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('10: Misuse of customer support', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 11) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('11: Advertising / website', 256, y, 1, textColour);
 		y += 14;
 
 		if (this.reportAbuseOffence === 12) {
-			this.surface.drawBoxEdge(66, y - 12, 380, 15, 0xffffff);
-			textColour = 0xff8000;
+			this.surface.drawBoxEdge(66, y - 12, 380, 15, Color.WHITE.number);
+			textColour = Color.DARKER_ORANGE.number;
 		} else {
-			textColour = 0xffffff;
+			textColour = Color.WHITE.number;
 		}
 
 		this.surface.drawStringCenter('12: Real world item trading', 256, y, 1, textColour);
 		y += 14;
 		y += 15;
-		textColour = 0xffffff;
+		textColour = Color.WHITE.number;
 
 		if (this.mouseX > 196 && this.mouseX < 316 && this.mouseY > y - 15 && this.mouseY < y + 5) {
-			textColour = 0xffff00;
+			textColour = Color.YELLOW.number;
 		}
 
 		this.surface.drawStringCenter('Click here to cancel', 256, y, 1, textColour);
@@ -681,7 +727,7 @@ export default class mudclient extends GameConnection {
 		startY = this.walkPathY[steps];
 		steps--;
 
-		this.clientStream.queue(Ops.WALK(steps, startX, startY, x1, y1, x2, y2, checkObjects, walkToAction));
+		this.clientStream.queue(Ops.WALK(steps, startX, startY, x1, y1, x2, y2, checkObjects, walkToAction, this.walkPathX, this.walkPathY));
 		this.mouseClickXStep = -24;
 		this.mouseClickXX = this.mouseX;
 		this.mouseClickXY = this.mouseY;
@@ -699,12 +745,11 @@ export default class mudclient extends GameConnection {
 		startY = this.walkPathY[steps];
 		steps--;
 
-		this.clientStream.queue(Ops.WALK(steps, startX, startY, x1, y1, x2, y2, checkObjects, walkToAction));
+		this.clientStream.queue(Ops.WALK(steps, startX, startY, x1, y1, x2, y2, checkObjects, walkToAction, this.walkPathX, this.walkPathY));
 
 		this.mouseClickXStep = -24;
 		this.mouseClickXX = this.mouseX;
 		this.mouseClickXY = this.mouseY;
-
 		return true;
 	}
 
@@ -743,37 +788,55 @@ inventory:
 	}
 
 	renderWildernessWarning() {
-		let y = 97;
-		this.surface.drawBox(86, 77, 340, 180, 0);
-		this.surface.drawBoxEdge(86, 77, 340, 180, 0xffffff);
-		this.surface.drawStringCenter('Warning! Proceed with caution', 256, y, 4, 0xff0000);
-		y += 26;
-		this.surface.drawStringCenter('If you go much further north you will enter the', 256, y, 1, 0xffffff);
-		y += 13;
-		this.surface.drawStringCenter('wilderness. This a very dangerous area where', 256, y, 1, 0xffffff);
-		y += 13;
-		this.surface.drawStringCenter('other players can attack you!', 256, y, 1, 0xffffff);
-		y += 22;
-		this.surface.drawStringCenter('The further north you go the more dangerous it', 256, y, 1, 0xffffff);
-		y += 13;
-		this.surface.drawStringCenter('becomes, but the more treasure you will find.', 256, y, 1, 0xffffff);
-		y += 22;
-		this.surface.drawStringCenter('In the wilderness an indicator at the bottom-right', 256, y, 1, 0xffffff);
-		y += 13;
-		this.surface.drawStringCenter('of the screen will show the current level of danger', 256, y, 1, 0xffffff);
-		y += 22;
+		// 2D array where each inner array is a paragraph of the warning panel text.
+		let paragraphs = [
+			[
+				'If you go much further north you will enter the',
+				'wilderness. This a very dangerous area where',
+				'other players can attack you!',
+			],
+			[
+				'The further north you go the more dangerous it',
+				'becomes, but the more treasure you will find.',
+			],
+			[
+				'In the wilderness an indicator at the bottom-right',
+				'of the screen will show the current level of danger',
+			],
+		];
+		let drawY = 97;
+		// draw panel
+		this.surface.drawBox(86, 77, 340, 180, Color.BLACK.number);
+		// draw panel border
+		this.surface.drawBoxEdge(86, 77, 340, 180, Color.WHITE.number);
+		let title = 'Warning! Proceed with caution';
+		// draw panel title, using big, red letters
+		this.surface.drawStringCenter(title, 256, drawY, 4, Color.RED.number);
+		drawY += 26;
+		// draw warning text
+		for (let paragraph of paragraphs) {
+			for (let line of paragraph) {
+				this.surface.drawStringCenter(line, 256, drawY, 1, Color.WHITE.number);
+				drawY += 13;
+			}
+			drawY += 9;
+		}
 
-		let color = (this.mouseY > y - 12 && this.mouseY <= y && this.mouseX > 181 && this.mouseX < 331) ? 0xFF0000 : 0xFFFFFF;
-		this.surface.drawStringCenter('Click here to close window', 256, y, 1, color);
+		// draw close button
+		let color = Color.WHITE.number;
+		if (this.mouseWithin(180,drawY-12,150,12))
+			color = Color.RED.number
+		this.surface.drawStringCenter('Click here to close window', 256, drawY, 1, color);
 
-		if (this.mouseButtonClick !== 0) {
-			if (this.mouseY > y - 12 && this.mouseY <= y && this.mouseX > 181 && this.mouseX < 331)
+		// handle clicking close button or clicking outside the panel boundaries
+		if (this.isClicking()) {
+			// Over the close window text line
+			if (this.mouseWithin(180, drawY - 12, 150, 13))
 				this.wildAwarenessLvl = 2;
-
-			if (this.mouseX < 86 || this.mouseX > 426 || this.mouseY < 77 || this.mouseY > 257)
+			// Outside the panel boundaries
+			if (!this.mouseWithin(86, 77, 340, 180))
 				this.wildAwarenessLvl = 2;
-
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 		}
 	}
 
@@ -800,7 +863,7 @@ inventory:
 			}
 
 			this.receivedMessageY[msgIdx] = y;
-			this.surface.centrepara(this.receivedMessages[msgIdx], x, y, 1, 0xffff00, 300);
+			this.surface.centrepara(this.receivedMessages[msgIdx], x, y, 1, Color.YELLOW.number, 300);
 		}
 
 		for (let itemIdx = 0; itemIdx < this.itemsAboveHeadCount; itemIdx++) {
@@ -824,8 +887,8 @@ inventory:
 			let l2 = this.healthBarY[j1];
 			let k3 = this.healthBarMissing[j1];
 
-			this.surface.drawBoxAlpha(i2 - 15, l2 - 3, k3, 5, 0x00FF00, 0xC0);
-			this.surface.drawBoxAlpha((i2 - 15) + k3, l2 - 3, 30 - k3, 5, 0xff0000, 0xC0);
+			this.surface.drawBoxAlpha(i2 - 15, l2 - 3, k3, 5, Color.GREEN.number, Color.MEDIUM_BLUE.number);
+			this.surface.drawBoxAlpha((i2 - 15) + k3, l2 - 3, 30 - k3, 5, Color.RED.number, Color.MEDIUM_BLUE.number);
 		}
 	}
 
@@ -871,67 +934,67 @@ inventory:
 	drawUi() {
 		if (this.logoutBoxFrames !== 0) {
 			this.renderLogoutNotification();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.welcomeBoxVisible) {
 			this.renderWelcomeNotification();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.serverMessageVisible) {
 			this.renderServerMessageBox();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.wildAwarenessLvl === 1) {
 			this.renderWildernessWarning();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.bankVisible && !this.combatTimer.enabled) {
 			this.renderBank();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.shopVisible && !this.combatTimer.enabled) {
 			this.renderShop();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.tradeConfirmVisible) {
 			this.renderConfirmTrade();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.tradeConfigVisible) {
 			this.renderTradeScreen();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.duelConfirmVisible) {
 			this.renderConfirmDuel();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.duelConfigVisible) {
 			this.renderDuelScreen();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.reportAbuseState === 1) {
 			this.renderReportAbuse();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.reportAbuseState === 2) {
 			this.renderReportAbuseInputs();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 		if (this.contactsInputCtx !== 0) {
 			this.renderSocialInputBox();
-			this.mouseButtonClick = 0;
+			this.resetClicking();
 			return;
 		}
 
@@ -970,14 +1033,15 @@ inventory:
 
 		if (!this.showOptionMenu) {
 			// We can have context menus for the tab panels, too
-			// never return early here for things you intend to use right click functionality with
+			// Note: Ensure that this function reaches this call if a context menu is used
+			// So no return statements before here unless you handle context menus yourself!
 			if (this.visibleContextMenu)
 				this.handleContextClick();
 			else
 				this.handleDefaultClick();
 		}
 
-		this.mouseButtonClick = 0;
+		this.resetClicking();
 	}
 
 	renderTradeScreen() {
@@ -1130,10 +1194,10 @@ inventory:
 			this.surface.drawLineVert(dialogX + 216 + k4 * 49, dialogY + 30, 205, 0);
 		}
 
-		this.surface.drawString('Trading with: ' + this.tradeRecipientName, dialogX + 1, dialogY + 10, 1, 0xffffff);
-		this.surface.drawString('Your Offer', dialogX + 9, dialogY + 27, 4, 0xffffff);
-		this.surface.drawString('Opponent\'s Offer', dialogX + 9, dialogY + 152, 4, 0xffffff);
-		this.surface.drawString('Your Inventory', dialogX + 216, dialogY + 27, 4, 0xffffff);
+		this.surface.drawString('Trading with: ' + this.tradeRecipientName, dialogX + 1, dialogY + 10, 1, Color.WHITE.number);
+		this.surface.drawString('Your Offer', dialogX + 9, dialogY + 27, 4, Color.WHITE.number);
+		this.surface.drawString('Opponent\'s Offer', dialogX + 9, dialogY + 152, 4, Color.WHITE.number);
+		this.surface.drawString('Your Inventory', dialogX + 216, dialogY + 27, 4, Color.WHITE.number);
 
 		if (!this.tradeAccepted)
 			this.surface.drawSpriteID(dialogX + 217, dialogY + 238, mudclient.spriteMedia + 25);
@@ -1141,13 +1205,13 @@ inventory:
 		this.surface.drawSpriteID(dialogX + 394, dialogY + 238, mudclient.spriteMedia + 26);
 
 		if (this.tradeRecipientAccepted) {
-			this.surface.drawStringCenter('Other player', dialogX + 341, dialogY + 246, 1, 0xffffff);
-			this.surface.drawStringCenter('has accepted', dialogX + 341, dialogY + 256, 1, 0xffffff);
+			this.surface.drawStringCenter('Other player', dialogX + 341, dialogY + 246, 1, Color.WHITE.number);
+			this.surface.drawStringCenter('has accepted', dialogX + 341, dialogY + 256, 1, Color.WHITE.number);
 		}
 
 		if (this.tradeAccepted) {
-			this.surface.drawStringCenter('Waiting for', dialogX + 217 + 35, dialogY + 246, 1, 0xffffff);
-			this.surface.drawStringCenter('other player', dialogX + 217 + 35, dialogY + 256, 1, 0xffffff);
+			this.surface.drawStringCenter('Waiting for', dialogX + 217 + 35, dialogY + 246, 1, Color.WHITE.number);
+			this.surface.drawStringCenter('other player', dialogX + 217 + 35, dialogY + 256, 1, Color.WHITE.number);
 		}
 
 		for (let itemIndex = 0; itemIndex < this.inventoryItemsCount; itemIndex++) {
@@ -1157,7 +1221,7 @@ inventory:
 			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.inventoryItemId[itemIndex]], GameData.itemMask[this.inventoryItemId[itemIndex]], 0, 0, false);
 
 			if (GameData.itemStackable[this.inventoryItemId[itemIndex]] === 0) {
-				this.surface.drawString(this.inventoryItemStackCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 0xffff00);
+				this.surface.drawString(this.inventoryItemStackCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, Color.YELLOW.number);
 			}
 		}
 
@@ -1168,11 +1232,11 @@ inventory:
 			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.tradeItems[itemIndex]], GameData.itemMask[this.tradeItems[itemIndex]], 0, 0, false);
 
 			if (GameData.itemStackable[this.tradeItems[itemIndex]] === 0) {
-				this.surface.drawString(this.tradeItemCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 0xffff00);
+				this.surface.drawString(this.tradeItemCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, Color.YELLOW.number);
 			}
 
 			if (this.mouseX > slotX && this.mouseX < slotX + 48 && this.mouseY > slotY && this.mouseY < slotY + 32) {
-				this.surface.drawString(GameData.itemName[this.tradeItems[itemIndex]] + ': @whi@' + GameData.itemDescription[this.tradeItems[itemIndex]], dialogX + 8, dialogY + 273, 1, 0xffff00);
+				this.surface.drawString(this.itemName(this.tradeItems[itemIndex]) + ': @whi@' + GameData.itemDescription[this.tradeItems[itemIndex]], dialogX + 8, dialogY + 273, 1, Color.YELLOW.number);
 			}
 		}
 
@@ -1183,10 +1247,10 @@ inventory:
 			this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.tradeRecipientItems[itemIndex]], GameData.itemMask[this.tradeRecipientItems[itemIndex]], 0, 0, false);
 
 			if (GameData.itemStackable[this.tradeRecipientItems[itemIndex]] === 0)
-				this.surface.drawString(this.tradeRecipientItemCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 0xffff00);
+				this.surface.drawString(this.tradeRecipientItemCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, Color.YELLOW.number);
 
 			if (this.mouseX > slotX && this.mouseX < slotX + 48 && this.mouseY > slotY && this.mouseY < slotY + 32)
-				this.surface.drawString(GameData.itemName[this.tradeRecipientItems[itemIndex]] + ': @whi@' + GameData.itemDescription[this.tradeRecipientItems[itemIndex]], dialogX + 8, dialogY + 273, 1, 0xffff00);
+				this.surface.drawString(this.itemName(this.tradeRecipientItems[itemIndex]) + ': @whi@' + GameData.itemDescription[this.tradeRecipientItems[itemIndex]], dialogX + 8, dialogY + 273, 1, Color.YELLOW.number);
 		}
 	}
 
@@ -1230,9 +1294,9 @@ inventory:
 		this.isSleeping = false;
 		this.visibleContextMenu = false;
 		this.showOptionMenu = false;
-		this.friendListOnline = new Array(GameConnection.socialListSize);
-		this.friendListHashes = new BigUint64Array(GameConnection.socialListSize);
-		this.ignoreList = new BigUint64Array(GameConnection.socialListSize);
+		this.friendListOnline = new Array(super.socialListSize);
+		this.friendListHashes = new BigUint64Array(super.socialListSize);
+		this.ignoreList = new BigUint64Array(super.socialListSize);
 		this.ignoreListCount = 0;
 	}
 
@@ -1295,28 +1359,28 @@ inventory:
 
 			if (k1 >= 0 && this.mouseX < 489) {
 				if (this.mouseX > 429) {
-					this.surface.drawStringCenter('Click to remove ' + Utility.hashToUsername(this.friendListHashes[k1]), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, 0xffffff);
+					this.surface.drawStringCenter('Click to remove ' + Utility.hashToUsername(this.friendListHashes[k1]), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, Color.WHITE.number);
 				} else if (this.friendListOnline[k1] === 255) {
-					this.surface.drawStringCenter('Click to message ' + Utility.hashToUsername(this.friendListHashes[k1]), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, 0xffffff);
+					this.surface.drawStringCenter('Click to message ' + Utility.hashToUsername(this.friendListHashes[k1]), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, Color.WHITE.number);
 				} else if (this.friendListOnline[k1] > 0) {
 					if (this.friendListOnline[k1] < 200) {
-						this.surface.drawStringCenter(Utility.hashToUsername(this.friendListHashes[k1]) + ' is on world ' + (this.friendListOnline[k1] - 9), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, 0xffffff);
+						this.surface.drawStringCenter(Utility.hashToUsername(this.friendListHashes[k1]) + ' is on world ' + (this.friendListOnline[k1] - 9), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, Color.WHITE.number);
 					} else {
-						this.surface.drawStringCenter(Utility.hashToUsername(this.friendListHashes[k1]) + ' is on classic ' + (this.friendListOnline[k1] - 219), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, 0xffffff);
+						this.surface.drawStringCenter(Utility.hashToUsername(this.friendListHashes[k1]) + ' is on classic ' + (this.friendListOnline[k1] - 219), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, Color.WHITE.number);
 					}
 				} else {
-					this.surface.drawStringCenter(Utility.hashToUsername(this.friendListHashes[k1]) + ' is offline', uiX + ((uiWidth / 2) | 0), uiY + 35, 1, 0xffffff);
+					this.surface.drawStringCenter(Utility.hashToUsername(this.friendListHashes[k1]) + ' is offline', uiX + ((uiWidth / 2) | 0), uiY + 35, 1, Color.WHITE.number);
 				}
 			} else {
-				this.surface.drawStringCenter('Click a name to send a message', uiX + ((uiWidth / 2) | 0), uiY + 35, 1, 0xffffff);
+				this.surface.drawStringCenter('Click a name to send a message', uiX + ((uiWidth / 2) | 0), uiY + 35, 1, Color.WHITE.number);
 			}
 
 			let colour = 0;
 
 			if (this.mouseX > uiX && this.mouseX < uiX + uiWidth && this.mouseY > (uiY + uiHeight) - 16 && this.mouseY < uiY + uiHeight) {
-				colour = 0xffff00;
+				colour = Color.YELLOW.number;
 			} else {
-				colour = 0xffffff;
+				colour = Color.WHITE.number;
 			}
 
 			this.surface.drawStringCenter('Click here to add a friend', uiX + ((uiWidth / 2) | 0), (uiY + uiHeight) - 3, 1, colour);
@@ -1327,18 +1391,18 @@ inventory:
 
 			if (l1 >= 0 && this.mouseX < 489 && this.mouseX > 429) {
 				if (this.mouseX > 429) {
-					this.surface.drawStringCenter('Click to remove ' + Utility.hashToUsername(this.ignoreList[l1]), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, 0xffffff);
+					this.surface.drawStringCenter('Click to remove ' + Utility.hashToUsername(this.ignoreList[l1]), uiX + ((uiWidth / 2) | 0), uiY + 35, 1, Color.WHITE.number);
 				}
 			} else {
-				this.surface.drawStringCenter('Blocking messages from:', uiX + ((uiWidth / 2) | 0), uiY + 35, 1, 0xffffff);
+				this.surface.drawStringCenter('Blocking messages from:', uiX + ((uiWidth / 2) | 0), uiY + 35, 1, Color.WHITE.number);
 			}
 
 			let l2 = 0;
 
 			if (this.mouseX > uiX && this.mouseX < uiX + uiWidth && this.mouseY > (uiY + uiHeight) - 16 && this.mouseY < uiY + uiHeight) {
-				l2 = 0xffff00;
+				l2 = Color.YELLOW.number;
 			} else {
-				l2 = 0xffffff;
+				l2 = Color.WHITE.number;
 			}
 
 			this.surface.drawStringCenter('Click here to add a name', uiX + ((uiWidth / 2) | 0), (uiY + uiHeight) - 3, 1, l2);
@@ -1389,14 +1453,14 @@ inventory:
 
 			if (uiY > 166 && this.mouseButtonClick === 1 && this.uiTabSocialSubTab === 0) {
 				this.contactsInputCtx = 1;
-				this.inputTextCurrent = '';
-				this.inputTextFinal = '';
+				this.inputBuffer = '';
+				this.submittedInput = '';
 			}
 
 			if (uiY > 166 && this.mouseButtonClick === 1 && this.uiTabSocialSubTab === 1) {
 				this.contactsInputCtx = 3;
-				this.inputTextCurrent = '';
-				this.inputTextFinal = '';
+				this.inputBuffer = '';
+				this.submittedInput = '';
 			}
 
 			this.mouseButtonClick = 0;
@@ -1408,6 +1472,7 @@ inventory:
 			return;
 
 		if (this.combatTimer.enabled) {
+			// if the timer was started <1 seconds ago
 			if (this.combatTimer.tickCount < secondsToFrames(1)) {
 				this.showMessage("@cya@You can't logout during combat!", 3);
 				return;
@@ -1487,16 +1552,16 @@ inventory:
 
 		if (this.contactsInputCtx === 1) {
 			this.surface.drawBox(106, i, 300, 70, 0);
-			this.surface.drawBoxEdge(106, i, 300, 70, 0xffffff);
+			this.surface.drawBoxEdge(106, i, 300, 70, Color.WHITE.number);
 			i += 20;
-			this.surface.drawStringCenter('Enter name to add to friends list', 256, i, 4, 0xffffff);
+			this.surface.drawStringCenter('Enter name to add to friends list', 256, i, 4, Color.WHITE.number);
 			i += 20;
-			this.surface.drawStringCenter(this.inputTextCurrent + '*', 256, i, 4, 0xffffff);
+			this.surface.drawStringCenter(this.inputBuffer + '*', 256, i, 4, Color.WHITE.number);
 
-			if (this.inputTextFinal.length > 0) {
-				let raw = this.inputTextFinal.trim();
-				this.inputTextCurrent = '';
-				this.inputTextFinal = '';
+			if (this.submittedInput.length > 0) {
+				let raw = this.submittedInput.trim();
+				this.inputBuffer = '';
+				this.submittedInput = '';
 				this.contactsInputCtx = 0;
 
 				this.privateMessageTarget = Utility.usernameToHash(raw);
@@ -1510,11 +1575,11 @@ inventory:
 
 		if (this.contactsInputCtx === 2) {
 			this.surface.drawBox(6, i, 500, 70, 0);
-			this.surface.drawBoxEdge(6, i, 500, 70, 0xffffff);
+			this.surface.drawBoxEdge(6, i, 500, 70, Color.WHITE.number);
 			i += 20;
-			this.surface.drawStringCenter('Enter message to send to ' + Utility.hashToUsername(this.privateMessageTarget), 256, i, 4, 0xffffff);
+			this.surface.drawStringCenter('Enter message to send to ' + Utility.hashToUsername(this.privateMessageTarget), 256, i, 4, Color.WHITE.number);
 			i += 20;
-			this.surface.drawStringCenter(this.inputPmCurrent + '*', 256, i, 4, 0xffffff);
+			this.surface.drawStringCenter(this.inputPmCurrent + '*', 256, i, 4, Color.WHITE.number);
 
 			if (this.inputPmFinal.length > 0) {
 				this.contactsInputCtx = 0;
@@ -1533,17 +1598,17 @@ inventory:
 
 		if (this.contactsInputCtx === 3) {
 			this.surface.drawBox(106, i, 300, 70, 0);
-			this.surface.drawBoxEdge(106, i, 300, 70, 0xffffff);
+			this.surface.drawBoxEdge(106, i, 300, 70, Color.WHITE.number);
 			i += 20;
-			this.surface.drawStringCenter('Enter name to add to ignore list', 256, i, 4, 0xffffff);
+			this.surface.drawStringCenter('Enter name to add to ignore list', 256, i, 4, Color.WHITE.number);
 			i += 20;
-			this.surface.drawStringCenter(this.inputTextCurrent + '*', 256, i, 4, 0xffffff);
+			this.surface.drawStringCenter(this.inputBuffer + '*', 256, i, 4, Color.WHITE.number);
 
-			if (this.inputTextFinal.length > 0) {
-				let formatted = Utility.hashToUsername(Utility.usernameToHash(this.inputTextFinal.trim()));
+			if (this.submittedInput.length > 0) {
+				let formatted = Utility.hashToUsername(Utility.usernameToHash(this.submittedInput.trim()));
 				this.contactsInputCtx = 0;
-				this.inputTextCurrent = '';
-				this.inputTextFinal = '';
+				this.inputBuffer = '';
+				this.submittedInput = '';
 
 				if (formatted.length > 0) {
 					if (Utility.usernameToHash(this.localPlayer.name) === Utility.usernameToHash(formatted)) {
@@ -1556,10 +1621,10 @@ inventory:
 			}
 		}
 
-		let j = 0xFFFFFF;
+		let j = Color.WHITE.number;
 
 		if (this.mouseX > 236 && this.mouseX < 276 && this.mouseY > 193 && this.mouseY < 213) {
-			j = 0xFFFF00;
+			j = Color.YELLOW.number;
 		}
 
 		this.surface.drawStringCenter('Cancel', 256, 208, 1, j);
@@ -1649,9 +1714,9 @@ inventory:
 		let y = 167 - ((i / 2) | 0);
 
 		this.surface.drawBox(56, 167 - ((i / 2) | 0), 400, i, 0);
-		this.surface.drawBoxEdge(56, 167 - ((i / 2) | 0), 400, i, 0xffffff);
+		this.surface.drawBoxEdge(56, 167 - ((i / 2) | 0), 400, i, Color.WHITE.number);
 		y += 20;
-		this.surface.drawStringCenter('Welcome to RuneScape ' + this.loginUser, 256, y, 4, 0xffff00);
+		this.surface.drawStringCenter('Welcome to RuneScape ' + this.loginUser, 256, y, 4, Color.YELLOW.number);
 		y += 30;
 
 		let s = '';
@@ -1663,19 +1728,19 @@ inventory:
 			s = this.daysSinceLogin + ' days ago';
 
 		if (this.lastRemoteIP !== 0) {
-			this.surface.drawStringCenter('You last logged in ' + s, 256, y, 1, 0xffffff);
+			this.surface.drawStringCenter('You last logged in ' + s, 256, y, 1, Color.WHITE.number);
 			y += 15;
 
 			if (!this.lastRemoteHost)
 				this.lastRemoteHost = this.getHostnameIP(this.lastRemoteIP);
 
-			this.surface.drawStringCenter('from: ' + this.lastRemoteHost, 256, y, 1, 0xffffff);
+			this.surface.drawStringCenter('from: ' + this.lastRemoteHost, 256, y, 1, Color.WHITE.number);
 			y += 15;
 			y += 15;
 		}
 
 		if (this.unreadMessageCount > 0) {
-			let k = 0xffffff;
+			let k = Color.WHITE.number;
 
 			this.surface.drawStringCenter('Jagex staff will NEVER email you. We use the', 256, y, 1, k);
 			y += 15;
@@ -1683,19 +1748,19 @@ inventory:
 			y += 15;
 
 			if (this.unreadMessageCount === 1)
-				this.surface.drawStringCenter('You have @yel@0@whi@ unread messages in your message-centre', 256, y, 1, 0xffffff);
+				this.surface.drawStringCenter('You have @yel@0@whi@ unread messages in your message-centre', 256, y, 1, Color.WHITE.number);
 			else
-				this.surface.drawStringCenter('You have @gre@' + (this.unreadMessageCount - 1) + ' unread messages @whi@in your message-centre', 256, y, 1, 0xffffff);
+				this.surface.drawStringCenter('You have @gre@' + (this.unreadMessageCount - 1) + ' unread messages @whi@in your message-centre', 256, y, 1, Color.WHITE.number);
 			y += 15;
 			y += 15;
 		}
 
 		if (this.welcomeRecoverySetDays === 0) {
-			this.surface.drawStringCenter('You have not yet set any password recovery questions.', 256, y, 1, 0xff8000);
+			this.surface.drawStringCenter('You have not yet set any password recovery questions.', 256, y, 1, Color.DARKER_ORANGE.number);
 			y += 15;
-			this.surface.drawStringCenter('We strongly recommend you do so now to secure your account.', 256, y, 1, 0xff8000);
+			this.surface.drawStringCenter('We strongly recommend you do so now to secure your account.', 256, y, 1, Color.DARKER_ORANGE.number);
 			y += 15;
-			this.surface.drawStringCenter('Do this from the \'account management\' area on our front webpage', 256, y, 1, 0xff8000);
+			this.surface.drawStringCenter('Do this from the \'account management\' area on our front webpage', 256, y, 1, Color.DARKER_ORANGE.number);
 			y += 15;
 		} else if (this.welcomeRecoverySetDays !== 201) {
 			this.welcomeRecoverySetDays--;
@@ -1707,25 +1772,25 @@ inventory:
 				recoveryStatus = 'Yesterday';
 			}
 
-			this.surface.drawStringCenter(recoveryStatus + ' you changed your recovery questions', 0xFF, y, 1, 0xff8000);
+			this.surface.drawStringCenter(recoveryStatus + ' you changed your recovery questions', 0xFF, y, 1, Color.DARKER_ORANGE.number);
 			y += 15;
-			this.surface.drawStringCenter('If you do not remember making this change then cancel it immediately', 0xFF, y, 1, 0xff8000);
+			this.surface.drawStringCenter('If you do not remember making this change then cancel it immediately', 0xFF, y, 1, Color.DARKER_ORANGE.number);
 			y += 15;
-			this.surface.drawStringCenter('Do this from the \'account management\' area on our front webpage', 0xFF, y, 1, 0xff8000);
+			this.surface.drawStringCenter('Do this from the \'account management\' area on our front webpage', 0xFF, y, 1, Color.DARKER_ORANGE.number);
 			y += 15;
 			y += 15;
 		}
 
-		let l = 0xffffff;
+		let l = Color.WHITE.number;
 
 		if (this.mouseY > y - 12 && this.mouseY <= y && this.mouseX > 106 && this.mouseX < 406) {
-			l = 0xff0000;
+			l = Color.RED.number;
 		}
 
 		this.surface.drawStringCenter('Click here to close window', 256, y, 1, l);
 
 		if (this.mouseButtonClick === 1) {
-			if (l === 0xff0000)
+			if (l === Color.RED.number)
 				this.welcomeBoxVisible = false;
 
 			if ((this.mouseX < 86 || this.mouseX > 426) && (this.mouseY < 167 - ((i / 2) | 0) || this.mouseY > 167 + ((i / 2) | 0)))
@@ -1739,21 +1804,29 @@ inventory:
 		this.surface.interlace = false;
 		this.surface.blackScreen();
 		this.panelGame[GamePanels.APPEARANCE].render();
-		let i = 140;
-		let j = 50;
-		i += 116;
-		j -= 25;
-		i -= 32;
-		this.surface._spriteClipping_from9(i - 55, j, 64, 102, GameData.animationNumber[this.appearanceHeadType], this.characterHairColours[this.appearanceHairColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
-		this.surface._spriteClipping_from9(i - 55, j, 64, 102, GameData.animationNumber[this.appearanceBodyGender], this.characterTopBottomColours[this.appearanceTopColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
-		this.surface._spriteClipping_from6(i - 55, j, 64, 102, GameData.animationNumber[this.appearance2Colour], this.characterTopBottomColours[this.appearanceBottomColour]);
-		this.surface._spriteClipping_from9(i, j, 64, 102, GameData.animationNumber[this.appearanceHeadType] + 6, this.characterHairColours[this.appearanceHairColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
-		this.surface._spriteClipping_from9(i, j, 64, 102, GameData.animationNumber[this.appearanceBodyGender] + 6, this.characterTopBottomColours[this.appearanceTopColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
-		this.surface._spriteClipping_from6(i, j, 64, 102, GameData.animationNumber[this.appearance2Colour] + 6, this.characterTopBottomColours[this.appearanceBottomColour]);
-		this.surface._spriteClipping_from9(i + 55, j, 64, 102, GameData.animationNumber[this.appearanceHeadType] + 12, this.characterHairColours[this.appearanceHairColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
-		this.surface._spriteClipping_from9(i + 55, j, 64, 102, GameData.animationNumber[this.appearanceBodyGender] + 12, this.characterTopBottomColours[this.appearanceTopColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
-		this.surface._spriteClipping_from6(i + 55, j, 64, 102, GameData.animationNumber[this.appearance2Colour] + 12, this.characterTopBottomColours[this.appearanceBottomColour]);
+		// let i = 140;
+		// let j = 50;
+		// i += 116;
+		// j -= 25;
+		// i -= 32;
+		// i = 224
+		// j = 25
+		let x = 224, y = 25;
+		// arrow left
+		this.surface._spriteClipping_from9(x - 55, y, 64, 102, GameData.animationNumber[this.appearanceHeadType], this.characterHairColours[this.appearanceHairColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
+		this.surface._spriteClipping_from9(x - 55, y, 64, 102, GameData.animationNumber[this.appearanceBodyGender], this.characterTopBottomColours[this.appearanceTopColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
+		this.surface._spriteClipping_from6(x - 55, y, 64, 102, GameData.animationNumber[this.appearance2Colour], this.characterTopBottomColours[this.appearanceBottomColour]);
+		// current selected sprite
+		this.surface._spriteClipping_from9(x, y, 64, 102, GameData.animationNumber[this.appearanceHeadType] + 6, this.characterHairColours[this.appearanceHairColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
+		this.surface._spriteClipping_from9(x, y, 64, 102, GameData.animationNumber[this.appearanceBodyGender] + 6, this.characterTopBottomColours[this.appearanceTopColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
+		this.surface._spriteClipping_from6(x, y, 64, 102, GameData.animationNumber[this.appearance2Colour] + 6, this.characterTopBottomColours[this.appearanceBottomColour]);
+		// arrow right
+		this.surface._spriteClipping_from9(x + 55, y, 64, 102, GameData.animationNumber[this.appearanceHeadType] + 12, this.characterHairColours[this.appearanceHairColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
+		this.surface._spriteClipping_from9(x + 55, y, 64, 102, GameData.animationNumber[this.appearanceBodyGender] + 12, this.characterTopBottomColours[this.appearanceTopColour], this.characterSkinColours[this.appearanceSkinColour], 0, false);
+		this.surface._spriteClipping_from6(x + 55, y, 64, 102, GameData.animationNumber[this.appearance2Colour] + 12, this.characterTopBottomColours[this.appearanceBottomColour]);
+		// hbar, the bottom blue chat history/report abuse selector thing
 		this.surface.drawSpriteID(0, this.gameHeight, mudclient.spriteMedia + 22);
+		// Blit!
 		this.surface.draw(this.graphics, 0, 0);
 	}
 
@@ -1764,7 +1837,7 @@ inventory:
 	}
 
 	async handleGameInput() {
-		await this.checkConnection();
+		await super.checkConnection();
 
 		if (this.systemUpdate !== 0)
 			this.systemUpdate--;
@@ -1779,9 +1852,9 @@ inventory:
 			let tickable = this.tickables[t];
 			if (tickable && tickable.enabled) {
 				if (tickable.cb) {
-					await tickable.tick();
+					tickable.tick();
 				} else {
-					await tickable.tick(() => {
+					tickable.tick(() => {
 						tickable.disable();
 						// this.removeTimer(tickable);
 					});
@@ -1821,10 +1894,6 @@ inventory:
 				player.bubble.tick(() => {
 					player.bubble = void 0;
 				});
-			// if (player.bubbleTimeout > 0)
-				// player.bubbleTimeout--;
-			// if (player.combatTimer > 0)
-				// player.combatTimer--;
 			if (player.projectileRange > 0)
 				player.projectileRange--;
 			player.healthTimer.tick(() => {
@@ -1850,8 +1919,6 @@ inventory:
 				npc.bubble.tick(() => {
 					npc.bubble = void 0;
 				});
-			// if (npc.bubbleTimeout > 0)
-				// npc.bubbleTimeout--;
 			npc.healthTimer.tick(() => {
 				npc.healthTimer.disable();
 			});
@@ -1905,9 +1972,9 @@ inventory:
 		}
 
 		if (this.isSleeping) {
-			if (this.inputTextFinal) {
-				if (/^::/.test(this.inputTextFinal)) {
-					let cmd = this.inputTextFinal.slice(2);
+			if (this.submittedInput) {
+				if (/^::/.test(this.submittedInput)) {
+					let cmd = this.submittedInput.slice(2);
 					if (/^closecon$/i.test(cmd)) {
 						this.clientStream.closeStream();
 						return;
@@ -1922,7 +1989,7 @@ inventory:
 					}
 					return;
 				}
-				this.doGuessCaptcha(this.inputTextFinal);
+				this.doGuessCaptcha(this.submittedInput);
 			}
 
 			if (this.lastMouseButtonDown === 1 && this.mouseY > 275 && this.mouseY < 310 && this.mouseX > 56 && this.mouseX < 456)
@@ -1954,8 +2021,8 @@ inventory:
 			if (this.mouseX > 417 && this.mouseX < 497 && this.lastMouseButtonDown === 1) {
 				this.reportAbuseState = 1;
 				this.reportAbuseOffence = 0;
-				this.inputTextCurrent = '';
-				this.inputTextFinal = '';
+				this.inputBuffer = '';
+				this.submittedInput = '';
 			}
 
 			this.lastMouseButtonDown = 0;
@@ -1975,33 +2042,46 @@ inventory:
 				this.chatHistory.push(s);
 
 				this.panelGame[GamePanels.CHAT].setTextHandle(this.controlTextListAll, '');
-				if (/^::.*/.test(s)) {
-					let cmd = s.substring(2);
-					if ( /^closeconn?$/i.test(cmd) ) {
-						this.clientStream.closeStream();
-						return;
-					}
-					if ( /^logout$/i.test(cmd) ) {
-						this.closeConnection();
-						return;
-					}
-					if ( /^(lostconn?|dc)$/i.test(cmd) ) {
-						await this.lostConnection();
-						return;
-					}
-					this.sendCommandString(cmd);
+				if (/^::.+/.test(s)) {
+					let callback = this.gameCommands.find(s.substring(2));
+					if (callback)
+						callback.execute();
+					else
+						this.sendCommandString(s.substring(2));
+					
+					// if (!this.gameCommands.handle(cmd)) {
+						// this.sendCommandString(cmd);
+					// }
+					// if no stored patterns match up to cmd, we then send this command to the server so they
+					// can try to handle it.
+					// GameCommands.add(/^(closeconn?|disconn?|dc)$/i, this.clientStream.closeStream);
+					// GameCommands.add(/^logout$/i, this.closeConnection);
+					// GameCommands.add(/^(lc|lostconn?|loseconn?)$/i, this.lostConnection);
+					// if ( /^closeconn?$/i.test(cmd) ) {
+						// this.clientStream.closeStream();
+						// return;
+					// }
+					// if ( /^logout$/i.test(cmd) ) {
+						// this.closeConnection();
+						// return;
+					// }
+					// if ( /^(lostconn?|dc)$/i.test(cmd) ) {
+						// await this.lostConnection();
+						// return;
+					// }
+					// this.sendCommandString(cmd);
 					return;
 				}
 				let msg = this.chatSystem.encode(s);
-				if (msg.length === 0)
+				if (!msg || !msg.length)
 					return;
 				this.sendChatMessage(msg, msg.length);
 				if (!this.localPlayer)
 					return;
 				s = this.chatSystem.decode(msg);
-				this.localPlayer.messageTimeout = secondsToFrames(3);
-				this.localPlayer.message = s;
-				this.showMessage(this.localPlayer.name + ': ' + s, 2);
+				// this.localPlayer.messageTimeout = secondsToFrames(3);
+				// this.localPlayer.message = s;
+				// this.showMessage(this.localPlayer.name + ': ' + s, 2);
 			}
 		}
 
@@ -2156,8 +2236,8 @@ inventory:
 		p.stopAccess();
 		this.clientStream.add(p);
 
-		this.inputTextCurrent = '';
-		this.inputTextFinal = '';
+		this.inputBuffer = '';
+		this.submittedInput = '';
 		this.sleepingStatusText = 'Please wait...';
 	}
 
@@ -2371,7 +2451,7 @@ inventory:
 			let slotY = 36 + Math.floor(itemIndex / 5) * 34;
 
 			if (itemIndex < this.inventoryItemsCount && this.inventoryEquipped[itemIndex])
-				this.surface.drawBoxAlpha(slotX, slotY, 49, 34, 0xff0000, 128);
+				this.surface.drawBoxAlpha(slotX, slotY, 49, 34, Color.RED.number, 128);
 			else
 				this.surface.drawBoxAlpha(slotX, slotY, 49, 34, Surface.rgbToLong(181, 181, 181), 128);
 
@@ -2379,7 +2459,7 @@ inventory:
 				this.surface._spriteClipping_from9(slotX, slotY, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.inventoryItemId[itemIndex]], GameData.itemMask[this.inventoryItemId[itemIndex]], 0, 0, false);
 
 				if (GameData.itemStackable[this.inventoryItemId[itemIndex]] === 0)
-					this.surface.drawString(this.inventoryItemStackCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, 0xffff00);
+					this.surface.drawString(this.inventoryItemStackCount[itemIndex].toString(), slotX + 1, slotY + 10, 1, Color.YELLOW.number);
 			}
 		}
 
@@ -2401,10 +2481,10 @@ inventory:
 			if (itemIndex < this.inventoryItemsCount) {
 				let i2 = this.inventoryItemId[itemIndex];
 
-				if (this.selectedSpell >= 0) {
+				if (this.castingSpell) {
 					if (GameData.spellType[this.selectedSpell] === 3) {
-						this.menuItemText1[this.menuItemsCount] = 'Cast ' + GameData.spellName[this.selectedSpell] + ' on';
-						this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[i2];
+						this.menuItemText1[this.menuItemsCount] = 'Cast ' + this.spellName(this.selectedSpell) + ' on';
+						this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(i2);
 						this.menuItemID[this.menuItemsCount] = 600;
 						this.menuSourceType[this.menuItemsCount] = itemIndex;
 						this.menuSourceIndex[this.menuItemsCount] = this.selectedSpell;
@@ -2412,9 +2492,9 @@ inventory:
 
 					}
 				} else {
-					if (this.selectedItemInventoryIndex >= 0) {
+					if (this.usingItem) {
 						this.menuItemText1[this.menuItemsCount] = 'Use ' + this.selectedItemName + ' with';
-						this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[i2];
+						this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(i2);
 						this.menuItemID[this.menuItemsCount] = 610;
 						this.menuSourceType[this.menuItemsCount] = itemIndex;
 						this.menuSourceIndex[this.menuItemsCount] = this.selectedItemInventoryIndex;
@@ -2424,7 +2504,7 @@ inventory:
 
 					if (this.inventoryEquipped[itemIndex]) {
 						this.menuItemText1[this.menuItemsCount] = 'Remove';
-						this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[i2];
+						this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(i2);
 						this.menuItemID[this.menuItemsCount] = 620;
 						this.menuSourceType[this.menuItemsCount] = itemIndex;
 						this.menuItemsCount++;
@@ -2435,7 +2515,7 @@ inventory:
 							this.menuItemText1[this.menuItemsCount] = 'Wear';
 						}
 
-						this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[i2];
+						this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(i2);
 						this.menuItemID[this.menuItemsCount] = 630;
 						this.menuSourceType[this.menuItemsCount] = itemIndex;
 						this.menuItemsCount++;
@@ -2443,24 +2523,24 @@ inventory:
 
 					if (GameData.itemCommand[i2] !== '') {
 						this.menuItemText1[this.menuItemsCount] = GameData.itemCommand[i2];
-						this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[i2];
+						this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(i2);
 						this.menuItemID[this.menuItemsCount] = 640;
 						this.menuSourceType[this.menuItemsCount] = itemIndex;
 						this.menuItemsCount++;
 					}
 
 					this.menuItemText1[this.menuItemsCount] = 'Use';
-					this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[i2];
+					this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(i2);
 					this.menuItemID[this.menuItemsCount] = 650;
 					this.menuSourceType[this.menuItemsCount] = itemIndex;
 					this.menuItemsCount++;
 					this.menuItemText1[this.menuItemsCount] = 'Drop';
-					this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[i2];
+					this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(i2);
 					this.menuItemID[this.menuItemsCount] = 660;
 					this.menuSourceType[this.menuItemsCount] = itemIndex;
 					this.menuItemsCount++;
 					this.menuItemText1[this.menuItemsCount] = 'Examine';
-					this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[i2];
+					this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(i2);
 					this.menuItemID[this.menuItemsCount] = 3600;
 					this.menuSourceType[this.menuItemsCount] = i2;
 					this.menuItemsCount++;
@@ -2533,12 +2613,12 @@ inventory:
 		}
 
 		this.surface.drawBoxAlpha(this.menuX, this.menuY, this.menuWidth, this.menuHeight, 0xd0d0d0, 160);
-		this.surface.drawString('Choose option', this.menuX + 2, this.menuY + 12, 1, 0x00FFFF);
+		this.surface.drawString('Choose option', this.menuX + 2, this.menuY + 12, 1, Color.CYAN.number);
 
 		for (let entry = 0; entry < this.menuItemsCount; entry++) {
 			let entryX = this.menuX + 2;
 			let entryY = this.menuY + 27 + entry * 15;
-			let color = 0xffffff;
+			let color = Color.WHITE.number;
 
 			if (this.isClicking() && (this.mouseX > entryX+7 && this.mouseY > entryY-15 && this.mouseY <= entryY && this.mouseX <= entryX + this.menuWidth+7)) {
 				this.visibleContextMenu = false;
@@ -2546,7 +2626,7 @@ inventory:
 				this.mouseButtonClick = 0;
 				// return;
 			} else if (this.mouseX > entryX - 2 && this.mouseY > entryY-15 && this.mouseY < entryY && this.mouseX < (entryX-2) + this.menuWidth) {
-				color = 0xffff00;
+				color = Color.YELLOW.number;
 				if (this.isClicking()) {
 					this.visibleContextMenu = false;
 					this.menuItemClick(this.menuIndices[entry]);
@@ -2563,134 +2643,179 @@ inventory:
 		let startX = this.surface.width2 - 199;
 		let startY = 3;
 		let width = 156;
+		let middleH = Math.floor(width / 2);
 		let height = 152;
+		let middleV = Math.floor(height / 2);
 
 		// Draw the minimap tab sprite on top of the tab bar sprite
 		this.surface.drawSpriteID(startX - 49, startY, mudclient.spriteMedia + 2);
+		
 		startX += 40;
 		startY += 33;
-		this.surface.drawBox(startX, startY, width, height, 0);
+		this.surface.drawBox(startX, startY, width, height, Color.BLACK.number);
 		this.surface.setBounds(startX, startY, startX + width, startY + height);
 
 //		let k = 192 + this.minimapRandom_2;
-		let k = 192;
+		let poleUnits = 0xC0;
 //		let i1 = this.cameraRotation + this.minimapRandom_1 & 0xff;
-		let i1 = this.cameraRotation & 0xFF;
-		let k1 = ((this.localPlayer.currentX - 6040) * 3 * k) / 2048 | 0;
-		let i3 = ((this.localPlayer.currentY - 6040) * 3 * k) / 2048 | 0;
-		let k4 = Scene.sin2048Cache[1024 - i1 * 4 & 0x3ff];
-		let i5 = Scene.sin2048Cache[(1024 - i1 * 4 & 0x3ff) + 1024];
+		let rotation = this.cameraRotation;// & 0xFF;
+		let k1 = ((this.localPlayer.currentX - 6040) * 3 * poleUnits) >> 11;
+		let i3 = ((this.localPlayer.currentY - 6040) * 3 * poleUnits) >> 11;
+		let k4 = Scene.sin2048Cache[0x400 - rotation * 4 & 0x3FF];
+		let i5 = Scene.sin2048Cache[(0x400 - rotation * 4 & 0x3FF) + 0x400];
 		let k5 = i3 * k4 + k1 * i5 >> 18;
 
 		i3 = i3 * i5 - k1 * k4 >> 18;
 		k1 = k5;
 
 		// landscape
-		this.surface.drawMinimapSprite(startX + Math.floor(width / 2) - k1, 36 + Math.floor(height / 2) + i3, mudclient.spriteMedia - 1, i1 + 64 & 255, k);
+		this.surface.drawMinimapSprite(startX + middleH - k1, 36 + middleV + i3, mudclient.spriteMedia - 1, (rotation + 64) & 0xFF, poleUnits);
 
 		for (let i = 0; i < this.objectCount; i++) {
-			let l1 = (((this.objectX[i] * this.tileSize + 64) - this.localPlayer.currentX) * 3 * k) / 2048 | 0;
-			let j3 = (((this.objectY[i] * this.tileSize + 64) - this.localPlayer.currentY) * 3 * k) / 2048 | 0;
+			let l1 = (((this.objectX[i] * this.tileSize + 64) - this.localPlayer.currentX) * 3 * poleUnits) >> 11;
+			let j3 = (((this.objectY[i] * this.tileSize + 64) - this.localPlayer.currentY) * 3 * poleUnits) >> 11;
 			let l5 = j3 * k4 + l1 * i5 >> 18;
 
 			j3 = j3 * i5 - l1 * k4 >> 18;
 			l1 = l5;
 
-			this.drawMinimapEntity(startX + Math.floor(width / 2) + l1, 36 + Math.floor(height / 2) - j3, 65535);
+			this.drawMinimapEntity(startX + middleH + l1, 36 + middleV - j3, Color.CYAN.number);
 		}
 
 		for (let j7 = 0; j7 < this.groundItemCount; j7++) {
-			let i2 = (((this.groundItemX[j7] * this.tileSize + 64) - this.localPlayer.currentX) * 3 * k) / 2048 | 0;
-			let k3 = (((this.groundItemY[j7] * this.tileSize + 64) - this.localPlayer.currentY) * 3 * k) / 2048 | 0;
+			let i2 = (((this.groundItemX[j7] * this.tileSize + 64) - this.localPlayer.currentX) * 3 * poleUnits) >> 11;
+			let k3 = (((this.groundItemY[j7] * this.tileSize + 64) - this.localPlayer.currentY) * 3 * poleUnits) >> 11;
 			let i6 = k3 * k4 + i2 * i5 >> 18;
 
 			k3 = k3 * i5 - i2 * k4 >> 18;
 			i2 = i6;
 
-			this.drawMinimapEntity(startX + Math.floor(width / 2) + i2, 36 + Math.floor(height / 2) - k3, 0xff0000);
+			this.drawMinimapEntity(startX + middleH + i2, 36 + middleV - k3, Color.RED.number);
 		}
 
 		for (let k7 = 0; k7 < this.npcCount; k7++) {
 			let character = this.npcs[k7];
 
-			let j2 = ((character.currentX - this.localPlayer.currentX) * 3 * k) / 2048 | 0;
-			let l3 = ((character.currentY - this.localPlayer.currentY) * 3 * k) / 2048 | 0;
+			let j2 = ((character.currentX - this.localPlayer.currentX) * 3 * poleUnits) >> 11;
+			let l3 = ((character.currentY - this.localPlayer.currentY) * 3 * poleUnits) >> 11;
 			let j6 = l3 * k4 + j2 * i5 >> 18;
 
 			l3 = l3 * i5 - j2 * k4 >> 18;
 			j2 = j6;
 
-			this.drawMinimapEntity(startX + Math.floor(width / 2) + j2, 36 + Math.floor(height / 2) - l3, 0xffff00);
+			this.drawMinimapEntity(startX + middleH + j2, 36 + middleV - l3, Color.YELLOW.number);
 		}
 
 		for (let l7 = 0; l7 < this.playerCount; l7++) {
 			let player = this.players[l7];
-			let deltaX = ((player.currentX - this.localPlayer.currentX) * 3 * k) / 2048 | 0;
-			let deltaY = ((player.currentY - this.localPlayer.currentY) * 3 * k) / 2048 | 0;
+			let deltaX = ((player.currentX - this.localPlayer.currentX) * 3 * poleUnits) >> 11;
+			let deltaY = ((player.currentY - this.localPlayer.currentY) * 3 * poleUnits) >> 11;
 			let k6 = deltaY * k4 + deltaX * i5 >> 18;
 
 			deltaY = deltaY * i5 - deltaX * k4 >> 18;
 			deltaX = k6;
 
 			// White
-			let indicatorColor = 0xffffff;
+			let indicatorColor = Color.WHITE.number;
 
 			for (let friendIdx = 0; friendIdx < this.friendListCount; friendIdx++) {
 				// Green
 				if (player.hash === (this.friendListHashes[friendIdx]) && this.friendListOnline[friendIdx] === 0xFF)
-					indicatorColor = 0x00ff00;
+					indicatorColor = Color.GREEN.number;
 			}
 
-			this.drawMinimapEntity(startX + Math.floor(width / 2) + deltaX, (36 + Math.floor(height / 2)) - deltaY, indicatorColor);
+			this.drawMinimapEntity(startX + middleH + deltaX, (36 + middleV) - deltaY, indicatorColor);
 		}
 
-		this.surface.drawCircle(startX + ((width / 2) | 0), 36 + ((height / 2) | 0), 2, 0xffffff, 255);
+		// draw us
+		this.surface.drawCircle(startX + middleH, 36 + middleV, 2, Color.WHITE.number, 0xFF);
 
 		// compass
-		this.surface.drawMinimapSprite(startX + 19, 55, mudclient.spriteMedia + 24, this.cameraRotation + 128 & 255, 128);
+		this.surface.drawMinimapSprite(startX + 19, 55, mudclient.spriteMedia + 24, this.cameraRotation + ROTATE_NORTH & 0xFF, 128);
 		this.surface.setBounds(0, 0, this.gameWidth, this.gameHeight + 12);
 
 		if (!nomenus) {
 			return;
 		}
 
-		let mouseX = this.mouseX - (this.surface.width2 - 199);
-		let mouseY = this.mouseY - 36;
+		// let mouseX = this.mouseX - (this.surface.width2 - 199);
+		// let mouseY = this.mouseY - 36;
 
-		if (this.options.resetCompass && this.mouseButtonClick === 1 && mouseX > 42 && mouseX < 75 && mouseY > 3 && mouseY < 36) {
-			this.cameraRotation = 0x80;
-			this.mouseButtonClick = 0;
-			return;
-		}
+		// if (this.options.resetCompass && this.mouseButtonClick === 1 && mouseX > 42 && mouseX < 75 && mouseY > 3 && mouseY < 36) {
+			// this.cameraRotation = ROTATE_NORTH;
+			// this.mouseButtonClick = 0;
+			// return;
+		// }
 
-		if (mouseX >= 40 && mouseY >= 0 && mouseX < 196 && mouseY < 152) {
-			let c1 = 156;
-			let c3 = 152;
-//			let l = 192 + this.minimapRandom_2;
-			let l = 192;
-			let j1 = this.cameraRotation & 0xFF;
-//			let j1 = this.cameraRotation + this.minimapRandom_1 & 0xff;
-			let j = this.surface.width2 - 199;
+		if (this.isClicking()) {
+			let startX = (this.surface.width2 - 199)+40;
+			let startY = 36;
 
-			j += 40;
+			let width = 156;
+			let height = 152;
+			if (this.mouseWithin(startX, startY, width, height)) {
+				this.resetClicking();
+				// compassWidth, compassHeight
+				if (this.options.resetCompass && this.mouseWithin(startX+2, startY+3, 32, 32)) {
+					this.cameraRotation = ROTATE_NORTH;
+					return;
+				}
+			//if (mouseX >= 40 && mouseY >= 0 && mouseX < 196 && mouseY < 152) {
+				// let midX = width/2|0, midY = height/2|0;
+	// //			let x = 192 + this.minimapRandom_2;
+				// let rotX = 0xC0;
+				// let y = this.cameraRotation & 0xFF;
+	// //			let y = this.cameraRotation + this.minimapRandom_1 & 0xff;
+				// // let startX = midX + startX;
+				// // let startY = midY + startY;
+// 
+				// // startX += 40;
+// 
+				// // lshift of 14 replaces mul 16384
+				// let dx = Math.floor((this.mouseX - ((midX+startX) << 14)) / 0x240);
+				// // lshift of 14 replaces mul 16384
+				// let dy = Math.floor((this.mouseY - ((midY+startY) << 14)) / 0x240);
+				// // lshift of 2 replaces mul 4
+				// let tx = (0x400 - (y << 2) & 0x3FF),ty = (0x400 - (y << 2) & 0x3FF)+0x400;
+				// // let scaleX = Scene.sin2048Cache[0x400 - (y << 2) & 0x3FF];
+				// let scaleX = Scene.sin2048Cache[tx];
+				// // lshift of 2 replaces mul 4
+				// let scaleY = Scene.sin2048Cache[ty];
+				// // let scaleY = Scene.sin2048Cache[(0x400 - (y << 2) & 0x3FF)+0x400];
+				// // let boundX = dy * scaleX + dx * scaleY >> 15;
+				// // let boundY = dy * scaleY - dx * scaleX >> 15;
+// 
+				// // dx = boundX+this.localPlayer.currentX;
+				// let bX = dy * scaleX + dx * scaleY >> 15;
+				// dx += this.localPlayer.currentX;
+				// dy = dy * scaleY - dx * scaleX >> 15;
+				// // dy = this.localPlayer.currentY - boundY;
+				// dy = this.localPlayer.currentY - dy;
+// 
+				// // rshift of 7 replaces div 128
+				// // this converts mesh units into tiles
+                let j1 = this.cameraRotation;
+                let j = this.surface.width2 - 199;
+                j += 40;
 
-			let dx = ((this.mouseX - (j + ((c1 / 2) | 0))) * 16384) / (3 * l) | 0;
-			let dy = ((this.mouseY - (36 + ((c3 / 2) | 0))) * 16384) / (3 * l) | 0;
-			let l4 = Scene.sin2048Cache[1024 - j1 * 4 & 1023];
-			let j5 = Scene.sin2048Cache[(1024 - j1 * 4 & 1023) + 1024];
-			let l6 = dy * l4 + dx * j5 >> 15;
+                let dx = ((this.mouseX - (j + middleH)) << 14) / 0x240 | 0;
+                let dy = ((this.mouseY - (36 + middleV)) << 14) / 0x240 | 0;
+                let l4 = Scene.sin2048Cache[0x400 - startX * 4 & 0x3FF];
+                let j5 = Scene.sin2048Cache[(0x400 - j1 * 4 & 0x3FF) + 0x400];
+                let l6 = dy * l4 + dx * j5 >> 15;
 
-			dy = dy * j5 - dx * l4 >> 15;
-			dx = l6;
-			dx += this.localPlayer.currentX;
-			dy = this.localPlayer.currentY - dy;
+                dy = dy * j5 - dx * l4 >> 15;
+                dx = l6;
+                dx += this.localPlayer.currentX;
+                dy = this.localPlayer.currentY - dy;
 
-			if (this.mouseButtonClick === 1) {
-				this.walkToMob(this.localRegionX, this.localRegionY, dx / 128 | 0, dy / 128 | 0, false);
-
-				this.mouseButtonClick = 0;
+				this.walkToMob(this.localRegionX, this.localRegionY, dx >>> 7, dy >>> 7, false);
 			}
 		}
+	}
+
+	resetClicking() {
+		this.mouseButtonClick = 0;
 	}
 
 	renderConfirmTrade() {
@@ -2699,48 +2824,48 @@ inventory:
 
 		this.surface.drawBox(dialogX, dialogY, 468, 16, 192);
 		this.surface.drawBoxAlpha(dialogX, dialogY + 16, 468, 246, 0x989898, 160);
-		this.surface.drawStringCenter('Please confirm your trade with @yel@' + Utility.hashToUsername(this.tradeRecipientConfirmHash), dialogX + 234, dialogY + 12, 1, 0xffffff);
-		this.surface.drawStringCenter('You are about to give:', dialogX + 117, dialogY + 30, 1, 0xffff00);
+		this.surface.drawStringCenter('Please confirm your trade with @yel@' + Utility.hashToUsername(this.tradeRecipientConfirmHash), dialogX + 234, dialogY + 12, 1, Color.WHITE.number);
+		this.surface.drawStringCenter('You are about to give:', dialogX + 117, dialogY + 30, 1, Color.YELLOW.number);
 
 		for (let j = 0; j < this.tradeConfirmItemsCount; j++) {
-			let s = GameData.itemName[this.tradeConfirmItems[j]];
+			let s = this.itemName(this.tradeConfirmItems[j]);
 
 			if (GameData.itemStackable[this.tradeConfirmItems[j]] === 0) {
 				s = s + ' x ' + formatNumber(this.tradeConfirmItemCount[j]);
 			}
 
-			this.surface.drawStringCenter(s, dialogX + 117, dialogY + 42 + j * 12, 1, 0xffffff);
+			this.surface.drawStringCenter(s, dialogX + 117, dialogY + 42 + j * 12, 1, Color.WHITE.number);
 		}
 
 		if (this.tradeConfirmItemsCount === 0) {
-			this.surface.drawStringCenter('Nothing!', dialogX + 117, dialogY + 42, 1, 0xffffff);
+			this.surface.drawStringCenter('Nothing!', dialogX + 117, dialogY + 42, 1, Color.WHITE.number);
 		}
 
-		this.surface.drawStringCenter('In return you will receive:', dialogX + 351, dialogY + 30, 1, 0xffff00);
+		this.surface.drawStringCenter('In return you will receive:', dialogX + 351, dialogY + 30, 1, Color.YELLOW.number);
 
 		for (let k = 0; k < this.tradeRecipientConfirmItemsCount; k++) {
-			let s1 = GameData.itemName[this.tradeRecipientConfirmItems[k]];
+			let s1 = this.itemName(this.tradeRecipientConfirmItems[k]);
 
 			if (GameData.itemStackable[this.tradeRecipientConfirmItems[k]] === 0) {
 				s1 = s1 + ' x ' + formatNumber(this.tradeRecipientConfirmItemCount[k]);
 			}
 
-			this.surface.drawStringCenter(s1, dialogX + 351, dialogY + 42 + k * 12, 1, 0xffffff);
+			this.surface.drawStringCenter(s1, dialogX + 351, dialogY + 42 + k * 12, 1, Color.WHITE.number);
 		}
 
 		if (this.tradeRecipientConfirmItemsCount === 0) {
-			this.surface.drawStringCenter('Nothing!', dialogX + 351, dialogY + 42, 1, 0xffffff);
+			this.surface.drawStringCenter('Nothing!', dialogX + 351, dialogY + 42, 1, Color.WHITE.number);
 		}
 
 		this.surface.drawStringCenter('Are you sure you want to do this?', dialogX + 234, dialogY + 200, 4, 65535);
-		this.surface.drawStringCenter('There is NO WAY to reverse a trade if you change your mind.', dialogX + 234, dialogY + 215, 1, 0xffffff);
-		this.surface.drawStringCenter('Remember that not all players are trustworthy', dialogX + 234, dialogY + 230, 1, 0xffffff);
+		this.surface.drawStringCenter('There is NO WAY to reverse a trade if you change your mind.', dialogX + 234, dialogY + 215, 1, Color.WHITE.number);
+		this.surface.drawStringCenter('Remember that not all players are trustworthy', dialogX + 234, dialogY + 230, 1, Color.WHITE.number);
 
 		if (!this.tradeConfirmAccepted) {
 			this.surface.drawSpriteID((dialogX + 118) - 35, dialogY + 238, mudclient.spriteMedia + 25);
 			this.surface.drawSpriteID((dialogX + 352) - 35, dialogY + 238, mudclient.spriteMedia + 26);
 		} else {
-			this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, 0xffff00);
+			this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, Color.YELLOW.number);
 		}
 
 		if (this.mouseButtonClick === 1) {
@@ -2833,10 +2958,10 @@ inventory:
 		}
 
 		for (let j = 0; j < this.optionMenuCount; j++) {
-			let k = 0x00FFFF;
+			let k = Color.CYAN.number;
 
 			if (this.mouseX < this.surface.textWidth(this.optionMenuEntry[j], 1) && this.mouseY > j * 12 && this.mouseY < 12 + j * 12) {
-				k = 0xFF0000;
+				k = Color.RED.number;
 			}
 
 			this.surface.drawString(this.optionMenuEntry[j], 6, 12 + j * 12, 1, k);
@@ -2956,7 +3081,7 @@ inventory:
 
 					// hit splat sprite
 					this.surface.drawSpriteID(Math.floor(w / 2) + relX - 12, Math.floor(h / 2) + y - 12, mudclient.spriteMedia + 12);
-					this.surface.drawStringCenter(npc.damageTaken.toString(), Math.floor(w / 2) + relX - 1, Math.floor(h / 2) + y + 5, 3, 0xFFFFFF);
+					this.surface.drawStringCenter(npc.damageTaken.toString(), Math.floor(w / 2) + relX - 1, Math.floor(h / 2) + y + 5, 3, Color.WHITE.number);
 				}
 			}
 		}
@@ -2976,22 +3101,22 @@ inventory:
 	}
 
 	async fetchDefinitions() {
-		let buff = await this.readDataFile('config' + VERSION.CONFIG + '.jag', 'Entity Information', 10);
-		if (!buff) {
-			this.exception = new GameException(e, true);
+		let data = await download(`./static/cache/config${CONFIG}.jag`);
+		if (!data)
 			return;
-		}
 
-		GameData.loadDefinitions(buff, this.members);
+		let archive = new JagArchive(data, 'config.jag');
+		if (!archive)
+			return;
+
+		GameData.loadDefinitions(archive, this.members);
 	}
 
 	async fetchChatFilters() {
-		let buff = await this.readDataFile('filter' + VERSION.FILTER + '.jag', 'Chat filters', 15);
-		if (!buff) {
-			this.runtimeException = new GameException("Error loading chat system!\n\n" + e.message, true);
-			return;
-		}
-		this.chatSystem = new Chat(buff);
+		let archive = new JagArchive(await download(`./static/cache/filter${FILTER}.jag`), 'filter.jag');
+		if (!archive)
+			throw Error("Error loading chat filters!");
+		this.chatSystem = new Chat(archive);
 	}
 
 	addNpc(serverIndex, x, y, sprite, type) {
@@ -3062,22 +3187,22 @@ inventory:
 		let x = Math.floor(this.gameWidth / 2) - Math.floor(dialogWidth / 2);
 		let y = Math.floor(this.gameHeight / 2) - Math.floor(dialogHeight / 2);
 
-		this.surface.drawBox(x, y, dialogWidth, 12, 0xC0);
+		this.surface.drawBox(x, y, dialogWidth, 12, Color.MEDIUM_BLUE.number);
 		this.surface.drawBoxAlpha(x, y + 12, dialogWidth, 17, 0x989898, 0xA0);
 		this.surface.drawBoxAlpha(x, y + 29, 8, 204, 0x989898, 0xA0);
 		this.surface.drawBoxAlpha(x + (dialogWidth-9), y + 29, 9, 204, 0x989898, 0xA0);
 		this.surface.drawBoxAlpha(x, y + 233, dialogWidth, 47, 0x989898, 0xA0);
-		this.surface.drawString('Bank', x + 1, y + 10, 1, 0xffffff);
+		this.surface.drawString('Bank', x + 1, y + 10, 1, Color.WHITE.number);
 
 		let xOff = 50;
 
 		if (this.bankItemCount > 48) {
-			let l2 = 0xffffff;
+			let l2 = Color.WHITE.number;
 
 			if (this.bankActivePage === 0) {
-				l2 = 0xff0000;
+				l2 = Color.RED.number;
 			} else if (this.mouseX > x + xOff && this.mouseY >= y && this.mouseX < x + xOff + 65 && this.mouseY < y + 12) {
-				l2 = 0xffff00;
+				l2 = Color.YELLOW.number;
 				if (this.mouseButtonClick !== 0) {
 					this.mouseButtonClick = 0;
 					this.bankActivePage = 0;
@@ -3086,12 +3211,12 @@ inventory:
 
 			this.surface.drawString('<page 1>', x + xOff, y + 10, 1, l2);
 			xOff += 65;
-			l2 = 0xffffff;
+			l2 = Color.WHITE.number;
 
 			if (this.bankActivePage === 1) {
-				l2 = 0xff0000;
+				l2 = Color.RED.number;
 			} else if (this.mouseX > x + xOff && this.mouseY >= y && this.mouseX < x + xOff + 65 && this.mouseY < y + 12) {
-				l2 = 0xffff00;
+				l2 = Color.YELLOW.number;
 				if (this.mouseButtonClick !== 0) {
 					this.mouseButtonClick = 0;
 					this.bankActivePage = 1;
@@ -3103,11 +3228,11 @@ inventory:
 		}
 
 		if (this.bankItemCount > 96) {
-			let i3 = 0xffffff;
+			let i3 = Color.WHITE.number;
 			if (this.bankActivePage === 2) {
-				i3 = 0xff0000;
+				i3 = Color.RED.number;
 			} else if (this.mouseX > x + xOff && this.mouseY >= y && this.mouseX < x + xOff + 65 && this.mouseY < y + 12) {
-				i3 = 0xffff00;
+				i3 = Color.YELLOW.number;
 				if (this.mouseButtonClick !== 0) {
 					this.mouseButtonClick = 0;
 					this.bankActivePage = 2;
@@ -3119,12 +3244,12 @@ inventory:
 		}
 
 		if (this.bankItemCount > 144) {
-			let j3 = 0xffffff;
+			let j3 = Color.WHITE.number;
 
 			if (this.bankActivePage === 3) {
-				j3 = 0xff0000;
+				j3 = Color.RED.number;
 			} else if (this.mouseX > x + xOff && this.mouseY >= y && this.mouseX < x + xOff + 65 && this.mouseY < y + 12) {
-				j3 = 0xffff00;
+				j3 = Color.YELLOW.number;
 				if (this.mouseButtonClick !== 0) {
 					this.mouseButtonClick = 0;
 					this.bankActivePage = 3;
@@ -3135,10 +3260,10 @@ inventory:
 			xOff += 65;
 		}
 
-		let colour = 0xffffff;
+		let colour = Color.WHITE.number;
 
 		if (this.mouseX > x + 320 && this.mouseY >= y && this.mouseX < x + 408 && this.mouseY < y + 12) {
-			colour = 0xff0000;
+			colour = Color.RED.number;
 		}
 
 		let slot = this.bankActivePage * 48;
@@ -3148,7 +3273,7 @@ inventory:
 				let startX = x + 7 + column * 49;
 				let startY = y + 28 + row * 34;
 				// draw bank slot
-				this.surface.drawBoxAlpha(startX, startY, 49, 34, this.bankSelectedItemSlot === slot ? 0xFF0000 : 0xD0D0D0, 0xA0);
+				this.surface.drawBoxAlpha(startX, startY, 49, 34, this.bankSelectedItemSlot === slot ? Color.RED.number : 0xD0D0D0, 0xA0);
 				// draw bank slot border
 				this.surface.drawBoxEdge(startX, startY, 50, 35, 0);
 
@@ -3186,7 +3311,7 @@ inventory:
 		this.surface.drawLineHoriz(x + 5, y + 256, 398, 0);
 
 		if (this.bankSelectedItemSlot === -1) {
-			this.surface.drawStringCenter('Select an object to withdraw or deposit', x + 204, y + 248, 3, 0xffff00);
+			this.surface.drawStringCenter('Select an object to withdraw or deposit', x + 204, y + 248, 3, Color.YELLOW.number);
 			return;
 		}
 
@@ -3208,8 +3333,8 @@ inventory:
 */
 
 			if (itemCount > 0) {
-				this.surface.drawString('Withdraw ' + GameData.itemName[itemType], x + 2, y + 248, 1, 0xffffff);
-				colour = 0xffffff;
+				this.surface.drawString('Withdraw ' + this.itemName(itemType), x + 2, y + 248, 1, Color.WHITE.number);
+				colour = Color.WHITE.number;
 				let textHeight = 11;
 				let textWidth = 30;
 				let minY = y + 238;
@@ -3218,7 +3343,7 @@ inventory:
 				let maxX = minX + textWidth;
 
 				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-					colour = 0xff0000;
+					colour = Color.RED.number;
 					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 						this.mouseButtonClick = 0;
 
@@ -3231,9 +3356,9 @@ inventory:
 				maxX += textWidth;
 
 				if (itemCount >= 5) {
-					colour = 0xffffff;
+					colour = Color.WHITE.number;
 					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-						colour = 0xff0000;
+						colour = Color.RED.number;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
 
@@ -3248,9 +3373,9 @@ inventory:
 				}
 
 				if (itemCount >= 10) {
-					colour = 0xffffff;
+					colour = Color.WHITE.number;
 					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-						colour = 0xff0000;
+						colour = Color.RED.number;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
 
@@ -3264,9 +3389,9 @@ inventory:
 				}
 
 				if (itemCount >= 50) {
-					colour = 0xffffff;
+					colour = Color.WHITE.number;
 					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-						colour = 0xff0000;
+						colour = Color.RED.number;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
 
@@ -3278,10 +3403,10 @@ inventory:
 					minX += textWidth;
 					maxX += textWidth;
 				}
-				colour = 0xffffff;
+				colour = Color.WHITE.number;
 
 				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-					colour = 0xff0000;
+					colour = Color.RED.number;
 					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 						this.mouseButtonClick = 0;
 						this.dialogItemInput = 1;
@@ -3291,10 +3416,10 @@ inventory:
 				minX += textWidth;
 				maxX += textWidth;
 
-				colour = 0xffffff;
+				colour = Color.WHITE.number;
 
 				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-					colour = 0xff0000;
+					colour = Color.RED.number;
 					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 						this.mouseButtonClick = 0;
 
@@ -3308,8 +3433,8 @@ inventory:
 			}
 
 			if (this.getInventoryCount(itemType) > 0) {
-				this.surface.drawString('Deposit ' + GameData.itemName[itemType], x + 2, y + 273, 1, 0xffffff);
-				colour = 0xffffff;
+				this.surface.drawString('Deposit ' + this.itemName(itemType), x + 2, y + 273, 1, Color.WHITE.number);
+				colour = Color.WHITE.number;
 				let textHeight = 11;
 				let textWidth = 30;
 				let minY = y + 262;
@@ -3317,7 +3442,7 @@ inventory:
 				let minX = x + 230;
 				let maxX = minX + textWidth;
 				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-					colour = 0xff0000;
+					colour = Color.RED.number;
 					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 						this.mouseButtonClick = 0;
 
@@ -3331,9 +3456,9 @@ inventory:
 				maxX += textWidth;
 
 				if (this.getInventoryCount(itemType) >= 5) {
-					colour = 0xffffff;
+					colour = Color.WHITE.number;
 					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-						colour = 0xff0000;
+						colour = Color.RED.number;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
 
@@ -3347,9 +3472,9 @@ inventory:
 				}
 
 				if (this.getInventoryCount(itemType) >= 10) {
-					colour = 0xffffff;
+					colour = Color.WHITE.number;
 					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-						colour = 0xff0000;
+						colour = Color.RED.number;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
 
@@ -3363,9 +3488,9 @@ inventory:
 				}
 
 				if (this.getInventoryCount(itemType) >= 50) {
-					colour = 0xffffff;
+					colour = Color.WHITE.number;
 					if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-						colour = 0xff0000;
+						colour = Color.RED.number;
 						if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 							this.mouseButtonClick = 0;
 
@@ -3378,9 +3503,9 @@ inventory:
 					maxX += textWidth;
 				}
 
-				colour = 0xffffff;
+				colour = Color.WHITE.number;
 				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-					colour = 0xff0000;
+					colour = Color.RED.number;
 					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 						this.mouseButtonClick = 0;
 						this.dialogItemInput = 2;
@@ -3390,9 +3515,9 @@ inventory:
 				minX += textWidth;
 				maxX += textWidth;
 
-				colour = 0xffffff;
+				colour = Color.WHITE.number;
 				if (this.dialogItemInput === 0 && this.mouseX >= minX && this.mouseY >= minY && this.mouseX < maxX && this.mouseY <= maxY) {
-					colour = 0xff0000;
+					colour = Color.RED.number;
 					if (this.mouseButtonClick === 1 && this.bankSelectedItemSlot >= 0) {
 						this.mouseButtonClick = 0;
 
@@ -3409,14 +3534,14 @@ inventory:
 		if (this.dialogItemInput === 2 || this.dialogItemInput === 1) {
 			let y = 145;
 			this.surface.drawBox(106, y, 300, 70, 0);
-			this.surface.drawBoxEdge(106, y, 300, 70, 0xffffff);
+			this.surface.drawBoxEdge(106, y, 300, 70, Color.WHITE.number);
 			y += 20;
 
-			let textColor = 0xFFFFFF;
+			let textColor = Color.WHITE.number;
 			if (this.mouseX > 236 && this.mouseX < 276 && this.mouseY > 193 && this.mouseY < 213)
-				textColor = 0xFFFF00;
+				textColor = Color.YELLOW.number;
 			this.surface.drawStringCenter('Cancel', 256, 208, 1, textColor);
-			if (this.mouseButtonClick !== 0 && (textColor !== 0xFFFFFF || this.mouseX < 106 || this.mouseY < 145 || this.mouseX > 406 || this.mouseY > 215 ||textColor !== 0xFFFFFF)) {
+			if (this.mouseButtonClick !== 0 && (textColor !== Color.WHITE.number || this.mouseX < 106 || this.mouseY < 145 || this.mouseX > 406 || this.mouseY > 215 ||textColor !== Color.WHITE.number)) {
 				this.mouseButtonClick = 0;
 				this.dialogItemInput = 0;
 				return;
@@ -3424,18 +3549,18 @@ inventory:
 
 
 			if (this.dialogItemInput === 1) {
-				this.surface.drawStringCenter('Enter amount to withdraw', 256, y, 4, 0xffffff);
+				this.surface.drawStringCenter('Enter amount to withdraw', 256, y, 4, Color.WHITE.number);
 			} else if (this.dialogItemInput === 2) {
-				this.surface.drawStringCenter('Enter amount to deposit', 256, y, 4, 0xffffff);
+				this.surface.drawStringCenter('Enter amount to deposit', 256, y, 4, Color.WHITE.number);
 			}
 			y += 20;
-			this.surface.drawStringCenter(this.inputTextCurrent + '*', 256, y, 4, 0xffffff);
+			this.surface.drawStringCenter(this.inputBuffer + '*', 256, y, 4, Color.WHITE.number);
 
 			// This gets set by our keyboard event handler when the user presses enter
-			if (this.inputTextFinal.length > 0) {
-				let text = this.inputTextFinal.trim();
-				this.inputTextCurrent = '';
-				this.inputTextFinal = '';
+			if (this.submittedInput.length > 0) {
+				let text = this.submittedInput.trim();
+				this.inputBuffer = '';
+				this.submittedInput = '';
 				if (text.length <= 0) {
 					return;
 				}
@@ -3660,37 +3785,37 @@ inventory:
 		this.surface.drawLineHoriz(dialogX + 8, dialogY + 257, 197, 0);
 		this.surface.drawLineVert(dialogX + 8, dialogY + 215, 43, 0);
 		this.surface.drawLineVert(dialogX + 204, dialogY + 215, 43, 0);
-		this.surface.drawString('Preparing to duel with: ' + this.duelOpponentName, dialogX + 1, dialogY + 10, 1, 0xffffff);
-		this.surface.drawString('Your Stake', dialogX + 9, dialogY + 27, 4, 0xffffff);
-		this.surface.drawString('Opponent\'s Stake', dialogX + 9, dialogY + 120, 4, 0xffffff);
-		this.surface.drawString('Duel Options', dialogX + 9, dialogY + 212, 4, 0xffffff);
-		this.surface.drawString('Your Inventory', dialogX + 216, dialogY + 27, 4, 0xffffff);
-		this.surface.drawString('No retreating', dialogX + 8 + 1, dialogY + 215 + 16, 3, 0xffff00);
-		this.surface.drawString('No magic', dialogX + 8 + 1, dialogY + 215 + 35, 3, 0xffff00);
-		this.surface.drawString('No prayer', dialogX + 8 + 102, dialogY + 215 + 16, 3, 0xffff00);
-		this.surface.drawString('No weapons', dialogX + 8 + 102, dialogY + 215 + 35, 3, 0xffff00);
-		this.surface.drawBoxEdge(dialogX + 93, dialogY + 215 + 6, 11, 11, 0xffff00);
+		this.surface.drawString('Preparing to duel with: ' + this.duelOpponentName, dialogX + 1, dialogY + 10, 1, Color.WHITE.number);
+		this.surface.drawString('Your Stake', dialogX + 9, dialogY + 27, 4, Color.WHITE.number);
+		this.surface.drawString('Opponent\'s Stake', dialogX + 9, dialogY + 120, 4, Color.WHITE.number);
+		this.surface.drawString('Duel Options', dialogX + 9, dialogY + 212, 4, Color.WHITE.number);
+		this.surface.drawString('Your Inventory', dialogX + 216, dialogY + 27, 4, Color.WHITE.number);
+		this.surface.drawString('No retreating', dialogX + 8 + 1, dialogY + 215 + 16, 3, Color.YELLOW.number);
+		this.surface.drawString('No magic', dialogX + 8 + 1, dialogY + 215 + 35, 3, Color.YELLOW.number);
+		this.surface.drawString('No prayer', dialogX + 8 + 102, dialogY + 215 + 16, 3, Color.YELLOW.number);
+		this.surface.drawString('No weapons', dialogX + 8 + 102, dialogY + 215 + 35, 3, Color.YELLOW.number);
+		this.surface.drawBoxEdge(dialogX + 93, dialogY + 215 + 6, 11, 11, Color.YELLOW.number);
 
 		if (this.duelSettingsRetreat) {
-			this.surface.drawBox(dialogX + 95, dialogY + 215 + 8, 7, 7, 0xffff00);
+			this.surface.drawBox(dialogX + 95, dialogY + 215 + 8, 7, 7, Color.YELLOW.number);
 		}
 
-		this.surface.drawBoxEdge(dialogX + 93, dialogY + 215 + 25, 11, 11, 0xffff00);
+		this.surface.drawBoxEdge(dialogX + 93, dialogY + 215 + 25, 11, 11, Color.YELLOW.number);
 
 		if (this.duelSettingsMagic) {
-			this.surface.drawBox(dialogX + 95, dialogY + 215 + 27, 7, 7, 0xffff00);
+			this.surface.drawBox(dialogX + 95, dialogY + 215 + 27, 7, 7, Color.YELLOW.number);
 		}
 
-		this.surface.drawBoxEdge(dialogX + 191, dialogY + 215 + 6, 11, 11, 0xffff00);
+		this.surface.drawBoxEdge(dialogX + 191, dialogY + 215 + 6, 11, 11, Color.YELLOW.number);
 
 		if (this.duelSettingsPrayer) {
-			this.surface.drawBox(dialogX + 193, dialogY + 215 + 8, 7, 7, 0xffff00);
+			this.surface.drawBox(dialogX + 193, dialogY + 215 + 8, 7, 7, Color.YELLOW.number);
 		}
 
-		this.surface.drawBoxEdge(dialogX + 191, dialogY + 215 + 25, 11, 11, 0xffff00);
+		this.surface.drawBoxEdge(dialogX + 191, dialogY + 215 + 25, 11, 11, Color.YELLOW.number);
 
 		if (this.duelSettingsWeapons) {
-			this.surface.drawBox(dialogX + 193, dialogY + 215 + 27, 7, 7, 0xffff00);
+			this.surface.drawBox(dialogX + 193, dialogY + 215 + 27, 7, 7, Color.YELLOW.number);
 		}
 
 		if (!this.duelOfferAccepted) {
@@ -3700,13 +3825,13 @@ inventory:
 		this.surface.drawSpriteID(dialogX + 394, dialogY + 238, mudclient.spriteMedia + 26);
 
 		if (this.duelOfferOpponentAccepted) {
-			this.surface.drawStringCenter('Other player', dialogX + 341, dialogY + 246, 1, 0xffffff);
-			this.surface.drawStringCenter('has accepted', dialogX + 341, dialogY + 256, 1, 0xffffff);
+			this.surface.drawStringCenter('Other player', dialogX + 341, dialogY + 246, 1, Color.WHITE.number);
+			this.surface.drawStringCenter('has accepted', dialogX + 341, dialogY + 256, 1, Color.WHITE.number);
 		}
 
 		if (this.duelOfferAccepted) {
-			this.surface.drawStringCenter('Waiting for', dialogX + 217 + 35, dialogY + 246, 1, 0xffffff);
-			this.surface.drawStringCenter('other player', dialogX + 217 + 35, dialogY + 256, 1, 0xffffff);
+			this.surface.drawStringCenter('Waiting for', dialogX + 217 + 35, dialogY + 246, 1, Color.WHITE.number);
+			this.surface.drawStringCenter('other player', dialogX + 217 + 35, dialogY + 256, 1, Color.WHITE.number);
 		}
 
 		for (let i = 0; i < this.inventoryItemsCount; i++) {
@@ -3715,7 +3840,7 @@ inventory:
 			this.surface._spriteClipping_from9(x, y, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.inventoryItemId[i]], GameData.itemMask[this.inventoryItemId[i]], 0, 0, false);
 
 			if (GameData.itemStackable[this.inventoryItemId[i]] === 0) {
-				this.surface.drawString(this.inventoryItemStackCount[i].toString(), x + 1, y + 10, 1, 0xffff00);
+				this.surface.drawString(this.inventoryItemStackCount[i].toString(), x + 1, y + 10, 1, Color.YELLOW.number);
 			}
 		}
 
@@ -3726,11 +3851,11 @@ inventory:
 			this.surface._spriteClipping_from9(x, y, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.duelOfferItemList[i].id], GameData.itemMask[this.duelOfferItemList[i].id], 0, 0, false);
 
 			if (GameData.itemStackable[this.duelOfferItemList[i].id] === 0) {
-				this.surface.drawString(this.duelOfferItemList[i].amount.toString(), x + 1, y + 10, 1, 0xffff00);
+				this.surface.drawString(this.duelOfferItemList[i].amount.toString(), x + 1, y + 10, 1, Color.YELLOW.number);
 			}
 
 			if (this.mouseX > x && this.mouseX < x + 48 && this.mouseY > y && this.mouseY < y + 32) {
-				this.surface.drawString(GameData.itemName[this.duelOfferItemList[i].id] + ': @whi@' + GameData.itemDescription[this.duelOfferItemList[i].id], dialogX + 8, dialogY + 273, 1, 0xffff00);
+				this.surface.drawString(this.itemName(this.duelOfferItemList[i].id) + ': @whi@' + GameData.itemDescription[this.duelOfferItemList[i].id], dialogX + 8, dialogY + 273, 1, Color.YELLOW.number);
 			}
 		}
 
@@ -3741,11 +3866,11 @@ inventory:
 			this.surface._spriteClipping_from9(x, y, 48, 32, mudclient.spriteItem + GameData.itemPicture[this.duelOfferOpponentItemList[i].id], GameData.itemMask[this.duelOfferOpponentItemList[i].id], 0, 0, false);
 
 				if (GameData.itemStackable[this.duelOfferOpponentItemList[i].id] === 0) {
-				this.surface.drawString(this.duelOfferOpponentItemList[i].amount.toString(), x + 1, y + 10, 1, 0xffff00);
+				this.surface.drawString(this.duelOfferOpponentItemList[i].amount.toString(), x + 1, y + 10, 1, Color.YELLOW.number);
 			}
 
 			if (this.mouseX > x && this.mouseX < x + 48 && this.mouseY > y && this.mouseY < y + 32) {
-				this.surface.drawString(GameData.itemName[this.duelOfferOpponentItemList[i].id] + ': @whi@' + GameData.itemDescription[this.duelOfferOpponentItemList[i].id], dialogX + 8, dialogY + 273, 1, 0xffff00);
+				this.surface.drawString(this.itemName(this.duelOfferOpponentItemList[i].id) + ': @whi@' + GameData.itemDescription[this.duelOfferOpponentItemList[i].id] , dialogX + 8, dialogY + 273, 1, Color.YELLOW.number);
 			}
 		}
 	}
@@ -3765,7 +3890,7 @@ inventory:
             return false;
         }
 
-        this.surface.drawStringCenter('Loading... Please wait', 256, 192, 1, 0xffffff);
+        this.surface.drawStringCenter('Loading... Please wait', 256, 192, 1, Color.WHITE.number);
         this.drawChatMessageTabs();
         this.surface.draw(this.graphics, 0, 0);
 
@@ -3884,7 +4009,7 @@ inventory:
 		// EDIT: More likely this is not a mod thing but actually to prevent the rendering
 		// of players that have yet to create their avatar, and thus possess a bottom color
 		// of -1, which when represented as a uint8, becomes 0xFF
-		if (player.colourBottom === 0xFF)
+		if (!player || player.colourBottom === 0xFF)
 			return;
 
 		let l1 = player.animationCurrent + ((this.cameraRotation + 16) >>> 5) & 7;
@@ -4033,7 +4158,7 @@ inventory:
 					}
 
 					this.surface.drawSpriteID(splatX + (w>>>1) - 12, y + (h>>>1) - 12, mudclient.spriteMedia + 11);
-					this.surface.drawStringCenter(player.damageTaken.toString(), (splatX + (w>>>1)) - 1, y + (h>>>1) + 5, 3, 0xFFFFFF);
+					this.surface.drawStringCenter(player.damageTaken.toString(), (splatX + (w>>>1)) - 1, y + (h>>>1) + 5, 3, Color.WHITE.number);
 				}
 			}
 		}
@@ -4057,38 +4182,41 @@ inventory:
 	}
 
 	async loadMedia() {
-		let media = await this.readDataFile('media' + VERSION.MEDIA + '.jag', '2d graphics', 20);
+		let archive = new JagArchive(await download(`./static/cache/media${MEDIA}.jag`), 'media.jag');
 
-		if (!media) {
+		if (!archive) {
 			this.runtimeException = new GameException("Error loading media sprites!\n\n" + e.message, true);
 			return;
 		}
 
-		let buff = Utility.loadData('index.dat', 0, media);
+		// let buff = Utility.loadData('index.dat', 0, media);
+		let buf = archive.get('index.dat').data;
 
-		this.surface.parseSprite(mudclient.spriteMedia, Utility.loadData('inv1.dat', 0, media), buff, 1);
-		this.surface.parseSprite(mudclient.spriteMedia + 1, Utility.loadData('inv2.dat', 0, media), buff, 6);
-		this.surface.parseSprite(mudclient.spriteMedia + 9, Utility.loadData('bubble.dat', 0, media), buff, 1);
-		this.surface.parseSprite(mudclient.spriteMedia + 10, Utility.loadData('runescape.dat', 0, media), buff, 1);
-		this.surface.parseSprite(mudclient.spriteMedia + 11, Utility.loadData('splat.dat', 0, media), buff, 3);
-		this.surface.parseSprite(mudclient.spriteMedia + 14, Utility.loadData('icon.dat', 0, media), buff, 8);
-		this.surface.parseSprite(mudclient.spriteMedia + 22, Utility.loadData('hbar.dat', 0, media), buff, 1);
-		this.surface.parseSprite(mudclient.spriteMedia + 23, Utility.loadData('hbar2.dat', 0, media), buff, 1);
-		this.surface.parseSprite(mudclient.spriteMedia + 24, Utility.loadData('compass.dat', 0, media), buff, 1);
-		this.surface.parseSprite(mudclient.spriteMedia + 25, Utility.loadData('buttons.dat', 0, media), buff, 2);
-		this.surface.parseSprite(mudclient.spriteUtil, Utility.loadData('scrollbar.dat', 0, media), buff, 2);
-		this.surface.parseSprite(mudclient.spriteUtil + 2, Utility.loadData('corners.dat', 0, media), buff, 4);
-		this.surface.parseSprite(mudclient.spriteUtil + 6, Utility.loadData('arrows.dat', 0, media), buff, 2);
-		this.surface.parseSprite(mudclient.spriteProjectile, Utility.loadData('projectile.dat', 0, media), buff, GameData.projectileSprite);
+		this.surface.parseSprite(mudclient.spriteMedia, archive.get('inv1.dat').data, buf, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 1, archive.get('inv2.dat').data, buf, 6);
+		this.surface.parseSprite(mudclient.spriteMedia + 9, archive.get('bubble.dat').data, buf, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 10, archive.get('runescape.dat').data, buf, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 11, archive.get('splat.dat').data, buf, 3);
+		this.surface.parseSprite(mudclient.spriteMedia + 14, archive.get('icon.dat').data, buf, 8);
+		this.surface.parseSprite(mudclient.spriteMedia + 22, archive.get('hbar.dat').data, buf, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 23, archive.get('hbar2.dat').data, buf, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 24, archive.get('compass.dat').data, buf, 1);
+		this.surface.parseSprite(mudclient.spriteMedia + 25, archive.get('buttons.dat').data, buf, 2);
+		this.surface.parseSprite(mudclient.spriteUtil, archive.get('scrollbar.dat').data, buf, 2);
+		this.surface.parseSprite(mudclient.spriteUtil + 2, archive.get('corners.dat').data, buf, 4);
+		this.surface.parseSprite(mudclient.spriteUtil + 6, archive.get('arrows.dat').data, buf, 2);
+		this.surface.parseSprite(mudclient.spriteProjectile, archive.get('projectile.dat').data, buf, GameData.projectileSprite);
 
 		let i = GameData.itemSpriteCount;
 
-		for (let j = 1; i > 0; j++) {
-			let k = Math.min(30, i);
-			i -= 30;
-
-			this.surface.parseSprite(mudclient.spriteItem + (j - 1) * 30, Utility.loadData('objects' + j + '.dat', 0, media), buff, k);
-		}
+		// for (let j = 1; i > 0; j++) {
+			// let k = Math.min(30, i);
+			// i -= 30;
+// 
+			// this.surface.parseSprite(mudclient.spriteItem + (j - 1) * 30, archive.get('objects' + j + '.dat').data, buf, k);
+		// }
+		for (let i = GameData.itemSpriteCount, j = 0; i > 0; i -= 30, j += 1)
+			this.surface.parseSprite(mudclient.spriteItem + j * 30, archive.get(`objects${j+1}.dat`).data, buf, Math.min(30, i));
 
 		this.surface.loadSprite(mudclient.spriteMedia);
 		this.surface.loadSprite(mudclient.spriteMedia + 9);
@@ -4104,6 +4232,49 @@ inventory:
 		for (let j1 = 0; j1 < GameData.itemSpriteCount; j1++) {
 			this.surface.loadSprite(mudclient.spriteItem + j1);
 		}
+		
+		// let media = await this.readDataFile('media' + MEDIA + '.jag', '2d graphics', 20);
+// 
+		// if (!media) {
+			// this.runtimeException = new GameException("Error loading media sprites!\n\n" + e.message, true);
+			// return;
+		// }
+// 
+		// let buff = Utility.loadData('index.dat', 0, media);
+		// this.surface.parseSprite(mudclient.spriteMedia, archive.get('inv1.dat').data, buf, 1);
+		// this.surface.parseSprite(mudclient.spriteMedia + 1, archive.get('inv2.dat').data, buf, 6);
+		// this.surface.parseSprite(mudclient.spriteMedia + 9, archive.get('bubble.dat').data, buf, 1);
+		// this.surface.parseSprite(mudclient.spriteMedia + 10, archive.get('runescape.dat').data, buf, 1);
+		// this.surface.parseSprite(mudclient.spriteMedia + 11, archive.get('splat.dat').data, buf, 3);
+		// this.surface.parseSprite(mudclient.spriteMedia + 14, archive.get('icon.dat').data, buf, 8);
+		// this.surface.parseSprite(mudclient.spriteMedia + 22, archive.get('hbar.dat').data, buf, 1);
+		// this.surface.parseSprite(mudclient.spriteMedia + 23, archive.get('hbar2.dat').data, buf, 1);
+		// this.surface.parseSprite(mudclient.spriteMedia + 24, archive.get('compass.dat').data, buf, 1);
+		// this.surface.parseSprite(mudclient.spriteMedia + 25, archive.get('buttons.dat').data, buf, 2);
+		// this.surface.parseSprite(mudclient.spriteUtil, archive.get('scrollbar.dat').data, buf, 2);
+		// this.surface.parseSprite(mudclient.spriteUtil + 2, archive.get('corners.dat').data, buf, 4);
+		// this.surface.parseSprite(mudclient.spriteUtil + 6, archive.get('arrows.dat').data, buf, 2);
+		// this.surface.parseSprite(mudclient.spriteProjectile, archive.get('projectile.dat').data, buf, GameData.projectileSprite);
+		// for (let i = GameData.itemSpriteCount, j = 0; i > 0; i -= 30, j += 1)
+			// this.surface.parseSprite(mudclient.spriteItem + j * 30, Utility.loadData(`objects${j+1}.dat`, 0, media), buff, Math.min(30, i));
+// 
+		// // let i = GameData.itemSpriteCount;
+// 
+// 
+		// this.surface.loadSprite(mudclient.spriteMedia);
+		// this.surface.loadSprite(mudclient.spriteMedia + 9);
+		// for (let l = 0; l <= 15; l++)
+			// this.surface.loadSprite(mudclient.spriteMedia + 11 + l);
+		// for (let j1 = 0; j1 < GameData.itemSpriteCount; j1++)
+			// this.surface.loadSprite(mudclient.spriteItem + j1);
+		// for (let i1 = 0; i1 < GameData.projectileSprite; i1++)
+			// this.surface.loadSprite(mudclient.spriteProjectile + i1);
+		// // for (let j = 1; i > 0; j++) {
+			// // let k = Math.min(30, i);
+			// // i -= 30;
+// //
+			// // this.surface.parseSprite(mudclient.spriteItem + (j - 1) * 30, archive.get('objects' + j + '.dat').data, buf, k);
+		// // }
 	}
 
 	drawChatMessageTabs() {
@@ -4113,7 +4284,7 @@ inventory:
 		this.surface.drawStringCenter('Chat history', 155, this.gameHeight + 6, 0, this.messageTabFlashHistory % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 1 ? 0xFFC832 : 0xC8C8FF));
 		this.surface.drawStringCenter('Quest history', 255, this.gameHeight + 6, 0, this.messageTabFlashQuest % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 2 ? 0xFFC832 : 0xC8C8FF));
 		this.surface.drawStringCenter('Private history', 355, this.gameHeight + 6, 0, this.messageTabFlashPrivate % 30 > 15 ? 0xFF3232 : (this.messageTabSelected === 3 ? 0xFFC832 : 0xC8C8FF));
-		this.surface.drawStringCenter('Report abuse', 457, this.gameHeight + 6, 0, 0xFFFFFF);
+		this.surface.drawStringCenter('Report abuse', 457, this.gameHeight + 6, 0, Color.WHITE.number);
 	}
 
 	async startGame() {
@@ -4126,6 +4297,7 @@ inventory:
 			return;
 
 		this.surface = new SurfaceSprite(this.gameWidth, this.gameHeight + 12, 4000, this);
+		global.ctx = this;
 		this.surface.mudclientref = this;
 		this.surface.setBounds(0, 0, this.gameWidth, this.gameHeight + 12);
 
@@ -4161,8 +4333,6 @@ inventory:
 		this.scene.fogZDistance = 2300;
 		this.scene.setLightSourceCoords(-50, -10, -50);
 
-		Ops.MC = this;
-
 		this.world = new World(this.scene, this.surface);
 		this.world.baseMediaSprite = mudclient.spriteMedia;
 
@@ -4188,7 +4358,7 @@ inventory:
 		this.createAppearancePanel();
 
 		this.updateLoadingStatus(100, 'Starting game...');
-		this.setTargetFps(50);
+		this.setFrameRate(50);
 		this.resetGameState();
 		this.renderLoginScreenViewports();
 	}
@@ -4243,7 +4413,7 @@ inventory:
 					s = '@bla@';
 				}
 
-				this.panelMagic.addListEntry(this.controlListMagic, i1++, s + 'Level ' + GameData.spellLevel[spell] + ': ' + GameData.spellName[spell]);
+				this.panelMagic.addListEntry(this.controlListMagic, i1++, s + 'Level ' + GameData.spellLevel[spell] + ': ' + this.spellName(spell));
 			}
 
 			this.panelMagic.render();
@@ -4251,8 +4421,8 @@ inventory:
 			let i3 = this.panelMagic.getListEntryIndex(this.controlListMagic);
 
 			if (i3 !== -1) {
-				this.surface.drawString('Level ' + GameData.spellLevel[i3] + ': ' + GameData.spellName[i3], uiX + 2, uiY + 124, 1, 0xffff00);
-				this.surface.drawString(GameData.spellDescription[i3], uiX + 2, uiY + 136, 0, 0xffffff);
+				this.surface.drawString('Level ' + GameData.spellLevel[i3] + ': ' + this.spellName(i3), uiX + 2, uiY + 124, 1, Color.YELLOW.number);
+				this.surface.drawString(GameData.spellDescription[i3], uiX + 2, uiY + 136, 0, Color.WHITE.number);
 
 				for (let i4 = 0; i4 < GameData.spellRunesRequired[i3]; i4++) {
 					let i5 = GameData.spellRunesId[i3][i4];
@@ -4265,7 +4435,7 @@ inventory:
 						s2 = '@gre@';
 					}
 
-					this.surface.drawString(s2 + j5 + '/' + k5, uiX + 2 + i4 * 44, uiY + 150, 1, 0xffffff);
+					this.surface.drawString(s2 + j5 + '/' + k5, uiX + 2 + i4 * 44, uiY + 150, 1, Color.WHITE.number);
 				}
 
 			} else {
@@ -4296,8 +4466,8 @@ inventory:
 			let j3 = this.panelMagic.getListEntryIndex(this.controlListMagic);
 
 			if (j3 !== -1) {
-				this.surface.drawStringCenter('Level ' + GameData.prayerLevel[j3] + ': ' + GameData.prayerName[j3], uiX + ((uiWidth / 2) | 0), uiY + 130, 1, 0xffff00);
-				this.surface.drawStringCenter(GameData.prayerDescription[j3], uiX + ((uiWidth / 2) | 0), uiY + 145, 0, 0xffffff);
+				this.surface.drawStringCenter('Level ' + GameData.prayerLevel[j3] + ': ' + GameData.prayerName[j3], uiX + ((uiWidth / 2) | 0), uiY + 130, 1, Color.YELLOW.number);
+				this.surface.drawStringCenter(GameData.prayerDescription[j3], uiX + ((uiWidth / 2) | 0), uiY + 145, 0, Color.WHITE.number);
 				this.surface.drawStringCenter('Drain rate: ' + GameData.prayerDrain[j3], uiX + ((uiWidth / 2) | 0), uiY + 160, 1, 0);
 			} else {
 				this.surface.drawString('Point at a prayer for a description', uiX + 2, uiY + 124, 1, 0);
@@ -4439,17 +4609,17 @@ inventory:
 		this.surface.drawBoxAlpha(dialogX, dialogY + 29, 8, 170, 0x989898, 160);
 		this.surface.drawBoxAlpha(dialogX + 399, dialogY + 29, 9, 170, 0x989898, 160);
 		this.surface.drawBoxAlpha(dialogX, dialogY + 199, 408, 47, 0x989898, 160);
-		this.surface.drawString('Buying and selling items', dialogX + 1, dialogY + 10, 1, 0xffffff);
-		let colour = 0xffffff;
+		this.surface.drawString('Buying and selling items', dialogX + 1, dialogY + 10, 1, Color.WHITE.number);
+		let colour = Color.WHITE.number;
 
 		if (this.mouseX > dialogX + 320 && this.mouseY >= dialogY && this.mouseX < dialogX + 408 && this.mouseY < dialogY + 12) {
-			colour = 0xff0000;
+			colour = Color.RED.number;
 		}
 
 		this.surface.drawStringRight('Close window', dialogX + 406, dialogY + 10, 1, colour);
 		this.surface.drawString('Shops stock in green', dialogX + 2, dialogY + 24, 1, 65280);
 		this.surface.drawString('Number you own in blue', dialogX + 135, dialogY + 24, 1, 65535);
-		this.surface.drawString('Your money: ' + this.getInventoryCount(10) + 'gp', dialogX + 280, dialogY + 24, 1, 0xffff00);
+		this.surface.drawString('Your money: ' + this.getInventoryCount(10) + 'gp', dialogX + 280, dialogY + 24, 1, Color.YELLOW.number);
 		let itemIndex = 0;
 
 		for (let row = 0; row < 5; row++) {
@@ -4458,7 +4628,7 @@ inventory:
 				let slotY = dialogY + 28 + row * 34;
 
 				if (this.shopSelectedItemIndex === itemIndex) {
-					this.surface.drawBoxAlpha(slotX, slotY, 49, 34, 0xff0000, 160);
+					this.surface.drawBoxAlpha(slotX, slotY, 49, 34, Color.RED.number, 160);
 				} else {
 					this.surface.drawBoxAlpha(slotX, slotY, 49, 34, 0xd0d0d0, 160);
 				}
@@ -4479,7 +4649,7 @@ inventory:
 		this.surface.drawLineHoriz(dialogX + 5, dialogY + 222, 398, 0);
 
 		if (this.shopSelectedItemIndex === -1) {
-			this.surface.drawStringCenter('Select an object to buy or sell', dialogX + 204, dialogY + 214, 3, 0xffff00);
+			this.surface.drawStringCenter('Select an object to buy or sell', dialogX + 204, dialogY + 214, 3, Color.YELLOW.number);
 			return;
 		}
 
@@ -4494,16 +4664,16 @@ inventory:
 				}
 
 				let itemPrice = (priceMod * GameData.itemBasePrice[selectedItemType]) / 100 | 0;
-				this.surface.drawString('Buy a new ' + GameData.itemName[selectedItemType] + ' for ' + itemPrice + 'gp', dialogX + 2, dialogY + 214, 1, 0xffff00);
+				this.surface.drawString('Buy a new ' + this.itemName(selectedItemType) + ' for ' + itemPrice + 'gp', dialogX + 2, dialogY + 214, 1, Color.YELLOW.number);
 
-				colour = 0xffffff;
+				colour = Color.WHITE.number;
 				if (this.mouseX > dialogX + 298 && this.mouseY >= dialogY + 204 && this.mouseX < dialogX + 408 && this.mouseY <= dialogY + 215) {
-					colour = 0xff0000;
+					colour = Color.RED.number;
 				}
 
 				this.surface.drawStringRight('Click here to buy', dialogX + 405, dialogY + 214, 3, colour);
 			} else {
-				this.surface.drawStringCenter('This item is not currently available to buy', dialogX + 204, dialogY + 214, 3, 0xffff00);
+				this.surface.drawStringCenter('This item is not currently available to buy', dialogX + 204, dialogY + 214, 3, Color.YELLOW.number);
 			}
 
 			if (this.getInventoryCount(selectedItemType) > 0) {
@@ -4515,19 +4685,19 @@ inventory:
 
 				let itemPrice = (priceMod * GameData.itemBasePrice[selectedItemType]) / 100 | 0;
 
-				this.surface.drawStringRight('Sell your ' + GameData.itemName[selectedItemType] + ' for ' + itemPrice + 'gp', dialogX + 405, dialogY + 239, 1, 0xffff00);
+				this.surface.drawStringRight('Sell your ' + this.itemName(selectedItemType) + ' for ' + itemPrice + 'gp', dialogX + 405, dialogY + 239, 1, Color.YELLOW.number);
 
-				colour = 0xffffff;
+				colour = Color.WHITE.number;
 
 				if (this.mouseX > dialogX + 2 && this.mouseY >= dialogY + 229 && this.mouseX < dialogX + 112 && this.mouseY <= dialogY + 240) {
-					colour = 0xff0000;
+					colour = Color.RED.number;
 				}
 
 				this.surface.drawString('Click here to sell', dialogX + 2, dialogY + 239, 3, colour);
 				return;
 			}
 
-			this.surface.drawStringCenter('You do not have any of this item to sell', dialogX + 204, dialogY + 239, 3, 0xffff00);
+			this.surface.drawStringCenter('You do not have any of this item to sell', dialogX + 204, dialogY + 239, 3, Color.YELLOW.number);
 		}
 	}
 
@@ -4563,7 +4733,7 @@ inventory:
 	drawGame() {
 		if (this.deathScreenTimeout !== 0) {
 			this.surface.fadeToBlack();
-			this.surface.drawStringCenter('Oh dear! You are dead...', this.gameWidth / 2 | 0, this.gameHeight / 2 | 0, 7, 0xff0000);
+			this.surface.drawStringCenter('Oh dear! You are dead...', this.gameWidth >>> 1, this.gameHeight >>> 1, 7, Color.RED.number);
 			this.drawChatMessageTabs();
 			this.surface.draw(this.graphics, 0, 0);
 			return;
@@ -4577,29 +4747,31 @@ inventory:
 		if (this.isSleeping) {
 			this.surface.fadeToBlack();
 
+			// the first check is for the grouping of ZZZs at the left side of the client screen when sleeping
 			if (Math.random() < 0.15)
-				this.surface.drawStringCenter('ZZZ', Math.random() * 80 | 0, Math.random() * 334 | 0, 5, Math.random() * 0xFFFFFF | 0);
+				this.surface.drawStringCenter('ZZZ', Math.random() * 80 | 0, Math.random() * this.gameWidth | 0, 5, Color.random().number);
 
+			// the next check is for the grouping of ZZZs at the right side of the client screen when sleeping
 			if (Math.random() < 0.15)
-				this.surface.drawStringCenter('ZZZ', 512 - ((Math.random() * 80) | 0), Math.random() * 334 | 0, 5, Math.random() * 0xFFFFFF | 0);
+				this.surface.drawStringCenter('ZZZ', this.gameWidth - ((Math.random() * 80) | 0), Math.random() * this.gameHeight | 0, 5, Color.random().number);
 
-			this.surface.drawBox((this.gameWidth2/2|0) - 100, 160, 200, 40, 0);
-			this.surface.drawStringCenter('You are sleeping', this.gameWidth / 2 | 0, 50, 7, 0xffff00);
-			this.surface.drawStringCenter('Fatigue: ' + (((this.fatigueSleeping * 100) / 750) | 0) + '%', this.gameWidth / 2 | 0, 90, 7, 0xffff00);
-			this.surface.drawStringCenter('When you want to wake up just use your', this.gameWidth / 2 | 0, 140, 5, 0xffffff);
-			this.surface.drawStringCenter('keyboard to type the word in the box below', this.gameWidth / 2 | 0, 160, 5, 0xffffff);
-			this.surface.drawStringCenter(this.inputTextCurrent + '*', this.gameWidth / 2 | 0, 180, 5, 65535);
+			this.surface.drawBox((this.gameWidth2>>>1) - 100, 160, 200, 40, 0);
+			this.surface.drawStringCenter('You are sleeping', this.gameWidth / 2 | 0, 50, 7, Color.YELLOW.number);
+			this.surface.drawStringCenter('Fatigue: ' + (((this.fatigueSleeping * 100) / 750) | 0) + '%', this.gameWidth / 2 | 0, 90, 7, Color.YELLOW.number);
+			this.surface.drawStringCenter('When you want to wake up just use your', this.gameWidth >>> 1, 140, 5, Color.WHITE.number);
+			this.surface.drawStringCenter('keyboard to type the word in the box below', this.gameWidth >>> 1, 160, 5, Color.WHITE.number);
+			this.surface.drawStringCenter(this.inputBuffer + '*', this.gameWidth >>> 1, 180, 5, 65535);
 
 			if (!this.sleepingStatusText) {
-				this.surface.drawSpriteID(((this.gameWidth / 2) | 0) - 127, 230, mudclient.spriteTexture + 1);
+				this.surface.drawSpriteID((this.gameWidth >>> 1) - 127, 230, mudclient.spriteTexture + 1);
 			} else {
-				this.surface.drawStringCenter(this.sleepingStatusText, this.gameWidth / 2 | 0, 260, 5, 0xff0000);
+				this.surface.drawStringCenter(this.sleepingStatusText, this.gameWidth >>> 1, 260, 5, Color.RED.number);
 			}
 
-			this.surface.drawBoxEdge(((this.gameWidth / 2) | 0) - 128, 229, 257, 42, 0xffffff);
+			this.surface.drawBoxEdge((this.gameWidth >>> 1) - 128, 229, 257, 42, Color.WHITE.number);
 			this.drawChatMessageTabs();
-			this.surface.drawStringCenter('If you can\'t read the word', this.gameWidth / 2 | 0, 290, 1, 0xffffff);
-			this.surface.drawStringCenter('@yel@click here@whi@ to get a different one', this.gameWidth / 2 | 0, 305, 1, 0xffffff);
+			this.surface.drawStringCenter('If you can\'t read the word', this.gameWidth >>> 1, 290, 1, Color.WHITE.number);
+			this.surface.drawStringCenter('@yel@click here@whi@ to get a different one', this.gameWidth >>> 1, 305, 1, Color.WHITE.number);
 			this.surface.draw(this.graphics, 0, 0);
 			return;
 		}
@@ -4635,55 +4807,41 @@ inventory:
 			}
 		}
 
-		if (this.objectAnimationNumberFireLightningSpell !== this.lastObjectAnimationNumberFireLightningSpell) {
-			this.lastObjectAnimationNumberFireLightningSpell = this.objectAnimationNumberFireLightningSpell;
+		for (let l = 0; l < this.objectCount; l++) {
+			if (this.objectAnimationNumberFireLightningSpell !== this.lastObjectAnimationNumberFireLightningSpell) {
+				this.lastObjectAnimationNumberFireLightningSpell = this.objectAnimationNumberFireLightningSpell;
 
-			for (let j = 0; j < this.objectCount; j++) {
-				if (this.objectId[j] === 97) {
-					this.updateObjectAnimation(j, 'firea' + (this.objectAnimationNumberFireLightningSpell + 1));
-				}
+				if (this.objectId[l] === 97)
+					this.updateObjectAnimation(l, 'firea' + (this.objectAnimationNumberFireLightningSpell + 1));
 
-				if (this.objectId[j] === 274) {
-					this.updateObjectAnimation(j, 'fireplacea' + (this.objectAnimationNumberFireLightningSpell + 1));
-				}
+				if (this.objectId[l] === 274)
+					this.updateObjectAnimation(l, 'fireplacea' + (this.objectAnimationNumberFireLightningSpell + 1));
 
-				if (this.objectId[j] === 1031) {
-					this.updateObjectAnimation(j, 'lightning' + (this.objectAnimationNumberFireLightningSpell + 1));
-				}
+				if (this.objectId[l] === 1031)
+					this.updateObjectAnimation(l, 'lightning' + (this.objectAnimationNumberFireLightningSpell + 1));
 
-				if (this.objectId[j] === 1036) {
-					this.updateObjectAnimation(j, 'firespell' + (this.objectAnimationNumberFireLightningSpell + 1));
-				}
+				if (this.objectId[l] === 1036)
+					this.updateObjectAnimation(l, 'firespell' + (this.objectAnimationNumberFireLightningSpell + 1));
 
-				if (this.objectId[j] === 1147) {
-					this.updateObjectAnimation(j, 'spellcharge' + (this.objectAnimationNumberFireLightningSpell + 1));
-				}
+				if (this.objectId[l] === 1147)
+					this.updateObjectAnimation(l, 'spellcharge' + (this.objectAnimationNumberFireLightningSpell + 1));
 			}
-		}
 
-		if (this.objectAnimationNumberTorch !== this.lastObjectAnimationNumberTorch) {
-			this.lastObjectAnimationNumberTorch = this.objectAnimationNumberTorch;
+			if (this.objectAnimationNumberTorch !== this.lastObjectAnimationNumberTorch) {
+				this.lastObjectAnimationNumberTorch = this.objectAnimationNumberTorch;
+				if (this.objectId[l] === 51)
+					this.updateObjectAnimation(l, 'torcha' + (this.objectAnimationNumberTorch + 1));
 
-			for (let k = 0; k < this.objectCount; k++) {
-				if (this.objectId[k] === 51) {
-					this.updateObjectAnimation(k, 'torcha' + (this.objectAnimationNumberTorch + 1));
-				}
-
-				if (this.objectId[k] === 143) {
-					this.updateObjectAnimation(k, 'skulltorcha' + (this.objectAnimationNumberTorch + 1));
-				}
+				if (this.objectId[l] === 143)
+					this.updateObjectAnimation(l, 'skulltorcha' + (this.objectAnimationNumberTorch + 1));
 			}
-		}
 
-		if (this.objectAnimationNumberClaw !== this.lastObjectAnimationNumberClaw) {
-			this.lastObjectAnimationNumberClaw = this.objectAnimationNumberClaw;
+			if (this.objectAnimationNumberClaw !== this.lastObjectAnimationNumberClaw) {
+				this.lastObjectAnimationNumberClaw = this.objectAnimationNumberClaw;
 
-			for (let l = 0; l < this.objectCount; l++) {
-				if (this.objectId[l] === 1142) {
+				if (this.objectId[l] === 1142)
 					this.updateObjectAnimation(l, 'clawspell' + (this.objectAnimationNumberClaw + 1));
-				}
 			}
-
 		}
 
 		this.scene.reduceSprites(this.spriteCount);
@@ -4692,15 +4850,15 @@ inventory:
 		for (let i = 0; i < this.playerCount; i++) {
 			let player = this.players[i];
 
+			if (!player) break;
 			if (player.colourBottom !== 0xFF) {
 				let elev = -this.world.getElevation(player.currentX, player.currentY);
 				let id = this.scene.addSprite(5000 + i, player.currentX, elev, player.currentY, 145, 220, i + 10000);
 
 				this.spriteCount++;
 
-				if (player === this.localPlayer) {
+				if (player === this.localPlayer)
 					this.scene.setLocalPlayer(id);
-				}
 
 				// left hand side in combat
 				if (player.animationCurrent === 8)
@@ -4857,20 +5015,21 @@ inventory:
 			let minutes = Math.floor(seconds / 60);
 			seconds %= 60;
 
-			this.surface.drawStringCenter('System update in: ' + minutes + (seconds < 10 ? ':0' + seconds : ':' + seconds), 256, this.gameHeight - 7, 1, 0xffff00);
+			this.surface.drawStringCenter('System update in: ' + minutes + (seconds < 10 ? ':0' + seconds : ':' + seconds), 256, this.gameHeight - 7, 1, Color.YELLOW.number);
 			// if (seconds < 10)
-				// this.surface.drawStringCenter('System update in: ' + minutes + ':0' + seconds, 256, this.gameHeight - 7, 1, 0xffff00);
+				// this.surface.drawStringCenter('System update in: ' + minutes + ':0' + seconds, 256, this.gameHeight - 7, 1, Color.YELLOW.number);
 			// else
-				// this.surface.drawStringCenter('System update in: ' + minutes + ':' + seconds, 256, this.gameHeight - 7, 1, 0xffff00);
+				// this.surface.drawStringCenter('System update in: ' + minutes + ':' + seconds, 256, this.gameHeight - 7, 1, Color.YELLOW.number);
 		}
 
 		let dy = 8;
 		if (this.debug) {
-			this.surface.drawStringCenter(`Mouse:${this.mouseX},${this.mouseY}`, 256, 15, 1, 0xffff00);
-			this.surface.drawStringCenter(`Player:${(this.localPlayer.currentX >>> 7) + this.regionX},${(this.localPlayer.currentY >>> 7) + this.regionY}`, 256, 30, 1, 0xffff00);
+			this.surface.drawStringCenter(`Mouse:${this.mouseX},${this.mouseY}`, 256, 15, 1, Color.YELLOW.number);
+			this.surface.drawStringCenter(`Player:${(this.localPlayer.currentX >>> 7) + this.regionX},${(this.localPlayer.currentY >>> 7) + this.regionY}`, 465, this.gameHeight - dy, 1, Color.YELLOW.number);
+			dy += 20
 		}
 		if (this.showFps && this.fps > 0) {
-			this.surface.drawStringCenter('FPS:' + this.fps, 465, this.gameHeight - dy, 1, 0xffff00);
+			this.surface.drawStringCenter('Fps:' + this.fps, 465, this.gameHeight - dy, 1, Color.YELLOW.number);
 			dy += 20
 		}
 
@@ -4886,19 +5045,19 @@ inventory:
 
 				let wildlvl = Math.floor(wildY / 6) + 1; // one wilderness level per 6 vertical tiles
 				this.surface.drawSpriteID(453, this.gameHeight - (dy+56), mudclient.spriteMedia + 13);
-				this.surface.drawStringCenter('Wilderness', 465, this.gameHeight - (dy+20), 1, 0xffff00);
-				this.surface.drawStringCenter('Level: ' + wildlvl, 465, this.gameHeight - (dy+7), 1, 0xffff00);
+				this.surface.drawStringCenter('Wilderness', 465, this.gameHeight - (dy+20), 1, Color.YELLOW.number);
+				this.surface.drawStringCenter('Level: ' + wildlvl, 465, this.gameHeight - (dy+7), 1, Color.YELLOW.number);
 			} else if (wildY > -10 && this.wildAwarenessLvl === 0)
 				this.wildAwarenessLvl = 1;
 		}
 
+		// only count an rs-clock-tick against the temporary chat entries in All Messages tab
 		if (this.messageTabSelected === 0) {
 			for (let k6 = 0; k6 < this.messageHistory.length; k6++) {
-				if (this.messageHistory[k6].ticks > 0) {
-					this.surface.drawString(this.messageHistory[k6].message, 7, this.gameHeight - 18 - k6 * 12, 1, 0xffff00);
-				} else {
+				if (this.messageHistory[k6].ticks > 0)
+					this.surface.drawString(this.messageHistory[k6].message, 7, this.gameHeight - 18 - k6 * 12, 1, Color.YELLOW.number);
+				else
 					this.messageHistory.pop();
-				}
 			}
 		}
 
@@ -4918,7 +5077,7 @@ inventory:
 
 	async loadSounds() {
 		try {
-			this.soundData = await this.readDataFile('sounds' + VERSION.SOUNDS + '.mem', 'Sound effects', 90);
+			this.soundArchive = new JagArchive(await download(`./static/cache/sounds${SOUNDS}.mem`), 'sounds.mem');
 			this.audioPlayer = new StreamAudioPlayer();
 		} catch (e) {
 			console.log('Unable to init sounds:' + e.message);
@@ -4937,165 +5096,159 @@ inventory:
 	}
 
 	async loadEntities() {
-		let entityBuff = void 0;
-		let indexDat = void 0;
-
-		entityBuff = await this.readDataFile('entity' + VERSION.ENTITY + '.jag', 'people and monsters', 30);
-		if (!entityBuff) {
+		let archive = new JagArchive(await download(`./static/cache/entity${ENTITY}.jag`), 'entity.jag');
+		if (!archive) {
 			this.runtimeException = new GameException("Error loading people and monster sprites!\n\n" + e.message, true);
 			return;
 		}
 
-		indexDat = Utility.loadData('index.dat', 0, entityBuff);
+		let indexBuf = archive.get('index.dat');
 
-		let entityBuffMem = void 0;
-		let indexDatMem = void 0;
+		let archiveMem = void 0, indexBufMem = void 0;
 
 		if (this.members) {
-			entityBuffMem = await this.readDataFile('entity' + VERSION.ENTITY + '.mem', 'member graphics', 45);
+			archiveMem = new JagArchive(await download(`./static/cache/entity${ENTITY}.mem`), 'entity.mem');
 
-			if (!entityBuffMem) {
+			if (!archiveMem) {
 				this.runtimeException = new GameException("Error loading member sprites!\n\n" + e.message, true);
 				return;
 			}
 
-			indexDatMem = Utility.loadData('index.dat', 0, entityBuffMem);
+			indexBufMem = archiveMem.get('index.dat');
 		}
 
 		let frameCount = 0;
 
-		this.anInt659 = 0;
-		this.anInt660 = this.anInt659;
+		this.anInt659 = this.anInt660 = 0;
 
-label0:
-		for (let j = 0; j < GameData.animationCount; j++) {
-			let s = GameData.animationName[j];
+animationIter:
+		for (let idx = 0; idx < GameData.animationCount; idx++) {
+			let s = GameData.animationName[idx];
 
-			for (let k = 0; k < j; k++) {
+			for (let k = 0; k < idx; k++)
 				if (GameData.animationName[k].toLowerCase() === s.toLowerCase()) {
-					GameData.animationNumber[j] = GameData.animationNumber[k];
-					continue label0;
+					GameData.animationNumber[idx] = GameData.animationNumber[k];
+					continue animationIter;
 				}
+
+			let animation = archive.get(`${s}.dat`);
+			let indexes = indexBuf.data;
+
+			if (!animation && this.members) {
+				animation = archiveMem.get(`${s}.dat`);
+				indexes = indexBufMem.data;
 			}
 
-			let abyte7 = Utility.loadData(s + '.dat', 0, entityBuff);
-			let abyte4 = indexDat;
-
-			if (!abyte7 && this.members) {
-				abyte7 = Utility.loadData(s + '.dat', 0, entityBuffMem);
-				abyte4 = indexDatMem;
-			}
-
-			if (abyte7) {
-				this.surface.parseSprite(this.anInt660, abyte7, abyte4, 15);
-
+			if (animation) {
+				// Every animation sequence for mobile entities uses minimum 15 sprites
+				this.surface.parseSprite(this.anInt660, animation.data, indexes, 15);
 				frameCount += 15;
 
-				if (GameData.animationHasA[j] === 1) {
-					let aDat = Utility.loadData(s + 'a.dat', 0, entityBuff);
-					let aIndexDat = indexDat;
+				if (GameData.animationHasA[idx]) {
+					// a is to add some extra combat details maybe?
+					animation = archive.get(`${s}a.dat`);
+					indexes = indexBuf.data;
 
-					if (!aDat && this.members) {
-						aDat = Utility.loadData(s + 'a.dat', 0, entityBuffMem);
-						aIndexDat = indexDatMem;
+					if (!animation && this.members) {
+						animation = archiveMem.get(`${s}a.dat`);
+						indexes = indexBufMem.data;
 					}
 
-					this.surface.parseSprite(this.anInt660 + 15, aDat, aIndexDat, 3);
+					this.surface.parseSprite(this.anInt660 + 15, animation.data, indexes, 3);
 					frameCount += 3;
 				}
 
-				if (GameData.animationHasF[j] === 1) {
-					let fDat = Utility.loadData(s + 'f.dat', 0, entityBuff);
-					let fDatIndex = indexDat;
+				if (GameData.animationHasF[idx]) {
+					// f is for fighting maybe?
+					animation = archive.get(`${s}f.dat`);
+					indexes = indexBuf.data;
 
-					if (!fDat && this.members) {
-						fDat = Utility.loadData(s + 'f.dat', 0, entityBuffMem);
-						fDatIndex = indexDatMem;
+					if (!animation && this.members) {
+						animation = archiveMem.get(`${s}f.dat`);
+						indexes = indexBufMem.data;
 					}
 
-					this.surface.parseSprite(this.anInt660 + 18, fDat, fDatIndex, 9);
+					this.surface.parseSprite(this.anInt660 + 18, animation.data, indexes, 9);
 					frameCount += 9;
 				}
 
-				if (GameData.animationSomething[j] !== 0) {
-					for (let l = this.anInt660; l < this.anInt660 + 27; l++) {
-						this.surface.loadSprite(l);
-					}
-				}
+				if (GameData.animationSomething[idx] !== 0)
+					for (let l = 0; l < ANIMATION_FRAMES_MAX; l++)
+						this.surface.loadSprite(this.anInt660 + l);
 			}
 
-			GameData.animationNumber[j] = this.anInt660;
-			this.anInt660 += 27;
+			GameData.animationNumber[idx] = this.anInt660;
+			this.anInt660 += ANIMATION_FRAMES_MAX;
 		}
 
-		console.log('Loaded: ' + frameCount + ' frames of animation');
+		console.log(`Loaded: ${frameCount} frames of animation`);
 	}
 
 	handleAppearancePanelControls() {
 		this.panelGame[GamePanels.APPEARANCE].handleMouse(this.mouseX, this.mouseY, this.lastMouseButtonDown, this.mouseButtonDown);
 
+		// head style down
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceHead1)) {
 			do {
 				this.appearanceHeadType = ((this.appearanceHeadType - 1) + GameData.animationCount) % GameData.animationCount;
 			} while ((GameData.animationSomething[this.appearanceHeadType] & 3) !== 1 || (GameData.animationSomething[this.appearanceHeadType] & 4 * this.appearanceHeadGender) === 0);
 		}
 
+		// head style up
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceHead2)) {
 			do {
 				this.appearanceHeadType = (this.appearanceHeadType + 1) % GameData.animationCount;
 			} while ((GameData.animationSomething[this.appearanceHeadType] & 3) !== 1 || (GameData.animationSomething[this.appearanceHeadType] & 4 * this.appearanceHeadGender) === 0);
 		}
 
+		// hair color down
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceHair1)) {
 			this.appearanceHairColour = ((this.appearanceHairColour - 1) + this.characterHairColours.length) % this.characterHairColours.length;
 		}
 
+		// hair color up
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceHair2)) {
 			this.appearanceHairColour = (this.appearanceHairColour + 1) % this.characterHairColours.length;
 		}
 
+		// either gender arrow
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceGender1) || this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceGender2)) {
 			for (this.appearanceHeadGender = 3 - this.appearanceHeadGender; (GameData.animationSomething[this.appearanceHeadType] & 3) !== 1 || (GameData.animationSomething[this.appearanceHeadType] & 4 * this.appearanceHeadGender) === 0; this.appearanceHeadType = (this.appearanceHeadType + 1) % GameData.animationCount);
 			for (; (GameData.animationSomething[this.appearanceBodyGender] & 3) !== 2 || (GameData.animationSomething[this.appearanceBodyGender] & 4 * this.appearanceHeadGender) === 0; this.appearanceBodyGender = (this.appearanceBodyGender + 1) % GameData.animationCount);
 		}
 
+		// body color down
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceTop1)) {
 			this.appearanceTopColour = ((this.appearanceTopColour - 1) + this.characterTopBottomColours.length) % this.characterTopBottomColours.length;
 		}
 
+		// body  color up
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceTop2)) {
 			this.appearanceTopColour = (this.appearanceTopColour + 1) % this.characterTopBottomColours.length;
 		}
 
+		// skin color down
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceSkin1)) {
 			this.appearanceSkinColour = ((this.appearanceSkinColour - 1) + this.characterSkinColours.length) % this.characterSkinColours.length;
 		}
 
+		// skin color up
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceSkin2)) {
 			this.appearanceSkinColour = (this.appearanceSkinColour + 1) % this.characterSkinColours.length;
 		}
 
+		// pants color down
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceBottom1)) {
 			this.appearanceBottomColour = ((this.appearanceBottomColour - 1) + this.characterTopBottomColours.length) % this.characterTopBottomColours.length;
 		}
 
+		// pants color up
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceBottom2)) {
 			this.appearanceBottomColour = (this.appearanceBottomColour + 1) % this.characterTopBottomColours.length;
 		}
 
+		// Accept button
 		if (this.panelGame[GamePanels.APPEARANCE].isClicked(this.controlButtonAppearanceAccept)) {
-			// let p = new Packet(C_OPCODES.APPEARANCE);
-			// p.startAccess();
-			// p.putByte(this.appearanceHeadGender);
-			// p.putByte(this.appearanceHeadType);
-			// p.putByte(this.appearanceBodyGender);
-			// p.putByte(this.appearance2Colour);
-			// p.putByte(this.appearanceHairColour);
-			// p.putByte(this.appearanceTopColour);
-			// p.putByte(this.appearanceBottomColour);
-			// p.putByte(this.appearanceSkinColour);
-			// p.stopAccess();
-			// this.clientStream.add(p);
 			this.clientStream.queue(Ops.CHANGE_APPEARANCE(this.appearanceHeadGender, this.appearanceHeadType, this.appearanceBodyGender,
 					this.appearance2Colour, this.appearanceHairColour, this.appearanceTopColour, this.appearanceBottomColour, this.appearanceSkinColour));
 			this.surface.blackScreen();
@@ -5124,7 +5277,7 @@ label0:
 			g.drawString('4: Try rebooting your computer', 30, 225);
 			g.drawString('5: Try selecting a different version of Java from the play-game menu', 30, 255);
 
-			this.setTargetFps(1);
+			this.setFrameRate(1);
 			return;
 		}
 
@@ -5140,28 +5293,9 @@ label0:
 			g1.drawString('To play RuneScape make sure you play from', 50, 100);
 			g1.drawString('http://rsclassic.dev', 50, 150);
 
-			this.setTargetFps(1);
+			this.setFrameRate(1);
 			return;
 		}
-
-		// if (this.runtimeException) {
-			// this.clearResources();
-			// let g1 = this.getGraphics();
-// 
-			// g1.setColor(Color.BLACK);
-			// g1.fillRect(0, 0, this.gameWidth, this.gameHeight);
-// 
-			// g1.setFont(Font.HELVETICA.bold(20));
-			// g1.setColor(Color.WHITE);
-			// g1.drawString('Error - out of memory!', 50, 50);
-			// g1.drawString('Close ALL unnecessary programs', 50, 100);
-			// g1.drawString('and windows before loading the game', 50, 150);
-			// g1.drawString('RuneScape needs about 48meg of spare RAM', 50, 200);
-// 
-			// this.setTargetFps(1);
-			// return;
-		// }
-
 		try {
 			switch (this.gameState) {
 			case GameStates.LOGIN:
@@ -5196,39 +5330,39 @@ label0:
 
 		this.surface.drawBox(dialogX, dialogY, 468, 16, 192);
 		this.surface.drawBoxAlpha(dialogX, dialogY + 16, 468, 246, 0x989898, 160);
-		this.surface.drawStringCenter('Please confirm your duel with @yel@' + Utility.hashToUsername(this.duelOpponentNameHash), dialogX + 234, dialogY + 12, 1, 0xffffff);
-		this.surface.drawStringCenter('Your stake:', dialogX + 117, dialogY + 30, 1, 0xffff00);
+		this.surface.drawStringCenter('Please confirm your duel with @yel@' + Utility.hashToUsername(this.duelOpponentNameHash), dialogX + 234, dialogY + 12, 1, Color.WHITE.number);
+		this.surface.drawStringCenter('Your stake:', dialogX + 117, dialogY + 30, 1, Color.YELLOW.number);
 
 		if (this.duelItemsCount <= 0) {
-			this.surface.drawStringCenter('Nothing!', dialogX + 117, dialogY + 42, 1, 0xffffff);
+			this.surface.drawStringCenter('Nothing!', dialogX + 117, dialogY + 42, 1, Color.WHITE.number);
 		} else {
 			// for (let idx = 0; idx < this.duelItemsCount; idx++) {
 			let offsetY = 0;
 			for (let item of this.duelItemList) {
-				let entry = GameData.itemName[item.id] + (GameData.itemStackable[item.id] === 0 ? ' x ' + formatNumber(item.amount) : '');
+				let entry = this.itemName(item.id) + (GameData.itemStackable[item.id] === 0 ? ' x ' + formatNumber(item.amount) : '');
 				if (item && entry)
-					this.surface.drawStringCenter(entry, dialogX+117, dialogY+42+offsetY, 1, 0xFFFFFF);
+					this.surface.drawStringCenter(entry, dialogX+117, dialogY+42+offsetY, 1, Color.WHITE.number);
 				offsetY += 12;
 			}
 		}
 
-		this.surface.drawStringCenter("Your opponent's stake:", dialogX + 351, dialogY + 30, 1, 0xffff00);
+		this.surface.drawStringCenter("Your opponent's stake:", dialogX + 351, dialogY + 30, 1, Color.YELLOW.number);
 
 		if (this.duelOpponentItemsCount <= 0)
-			this.surface.drawStringCenter('Nothing!', dialogX + 351, dialogY + 42, 1, 0xffffff);
+			this.surface.drawStringCenter('Nothing!', dialogX + 351, dialogY + 42, 1, Color.WHITE.number);
 		else {
 			let offsetY = 0;
 			// for (let idx = 0; idx < this.duelOpponentItemsCount; idx++) {
 			for (let item of this.duelOpponentItemList) {
 				// let item = this.duelOpponentItemList[idx];
-				let entry = GameData.itemName[item.id];
+				let entry = this.itemName(item.id);
 				if (GameData.itemStackable[item.id] === 0)
 					entry += ' x ' + formatNumber(item.amount);
 				else {
 					entry += '';
 				}
 				if(item&&entry)
-					this.surface.drawStringCenter(entry, dialogX+351, dialogY+42+offsetY, 1, 0xFFFFFF);
+					this.surface.drawStringCenter(entry, dialogX+351, dialogY+42+offsetY, 1, Color.WHITE.number);
 				offsetY += 12;
 			}
 		}
@@ -5239,25 +5373,25 @@ label0:
 		// let weaponsCheck = this.duelOptionWeapons === 0;
 
 		this.surface.drawStringCenter(this.duelOptionRetreat === 0 ? 'You can retreat from this duel' : 'No retreat is possible',
-				dialogX + 234, dialogY + 204, 1, this.duelOptionRetreat === 0 ? 0x00FF00 : 0xFF0000);
-				// dialogX + 234, dialogY + 204, 1, retreatCheck ? 0x00FF00 : 0xFF0000);
+				dialogX + 234, dialogY + 204, 1, this.duelOptionRetreat === 0 ? Color.GREEN.number : Color.RED.number);
+				// dialogX + 234, dialogY + 204, 1, retreatCheck ? Color.GREEN.number : Color.RED.number);
 		this.surface.drawStringCenter('Magic ' + this.duelOptionMagic === 0 ? 'may' : 'cannot' + ' be used',
-				dialogX + 234, dialogY + 204, 1, this.duelOptionMagic === 0 ? 0x00FF00 : 0xFF0000);
-				// dialogX + 234, dialogY + 204, 1, magicCheck ? 0x00FF00 : 0xFF0000);
+				dialogX + 234, dialogY + 204, 1, this.duelOptionMagic === 0 ? Color.GREEN.number : Color.RED.number);
+				// dialogX + 234, dialogY + 204, 1, magicCheck ? Color.GREEN.number : Color.RED.number);
 		this.surface.drawStringCenter('Prayer ' + this.duelOptionPrayer === 0 ? 'may' : 'cannot' + ' be used',
-				dialogX + 234, dialogY + 204, 1, this.duelOptionPrayer === 0 ? 0x00FF00 : 0xFF0000);
-				// dialogX + 234, dialogY + 204, 1, prayerCheck ? 0x00FF00 : 0xFF0000);
+				dialogX + 234, dialogY + 204, 1, this.duelOptionPrayer === 0 ? Color.GREEN.number : Color.RED.number);
+				// dialogX + 234, dialogY + 204, 1, prayerCheck ? Color.GREEN.number : Color.RED.number);
 		this.surface.drawStringCenter('Weapons ' + this.duelOptionWeapons === 0 ? 'may' : 'cannot' + ' be used',
-				dialogX + 234, dialogY + 204, 1, this.duelOptionWeapons === 0 ? 0x00FF00 : 0xFF0000);
-				// dialogX + 234, dialogY + 216, 1, weaponsCheck ? 0x00FF00 : 0xFF0000);
+				dialogX + 234, dialogY + 204, 1, this.duelOptionWeapons === 0 ? Color.GREEN.number : Color.RED.number);
+				// dialogX + 234, dialogY + 216, 1, weaponsCheck ? Color.GREEN.number : Color.RED.number);
 
-		this.surface.drawStringCenter("If you are sure click 'Accept' to begin the duel", dialogX + 234, dialogY + 230, 1, 0xffffff);
+		this.surface.drawStringCenter("If you are sure click 'Accept' to begin the duel", dialogX + 234, dialogY + 230, 1, Color.WHITE.number);
 
 		if (!this.duelAccepted) {
 			this.surface.drawSpriteID((dialogX + 118) - 35, dialogY + 238, mudclient.spriteMedia + 25);
 			this.surface.drawSpriteID((dialogX + 352) - 35, dialogY + 238, mudclient.spriteMedia + 26);
 		} else {
-			this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, 0xffff00);
+			this.surface.drawStringCenter('Waiting for other player...', dialogX + 234, dialogY + 250, 1, Color.YELLOW.number);
 		}
 
 		if (this.isClicking()) {
@@ -5303,22 +5437,27 @@ label0:
 		GameData.getModelIndex('spellcharge2');
 		GameData.getModelIndex('spellcharge3');
 
-		let abyte0 = await this.readDataFile('models' + VERSION.MODELS + '.jag', '3d models', 60);
+		let archive = new JagArchive(await download(`./static/cache/models${MODELS}.jag`), 'models.jag');
+		// let abyte0 = await this.readDataFile('models' + MODELS + '.jag', '3d models', 60);
 
-		if (!abyte0) {
+		if (!archive) {
 			this.initException = new GameException("Error loading 3d models!\n\n" + e.message, true);
 			return;
 		}
 
-		for (let j = 0; j < GameData.modelCount; j++) {
-			let k = Utility.getDataFileOffset(GameData.modelName[j] + '.ob3', abyte0);
-			if (k !== 0)
-				this.gameModels[j] = GameModel._from3(abyte0, k, true);
+		let idx = 0;
+		for (let name in GameData.Models) {
+		// for (let j = 0; j < GameData.modelCount; j++) {
+			let k = archive.get(`${name}.ob3`);
+			// let k = Utility.getDataFileOffset(GameData.modelName[j] + '.ob3', abyte0);
+			if (k)
+				this.gameModels[idx] = GameModel._from3(k.data, 0, true);
 			else
-				this.gameModels[j] = GameModel._from2(1, 1);
+				this.gameModels[idx] = GameModel._from2(1, 1);
 
-			if (GameData.modelName[j].toLowerCase() === 'giantcrystal')
-				this.gameModels[j].transparent = true;
+			if (name === 'giantcrystal')
+				this.gameModels[idx].transparent = true;
+			idx++;
 		}
 	}
 
@@ -5332,57 +5471,57 @@ label0:
 		}
 
 		this.surface.drawBox(256 - Math.floor(width / 2), 167 - Math.floor(height / 2), width, height, 0);
-		this.surface.drawBoxEdge(256 - Math.floor(width / 2), 167 - Math.floor(height / 2), width, height, 0xFFFFFF);
-		this.surface.centrepara(this.serverMessage, 256, (167 - Math.floor(height / 2)) + 20, 1, 0xFFFFFF, width - 40);
+		this.surface.drawBoxEdge(256 - Math.floor(width / 2), 167 - Math.floor(height / 2), width, height, Color.WHITE.number);
+		this.surface.centrepara(this.serverMessage, 256, (167 - Math.floor(height / 2)) + 20, 1, Color.WHITE.number, width - 40);
 
 		let i = 157 + Math.floor(height / 2);
-		let j = 0xFFFFFF;
+		let j = Color.WHITE.number;
 
 		if (this.mouseY > i - 12 && this.mouseY <= i && this.mouseX > 106 && this.mouseX < 406)
-			j = 0xFF0000;
+			j = Color.RED.number;
 
 		this.surface.drawStringCenter('Click here to close window', 256, i, 1, j);
 
 		if (this.mouseButtonClick !== 0)
-			if (j !== 0xFFFFFF || (this.mouseX < 256 - ((width / 2) | 0) || this.mouseX > 256 + ((width / 2) | 0)) && (this.mouseY < 167 - ((height / 2) | 0) || this.mouseY > 167 + ((height / 2) | 0)))
+			if (j !== Color.WHITE.number || (this.mouseX < 256 - ((width / 2) | 0) || this.mouseX > 256 + ((width / 2) | 0)) && (this.mouseY < 167 - ((height / 2) | 0) || this.mouseY > 167 + ((height / 2) | 0)))
 				this.showDialogServermessage = false;
 
 		this.mouseButtonClick = 0;
 	}
 
 	renderReportAbuseInputs() {
-		if (this.inputTextFinal.length > 0) {
-			let name = this.inputTextFinal.trim().substring(0,12);
+		if (this.submittedInput && this.submittedInput.length) {
+			let name = this.submittedInput.trim().substring(0,12);
 
-			this.inputTextCurrent = '';
-			this.inputTextFinal = '';
+			this.inputBuffer = this.submittedInput = '';
+			// this.submittedInput = '';
 
-			if (name.length > 0)
+			if (name && name.length)
 				this.clientStream.queue(Ops.REPORT_ABUSE(name, this.reportAbuseOffence, this.reportAbuseMute ? 1 : 0))
 
 			this.reportAbuseState = 0;
 			return;
 		}
-		this.surface.drawBox(56, 130, 400, 100, 0);
-		this.surface.drawBoxEdge(56, 130, 400, 100, 0xffffff);
+		this.surface.drawBox(56, 130, 400, 100, Color.BLACK.number);
+		this.surface.drawBoxEdge(56, 130, 400, 100, Color.WHITE.number);
 		let i = 160;
-		this.surface.drawStringCenter('Now type the name of the offending player, and press enter', 256, i, 1, 0xffff00);
+		this.surface.drawStringCenter('Now type the name of the offending player, and press enter', 256, i, 1, Color.YELLOW.number);
 		i += 18;
-		this.surface.drawStringCenter('Name: ' + this.inputTextCurrent + '*', 256, i, 4, 0xffffff);
+		this.surface.drawStringCenter('Name: ' + this.inputBuffer + '*', 256, i, 4, Color.WHITE.number);
 		if (this.moderatorLevel > 0)
-			this.surface.drawStringCenter(`Moderator option: Mute player for 48 hours: ${this.reportAbuseMute ? 'ON' : 'OFF'}>`, 256, 207, 1, (this.reportAbuseMute ? 0xFF8000 : Color.WHITE.toRGB()));
+			this.surface.drawStringCenter(`Moderator option: Mute player for 48 hours: ${this.reportAbuseMute ? 'ON' : 'OFF'}>`, 256, 207, 1, (this.reportAbuseMute ? 0xFF8000 : Color.WHITE.number));
 
 		i = 222;
-		let j = Color.WHITE.toRGB();
+		let j = Color.WHITE.number;
 		if (this.mouseX > 196 && this.mouseX < 316 && this.mouseY > i - 13 && this.mouseY < i + 2)
-			j = Color.YELLOW.toRGB();
+			j = Color.YELLOW.number;
 		this.surface.drawStringCenter('Click here to cancel', 256, i, 1, j);
 		if (this.mouseButtonClick === 1) {
 			if (this.moderatorLevel > 0 && this.mouseX > 106 && this.mouseX < 406 && this.mouseY > 194 && this.mouseY < 209) {
 				this.reportAbuseMute = !this.reportAbuseMute;
 				this.mouseButtonClick = 0;
 				return;
-			} else if (j !== Color.WHITE.toRGB() || this.mouseX < 56 || this.mouseX > 456 || this.mouseY < 130 || this.mouseY > 230) {
+			} else if (j !== Color.WHITE.number || this.mouseX < 56 || this.mouseX > 456 || this.mouseY < 130 || this.mouseY > 230) {
 				this.mouseButtonClick = 0;
 				this.reportAbuseState = 0;
 				return;
@@ -5557,10 +5696,10 @@ label0:
 
 		let uiWidth = 196;
 
-		this.surface.drawBoxAlpha(uiX, 36, uiWidth, 65, Surface.rgbToLong(181, 181, 181), 160);
-		this.surface.drawBoxAlpha(uiX, 101, uiWidth, 65, Surface.rgbToLong(201, 201, 201), 160);
-		this.surface.drawBoxAlpha(uiX, 166, uiWidth, 95, Surface.rgbToLong(181, 181, 181), 160);
-		this.surface.drawBoxAlpha(uiX, 261, uiWidth, 40, Surface.rgbToLong(201, 201, 201), 160);
+		this.surface.drawBoxAlpha(uiX, 36, uiWidth, 65, 0xB5B5B5, 160);
+		this.surface.drawBoxAlpha(uiX, 101, uiWidth, 65, 0xC9C9C9, 160);
+		this.surface.drawBoxAlpha(uiX, 166, uiWidth, 95, 0xB5B5B5, 160);
+		this.surface.drawBoxAlpha(uiX, 261, uiWidth, 40, 0xC9C9C9, 160);
 
 		let x = uiX + 3;
 		let y = uiY + 15;
@@ -5569,40 +5708,40 @@ label0:
 		y += 15;
 
 		if (this.optionCameraModeAuto) {
-			this.surface.drawString('Camera angle mode - @gre@Auto', x, y, 1, 0xffffff);
+			this.surface.drawString('Camera angle mode - @gre@Auto', x, y, 1, Color.WHITE.number);
 		} else {
-			this.surface.drawString('Camera angle mode - @red@Manual', x, y, 1, 0xffffff);
+			this.surface.drawString('Camera angle mode - @red@Manual', x, y, 1, Color.WHITE.number);
 		}
 
 		y += 15;
 
 		if (this.optionMouseButtonOne) {
-			this.surface.drawString('Mouse buttons - @red@One', x, y, 1, 0xffffff);
+			this.surface.drawString('Mouse buttons - @red@One', x, y, 1, Color.WHITE.number);
 		} else {
-			this.surface.drawString('Mouse buttons - @gre@Two', x, y, 1, 0xffffff);
+			this.surface.drawString('Mouse buttons - @gre@Two', x, y, 1, Color.WHITE.number);
 		}
 
 		y += 15;
 
 		if (this.optionSoundDisabled) {
-			this.surface.drawString('Sound effects - @red@off', x, y, 1, 0xffffff);
+			this.surface.drawString('Sound effects - @red@off', x, y, 1, Color.WHITE.number);
 		} else {
-			this.surface.drawString('Sound effects - @gre@on', x, y, 1, 0xffffff);
+			this.surface.drawString('Sound effects - @gre@on', x, y, 1, Color.WHITE.number);
 		}
 
 		y += 15;
 		y += 5;
 		this.surface.drawString('Account Settings', x, y, 1, 0);
 
-		let color = 0xFFFFFF;
+		let color = Color.WHITE.number;
 		y += 15;
 		if (this.mouseX > x && this.mouseX < x + uiWidth && this.mouseY > y - 12 && this.mouseY < y + 4)
-			color = 0xFFFF00;
+			color = Color.YELLOW.number;
 		this.surface.drawString('Change password', x, y, 1, color);
-		color = 0xFFFFFF;
+		color = Color.WHITE.number;
 		y += 15;
 		if (this.mouseX > x && this.mouseX < x + uiWidth && this.mouseY > y - 12 && this.mouseY < y + 4)
-			color = 0xFFFF00;
+			color = Color.YELLOW.number;
 		this.surface.drawString('Set recovery questions', x, y, 1, color);
 		y += 15;
 
@@ -5610,19 +5749,19 @@ label0:
 /*
 		y += 15;
 		y += 15;
-		this.surface.drawString('To change your contact details,', x, y, 0, 0xffffff);
+		this.surface.drawString('To change your contact details,', x, y, 0, Color.WHITE.number);
 		y += 15;
-		this.surface.drawString('password, recovery questions, etc..', x, y, 0, 0xffffff);
+		this.surface.drawString('password, recovery questions, etc..', x, y, 0, Color.WHITE.number);
 		y += 15;
-		this.surface.drawString('please select \'account management\'', x, y, 0, 0xffffff);
+		this.surface.drawString('please select \'account management\'', x, y, 0, Color.WHITE.number);
 		y += 15;
 
 		if (this.referid === 0) {
-			this.surface.drawString('from the runescape.com front page', x, y, 0, 0xffffff);
+			this.surface.drawString('from the runescape.com front page', x, y, 0, Color.WHITE.number);
 		} else if (this.referid === 1) {
-			this.surface.drawString('from the link below the gamewindow', x, y, 0, 0xffffff);
+			this.surface.drawString('from the link below the gamewindow', x, y, 0, Color.WHITE.number);
 		} else {
-			this.surface.drawString('from the runescape front webpage', x, y, 0, 0xffffff);
+			this.surface.drawString('from the runescape front webpage', x, y, 0, Color.WHITE.number);
 		}
 */
 
@@ -5632,43 +5771,43 @@ label0:
 		y += 15;
 
 		if (!this.settingsBlockChat) {
-			this.surface.drawString('Block chat messages: @red@<off>', uiX + 3, y, 1, 0xffffff);
+			this.surface.drawString('Block chat messages: @red@<off>', uiX + 3, y, 1, Color.WHITE.number);
 		} else {
-			this.surface.drawString('Block chat messages: @gre@<on>', uiX + 3, y, 1, 0xffffff);
+			this.surface.drawString('Block chat messages: @gre@<on>', uiX + 3, y, 1, Color.WHITE.number);
 		}
 
 		y += 15;
 
 		if (!this.settingsBlockPrivate) {
-			this.surface.drawString('Block private messages: @red@<off>', uiX + 3, y, 1, 0xffffff);
+			this.surface.drawString('Block private messages: @red@<off>', uiX + 3, y, 1, Color.WHITE.number);
 		} else {
-			this.surface.drawString('Block private messages: @gre@<on>', uiX + 3, y, 1, 0xffffff);
+			this.surface.drawString('Block private messages: @gre@<on>', uiX + 3, y, 1, Color.WHITE.number);
 		}
 
 		y += 15;
 
 		if (!this.settingsBlockTrade) {
-			this.surface.drawString('Block trade requests: @red@<off>', uiX + 3, y, 1, 0xffffff);
+			this.surface.drawString('Block trade requests: @red@<off>', uiX + 3, y, 1, Color.WHITE.number);
 		} else {
-			this.surface.drawString('Block trade requests: @gre@<on>', uiX + 3, y, 1, 0xffffff);
+			this.surface.drawString('Block trade requests: @gre@<on>', uiX + 3, y, 1, Color.WHITE.number);
 		}
 
 		y += 15;
 
 		if (!this.settingsBlockDuel) {
-			this.surface.drawString('Block duel requests: @red@<off>', uiX + 3, y, 1, 0xffffff);
+			this.surface.drawString('Block duel requests: @red@<off>', uiX + 3, y, 1, Color.WHITE.number);
 		} else {
-			this.surface.drawString('Block duel requests: @gre@<on>', uiX + 3, y, 1, 0xffffff);
+			this.surface.drawString('Block duel requests: @gre@<on>', uiX + 3, y, 1, Color.WHITE.number);
 		}
 
 		y += 15;
-		y += 5;
+		y += 5; 
 		this.surface.drawString('Always logout when you finish', x, y, 1, 0);
 		y += 15;
-		let k1 = 0xffffff;
+		let k1 = Color.WHITE.number;
 
 		if (this.mouseX > x && this.mouseX < x + uiWidth && this.mouseY > y - 12 && this.mouseY < y + 4) {
-			k1 = 0xffff00;
+			k1 = Color.YELLOW.number;
 		}
 
 		this.surface.drawString('Click here to logout', uiX + 3, y, 1, k1);
@@ -5755,29 +5894,32 @@ label0:
 	}
 
 	async loadTextures() {
-		let buffTextures = await this.readDataFile('textures' + VERSION.TEXTURES + '.jag', 'Textures', 50);
+		let archive = new JagArchive(await download(`./static/cache/textures${TEXTURES}.jag`), 'textures.jag');
+		
+		// let buffTextures = await this.readDataFile('textures' + TEXTURES + '.jag', 'Textures', 50);
 
-		if (!buffTextures) {
+		if (!archive) {
 			this.runtimeException = new GameException("Error loading textures!\n\n" + e.message, true);
 			return;
 		}
 
-		let buffIndex = Utility.loadData('index.dat', 0, buffTextures);
+		let buffIndex = archive.get('index.dat').data;
+		// let buffIndex = Utility.loadData('index.dat', 0, buffTextures);
 		this.scene.allocateTextures(GameData.textureCount, 7, 11);
 		for (let i = 0; i < GameData.textureCount; i++) {
 			let name = GameData.textureName[i];
-			let buff1 = Utility.loadData(name + '.dat', 0, buffTextures);
+			let buff1 = archive.get(name + '.dat').data;//, 0, buffTextures);
 
 			this.surface.parseSprite(mudclient.spriteTexture, buff1, buffIndex, 1);
 			// 128x128 magenta/pink box at 0,0
-			this.surface.drawBox(0, 0, 128, 128, 0xFF00FF);
+			this.surface.drawBox(0, 0, 128, 128, Color.MAGENTA.number);
 			this.surface.drawSpriteID(0, 0, mudclient.spriteTexture);
 
 			let width = this.surface.spriteWidthFull[mudclient.spriteTexture];
 			let nameSub = GameData.textureSubtypeName[i];
 
-			if (nameSub && nameSub.length > 0) {
-				let buff2 = Utility.loadData(nameSub + '.dat', 0, buffTextures);
+			if (nameSub && nameSub.length) {
+				let buff2 = archive.get(`${nameSub}.dat`).data;//, 0, buffTextures);
 
 				this.surface.parseSprite(mudclient.spriteTexture, buff2, buffIndex, 1);
 				this.surface.drawSpriteID(0, 0, mudclient.spriteTexture);
@@ -5789,8 +5931,8 @@ label0:
 
 			// below replaces max green pixels with purple/pink (max red and max blue) pixels
 			for (let j = 0; j < area; j++)
-				if (this.surface.surfacePixels[mudclient.spriteTextureWorld + i][j] === 0x00FF00)
-					this.surface.surfacePixels[mudclient.spriteTextureWorld + i][j] = 0xFF00FF;
+				if (this.surface.surfacePixels[mudclient.spriteTextureWorld + i][j] === Color.GREEN.number)
+					this.surface.surfacePixels[mudclient.spriteTextureWorld + i][j] = Color.MAGENTA.number;
 
 			this.surface.drawWorld(mudclient.spriteTextureWorld + i);
 			this.scene.defineTexture(i, this.surface.spriteColoursUsed[mudclient.spriteTextureWorld + i], this.surface.spritePalettes[mudclient.spriteTextureWorld + i], (width >> 6) - 1);
@@ -5836,20 +5978,23 @@ label0:
 		let type = this.teleportBubbleType[id];
 		let time = this.teleportBubbleTime[id];
 
+		// teleporting mob
 		if (type === 0) {
 			// let j2 = 0x0000FF + time * 5 * 256;
 			// this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 20 + time * 2, 0x0000FF + time * 5 * 256, 0xFF - time * 5);
-			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 20 + (time << 1), 0x00FF00 + time * 0x500, 0xFF - time * 5);
+			this.surface.drawCircle(x + Math.floor(w / 2), y + Math.floor(h / 2), time * 2 + 20, Color.BLUE.number + time * 0x500, 0xFF - (time * 5));
 		}
 
 		if (type === 1) {
-			// let k2 = 0xFF0000 + time * 5 * 256;
-			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 10 + time, 0xFF0000 + time * 0x500, 0xFF - time * 5);
+			// let k2 = Color.RED.number + time * 5 * 256;
+			// this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 10 + time, Color.RED.number + time * 0x500, 0xFF - time * 5 << 8);
+			this.surface.drawCircle(x + Math.floor(w / 2), y + Math.floor(h / 2), time + 10, Color.RED.number + time * 0x500, 0xFF - (time * 5));
 			// this.surface.drawCircle(x + ((w / 2) | 0), y + ((h / 2) | 0), 10 + time, k2, 0xFF - time * 5);
 		}
 		if (type === 2) {
-			// let k2 = 0xFF0000 + time * 5 * 256;
-			this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 10 + time, 0xFF0000 + time * 0x500, 0xFF - time * 5);
+			// let k2 = Color.RED.number + time * 5 * 256;
+			this.surface.drawCircle(x + Math.floor(w / 2), y + Math.floor(h / 2), time + 10, Color.GREEN.number + time * 0x500, 0xFF - (time * 5));
+			// this.surface.drawCircle(x + (w >> 1), y + (h >> 1), 10 + time, Color.RED.number + time * 0x500, 0xFF - time * 5 << 8);
 			// this.surface.drawCircle(x + ((w / 2) | 0), y + ((h / 2) | 0), 10 + time, k2, 0xFF - time * 5);
 		}
 	}
@@ -5928,7 +6073,7 @@ sorter:
 	}
 
 	handleDefaultClick() {
-		if (this.selectedSpell >= 0 || this.selectedItemInventoryIndex >= 0) {
+		if (this.castingSpell || this.usingItem) {
 			this.menuItemText1[this.menuItemsCount] = 'Cancel';
 			this.menuItemText2[this.menuItemsCount] = '';
 			this.menuItemID[this.menuItemsCount] = 4000;
@@ -5951,19 +6096,19 @@ sorter:
 				}
 			}
 
-			if (this.selectedItemInventoryIndex >= 0 || this.selectedSpell >= 0) {
+			if (this.usingItem || this.castingSpell) {
 				if (this.menuItemsCount === 1)
 					this.surface.drawString('Choose a target' + (
 						'@whi@' + this.menuItemsCount === 2 ? ' / 1 more option' : (this.menuItemsCount > 2 ? ' / '+(this.menuItemsCount-1)+' more options' : '')
-					), 6, 14, 1, 0xFFFF00);
+					), 6, 14, 1, Color.YELLOW.number);
 				else if (this.menuItemsCount > 1)
 					this.surface.drawString('@whi@' + this.menuItemText1[this.menuIndices[0]] + ' ' + this.menuItemText2[this.menuIndices[0]] + (
 						'@whi@' + this.menuItemsCount === 2 ? ' / 1 more option' : (this.menuItemsCount > 2 ? ' / '+(this.menuItemsCount-1)+' more options' : '')
-					), 6, 14, 1, 0xFFFF00);
+					), 6, 14, 1, Color.YELLOW.number);
 			} else if (defaultAction >= 0)
 				this.surface.drawString(this.menuItemText2[this.menuIndices[defaultAction]] + ': @whi@' + this.menuItemText1[this.menuIndices[0]] + (
 					'@whi@' + this.menuItemsCount === 2 ? ' / 1 more option' : (this.menuItemsCount > 2 ? ' / '+(this.menuItemsCount-1)+' more options' : '')
-				), 6, 14, 1, 0xFFFF00);
+				), 6, 14, 1, Color.YELLOW.number);
 
 			if (this.isClicking() && this.menuItemsCount >= 1) {
 				this.menuItemClick(this.menuIndices[0]);
@@ -6000,8 +6145,8 @@ sorter:
 		// black box
 		this.surface.drawBox(126, 137, 260, 60, 0x0);
 		// white border
-		this.surface.drawBoxEdge(126, 137, 260, 60, 0xFFFFFF);
-		this.surface.drawStringCenter('Logging out...', 256, 173, 5, 0xFFFFFF);
+		this.surface.drawBoxEdge(126, 137, 260, 60, Color.WHITE.number);
+		this.surface.drawStringCenter('Logging out...', 256, 173, 5, Color.WHITE.number);
 	}
 
 	renderFightModeSelect() {
@@ -6030,7 +6175,7 @@ sorter:
 			this.surface.drawLineHoriz(byte0, byte1 + j * 20 + 20, width, 0);
 		}
 
-		this.surface.drawStringCenter('Select combat style', byte0 + ((width / 2) | 0), byte1 + 16, 3, 0xffffff);
+		this.surface.drawStringCenter('Select combat style', byte0 + ((width / 2) | 0), byte1 + 16, 3, Color.WHITE.number);
 		this.surface.drawStringCenter('Controlled (+1 of each)', byte0 + ((width / 2) | 0), byte1 + 36, 3, 0);
 		this.surface.drawStringCenter('Aggressive (+3 strength)', byte0 + ((width / 2) | 0), byte1 + 56, 3, 0);
 		this.surface.drawStringCenter('Accurate   (+3 attack)', byte0 + ((width / 2) | 0), byte1 + 76, 3, 0);
@@ -6143,14 +6288,14 @@ sorter:
 		if (mItemId === 650) {
 			this.selectedItemInventoryIndex = mIdx;
 			this.showUiTab = 0;
-			this.selectedItemName = GameData.itemName[this.inventoryItemId[this.selectedItemInventoryIndex]];
+			this.selectedItemName = this.itemName(this.inventoryItemId[this.selectedItemInventoryIndex]);
 		}
 
 		if (mItemId === 660) {
 			this.clientStream.queue(Ops.DROP_ITEM(mIdx));
 			this.selectedItemInventoryIndex = -1;
 			this.showUiTab = 0;
-			this.showMessage('Dropping ' + GameData.itemName[this.inventoryItemId[mIdx]], 4);
+			this.showMessage('Dropping ' + this.itemName(this.inventoryItemId[mIdx]), 4);
 		}
 
 		if (mItemId === 3600) {
@@ -6278,7 +6423,7 @@ sorter:
 		}
 
 		this.drawLoginScreens();
-		this.unsetFrameTimes();
+		super.resetClockHistory();
 	}
 
 	async lostConnection() {
@@ -6337,7 +6482,7 @@ sorter:
 		return true;
 	}
 
-	static getCookie() {
+	static getCookie(s) {
 		return getCookie(s);
 	}
 
@@ -6472,16 +6617,7 @@ sorter:
 					let meshY = (this.localRegionY + areaY) * this.tileSize + 64;
 
 					this.createPlayer(serverIndex, meshX, meshY, direction);
-					// TODO: Erase for 235
-					// if (Utility.getBitMask(pdata, bitOffset++, 1) === 0)
-						// this.playersServerIndexes[newCount++] = serverIndex;
 				}
-
-				// if (newCount > 0) {
-					// // TODO: Erase for 235
-					// this.clientStream.queue(Ops.GET_PLAYER_TICKETS(newCount));
-				// }
-
 				return;
 			}
 
@@ -6683,11 +6819,11 @@ sorter:
 						this.inventoryItemStackCount[i] = 1;
 						continue;
 					}
-					this.inventoryItemStackCount[i] = Utility.getSmart08_32(pdata, offset);
-					if (this.inventoryItemStackCount[i] >= 128)
+					this.inventoryItemStackCount[i] = Utility.getSmartShort(pdata, offset);
+					if (this.inventoryItemStackCount[i] >= 0x8000)
 						offset += 4;
 					else
-						offset += 1;
+						offset += 2;
 				}
 				return;
 			}
@@ -7011,7 +7147,7 @@ updateLoop:
 						offset += cryptMsg.encSize;
 						updatingNpc.messageTimeout = secondsToFrames(3);
 						if (target === this.localPlayer.serverIndex)
-							this.showMessage('@yel@' + GameData.npcName[updatingNpc.typeID] + ': ' + updatingNpc.message, 5);
+							this.showMessage('@yel@' + this.npcName(updatingNpc.typeID) + ': ' + updatingNpc.message, 5);
 					} else if (updateType === 2) {
 						updatingNpc.damageTaken = Utility.getUnsignedByte(pdata[offset++]);
 						updatingNpc.healthCurrent = Utility.getUnsignedByte(pdata[offset++]);
@@ -7064,7 +7200,7 @@ updateLoop:
 
 				for (let i = 0; i < this.playerStatCount; i++)
 					this.playerExperience[i] = Utility.getUnsignedInt(pdata, offset+(i<<2));
-				offset += this.playerStatCount<<2;
+				offset += this.playerStatCount << 2;
 
 				this.playerQuestPoints = Utility.getUnsignedByte(pdata[offset++]);
 				return;
@@ -7312,11 +7448,11 @@ updateLoop:
 				for (let k11 = 0; k11 < this.newBankItemCount; k11++) {
 					this.newBankItems[k11] = Utility.getUnsignedShort(pdata, offset);
 					offset += 2;
-					this.newBankItemsCount[k11] = Utility.getSmart08_32(pdata, offset);
-					if (this.newBankItemsCount[k11] >= 128)
+					this.newBankItemsCount[k11] = Utility.getSmartShort(pdata, offset);
+					if (this.newBankItemsCount[k11] >= 0x8000)
 						offset += 4;
 					else
-						offset++;
+						offset += 2;
 				}
 
 				this.updateBankItems();
@@ -7438,11 +7574,11 @@ updateLoop:
 				let item = Utility.getUnsignedShort(pdata, offset);
 				offset += 2;
 
-				let itemCount = Utility.getSmart08_32(pdata, offset);
-				if (itemCount >= 128) {
+				let itemCount = Utility.getSmartShort(pdata, offset);
+				if (itemCount >= 0x8000) {
 					offset += 4;
 				} else {
-					offset++;
+					offset += 2;
 				}
 
 				if (itemCount <= 0) {
@@ -7472,11 +7608,11 @@ updateLoop:
 
 				let stack = 1;
 				if (GameData.itemStackable[id & 0x7FFF] === 0) {
-					stack = Utility.getSmart08_32(pdata, offset);
-					if (stack >= 128)
+					stack = Utility.getSmartShort(pdata, offset);
+					if (stack >= 0x8000)
 						offset += 4;
 					else
-						offset++;
+						offset += 2;
 				}
 
 				this.inventoryItemId[index] = (id & 0x7FFF);
@@ -7489,7 +7625,7 @@ updateLoop:
 
 			if (opcode === S_OPCODES.INVENTORY_ITEM_REMOVE) {
 				let index = Utility.getUnsignedByte(pdata[offset++]);
-				for (let slot = index; slot < this.inventoryItemsCount-1; slot++) {
+				for (let slot = index; slot < this.inventoryItemsCount - 1; slot++) {
 					this.inventoryItemId[slot] = this.inventoryItemId[slot + 1];
 					this.inventoryItemStackCount[slot] = this.inventoryItemStackCount[slot + 1];
 					this.inventoryEquipped[slot] = this.inventoryEquipped[slot + 1];
@@ -7628,8 +7764,8 @@ updateLoop:
 				}
 
 				this.isSleeping = true;
-				this.inputTextCurrent = '';
-				this.inputTextFinal = '';
+				this.inputBuffer = '';
+				this.submittedInput = '';
 				this.surface.readSleepWord(mudclient.spriteTexture + 1, pdata);
 				this.sleepingStatusText = void 0;
 				return;
@@ -7663,29 +7799,29 @@ updateLoop:
 		} catch (e) {
 			console.error(e);
 
-			if (this.packetErrorCount < 3) {
-				let s1 = e.stack;
-				let slen = s1.length;
+			// if (this.packetErrorCount < 3) {
+				// let s1 = e.stack;
+				// let slen = s1.length;
 
-				this.clientStream.newPacket(C_OPCODES.PACKET_EXCEPTION);
-				this.clientStream.putShort(slen);
-				this.clientStream.putString(s1);
-				this.clientStream.putShort(slen = (s1 = 'p-type: ' + opcode + ', p-size:' + psize).length);
-				this.clientStream.putString(s1);
-				this.clientStream.putShort(slen = (s1 = 'rx:' + this.localRegionX + ' ry:' + this.localRegionY + ' num3l:' + this.objectCount).length);
-				this.clientStream.putString(s1);
-
-				s1 = '';
-
-				for (let l18 = 0; l18 < 80 && l18 < psize; l18++) {
-					s1 = s1 + pdata[l18] + ' ';
-				}
-
-				this.clientStream.putShort(s1.length);
-				this.clientStream.putString(s1);
-				this.clientStream.sendPacket();
-				this.packetErrorCount++;
-			}
+				// this.clientStream.newPacket(C_OPCODES.PACKET_EXCEPTION);
+				// this.clientStream.putShort(slen);
+				// this.clientStream.putString(s1);
+				// this.clientStream.putShort(slen = (s1 = 'p-type: ' + opcode + ', p-size:' + psize).length);
+				// this.clientStream.putString(s1);
+				// this.clientStream.putShort(slen = (s1 = 'rx:' + this.localRegionX + ' ry:' + this.localRegionY + ' num3l:' + this.objectCount).length);
+				// this.clientStream.putString(s1);
+// 
+				// s1 = '';
+// 
+				// for (let l18 = 0; l18 < 80 && l18 < psize; l18++) {
+					// s1 = s1 + pdata[l18] + ' ';
+				// }
+// 
+				// this.clientStream.putShort(s1.length);
+				// this.clientStream.putString(s1);
+				// this.clientStream.sendPacket();
+				// this.packetErrorCount++;
+			// }
 
 			this.clientStream.closeStream();
 			this.resetLoginPanels();
@@ -7701,42 +7837,64 @@ updateLoop:
 		let uiWidth = 196;
 		let uiHeight = 275;
 		let l = 0;
-		let k = l = 0xA0A0A0;
+		// // Darker gray (Noble)
+		// let k = l = 0xA0A0A0;
+// 
+		// // Lighter gray (Gainsboro)
+		// if (this.uiTabPlayerInfoSubTab === 0)
+			// k = 0xDCDCDC;
+		// else
+			// l = 0xDCDCDC;
 
-		if (this.uiTabPlayerInfoSubTab === 0)
-			k = 0xDCDCDC;
-		else
-			l = 0xDCDCDC;
+		let halfwayPt = Math.floor(uiWidth / 2);
+		let quarterwayPt = Math.floor(halfwayPt / 2);
+		let tabHeight = 24;
 
-		this.surface.drawBoxAlpha(uiX, uiY, uiWidth >>> 1, 24, k, 0x80);
-		this.surface.drawBoxAlpha(uiX + (uiWidth >>> 1), uiY, uiWidth >>> 1, 24, l, 0x80);
-		this.surface.drawBoxAlpha(uiX, uiY + 24, uiWidth, uiHeight - 24, 0xDCDCDC, 0x80);
-		this.surface.drawLineHoriz(uiX, uiY + 24, uiWidth, 0);
-		this.surface.drawLineVert(uiX + (uiWidth >>> 1), uiY, 24, 0);
-		this.surface.drawStringCenter('Stats', uiX + (uiWidth >>> 2), uiY + 16, 4, 0);
-		this.surface.drawStringCenter('Quests', uiX + (uiWidth >>> 2) + Math.floor(uiWidth >>> 1), uiY + 16, 4, 0);
+		// draws tabs bar
+		let tabX = uiX, tabY = uiY;
+
+		// 50% transparent 98x24 tabs, one for skills, and the other quests
+		// the active tab looks brighter
+		let contentX = uiX,contentY=uiY+tabHeight;
+		let color = (this.uiTabPlayerInfoSubTab ? Color.PANELBG_INACTIVE.number : Color.PANELBG_ACTIVE.number);
+		this.surface.drawBoxAlpha(tabX, tabY, halfwayPt, tabHeight, color, 0x80);
+		tabX += halfwayPt;
+		color = (this.uiTabPlayerInfoSubTab ? Color.PANELBG_ACTIVE.number : Color.PANELBG_INACTIVE.number);
+		this.surface.drawBoxAlpha(tabX, tabY, halfwayPt, tabHeight, color, 0x80);
+		// tab names
+		this.surface.drawStringCenter('Stats', uiX + quarterwayPt, uiY + 16, 4, Color.BLACK.number);
+		// tab separator line
+		this.surface.drawLineVert(tabX, tabY, tabHeight, Color.BLACK.number);
+		this.surface.drawStringCenter('Quests', uiX + halfwayPt + quarterwayPt, uiY + 16, 4, Color.BLACK.number);
+
+
+		// tab content-pane
+		this.surface.drawBoxAlpha(contentX, contentY, uiWidth, uiHeight - tabHeight, Color.PANELBG_ACTIVE.number, 0x80);
+
+		// tabs/content-pane seperator
+		this.surface.drawLineHoriz(contentX, contentY, uiWidth, Color.BLACK.number);
 
 		if (this.uiTabPlayerInfoSubTab === 0) {
 			let i1 = 72;
 			let skillIndex = -1;
 
-			this.surface.drawString('Skills', uiX + 5, i1, 3, 0xFFFF00);
+			this.surface.drawString('Skills', uiX + 5, i1, 3, Color.YELLOW.number);
 
 			i1 += 13;
 
 			for (let l1 = 0; l1 < 9; l1++) {
-				let color = 0xFFFFFF;
+				let color = Color.WHITE.number;
 
 				if (this.mouseX > uiX + 3 && this.mouseY >= i1 - 11 && this.mouseY < i1 + 2 && this.mouseX < uiX + 90) {
-					color = 0xFF0000;
+					color = Color.RED.number;
 					skillIndex = l1;
 				}
 
 				this.surface.drawString(`${this.skillNameShort[l1]}:@yel@${this.playerStatCurrent[l1]}/${this.playerStatBase[l1]}`, uiX + 5, i1, 1, color);
-				color = 0xFFFFFF;
+				color = Color.WHITE.number;
 
 				if (this.mouseX >= uiX + 90 && this.mouseY >= i1 - 13 - 11 && this.mouseY < (i1 - 13) + 2 && this.mouseX < uiX + 196) {
-					color = 0xFF0000;
+					color = Color.RED.number;
 					skillIndex = l1 + 9;
 				}
 
@@ -7744,18 +7902,18 @@ updateLoop:
 				i1 += 13;
 			}
 
-			this.surface.drawString('Quest Points:@yel@' + this.playerQuestPoints, uiX + Math.floor(uiWidth / 2) - 5, i1 - 13, 1, 0xFFFFFF);
+			this.surface.drawString('Quest Points:@yel@' + this.playerQuestPoints, uiX + Math.floor(uiWidth / 2) - 5, i1 - 13, 1, Color.WHITE.number);
 			i1 += 12;
-			this.surface.drawString('Fatigue: @yel@' + Math.floor((this.statFatigue * 100) / 750) + '%', uiX + 5, i1 - 13, 1, 0xFFFFFF);
+			this.surface.drawString('Fatigue: @yel@' + Math.floor((this.statFatigue * 100) / 750) + '%', uiX + 5, i1 - 13, 1, Color.WHITE.number);
 			i1 += 8;
-			this.surface.drawString('Equipment Status', uiX + 5, i1, 3, 0xFFFF00);
+			this.surface.drawString('Equipment Status', uiX + 5, i1, 3, Color.YELLOW.number);
 			i1 += 12;
 
 			for (let j2 = 0; j2 < 3; j2++) {
-				this.surface.drawString(this.equipmentStatNames[j2] + ':@yel@' + this.playerStatEquipment[j2], uiX + 5, i1, 1, 0xffffff);
+				this.surface.drawString(this.equipmentStatNames[j2] + ':@yel@' + this.playerStatEquipment[j2], uiX + 5, i1, 1, Color.WHITE.number);
 
 				if (j2 < 2)
-					this.surface.drawString(this.equipmentStatNames[j2 + 3] + ':@yel@' + this.playerStatEquipment[j2 + 3], uiX + Math.floor(uiWidth / 2) + 25, i1, 1, 0xffffff);
+					this.surface.drawString(this.equipmentStatNames[j2 + 3] + ':@yel@' + this.playerStatEquipment[j2 + 3], uiX + Math.floor(uiWidth / 2) + 25, i1, 1, Color.WHITE.number);
 				i1 += 13;
 			}
 
@@ -7763,27 +7921,27 @@ updateLoop:
 			this.surface.drawLineHoriz(uiX, i1 - 15, uiWidth, 0);
 
 			if (skillIndex !== -1) {
-				this.surface.drawString(this.skillNamesLong[skillIndex] + ' skill', uiX + 5, i1, 1, 0xffff00);
+				this.surface.drawString(this.skillNamesLong[skillIndex] + ' skill', uiX + 5, i1, 1, Color.YELLOW.number);
 				i1 += 12;
 
 				let expThresh = mudclient.experienceTable[0];
 				for (let lvl = 1; lvl < MAX_STAT-1; lvl++)
-					if (this.playerExperience[skillIndex] >= Math.floor(expThresh / 4))
+					if (this.playerExperience[skillIndex] >= expThresh)
 						expThresh = mudclient.experienceTable[lvl];
 
-				this.surface.drawString('Total xp: ' + Math.floor(this.playerExperience[skillIndex]), uiX + 5, i1, 1, 0xFFFFFF);
+				this.surface.drawString('Total xp: ' + Math.floor(this.playerExperience[skillIndex] / 4), uiX + 5, i1, 1, Color.WHITE.number);
 				i1 += 12;
-				this.surface.drawString('Next level at: ' + Math.floor(expThresh / 4), uiX + 5, i1, 1, 0xFFFFFF);
+				this.surface.drawString('Next level at: ' + Math.floor(expThresh / 4), uiX + 5, i1, 1, Color.WHITE.number);
 			} else {
-				this.surface.drawString('Overall levels', uiX + 5, i1, 1, 0xFFFF00);
+				this.surface.drawString('Overall levels', uiX + 5, i1, 1, Color.YELLOW.number);
 				i1 += 12;
 
 				let skillTotal = 0;
 				for (let lvl = 0; lvl < this.playerStatCount; lvl++)
 					skillTotal += this.playerStatBase[lvl];
-				this.surface.drawString('Skill total: ' + skillTotal, uiX + 5, i1, 1, 0xffffff);
+				this.surface.drawString('Skill total: ' + skillTotal, uiX + 5, i1, 1, Color.WHITE.number);
 				i1 += 12;
-				this.surface.drawString('Combat level: ' + this.localPlayer.level, uiX + 5, i1, 1, 0xffffff);
+				this.surface.drawString('Combat level: ' + this.localPlayer.level, uiX + 5, i1, 1, Color.WHITE.number);
 				i1 += 12;
 			}
 		} else if (this.uiTabPlayerInfoSubTab === 1) {
@@ -7817,6 +7975,26 @@ updateLoop:
 		}
 	}
 
+	get castingSpell() {
+		return this.selectedSpell >= 0;
+	}
+
+	get usingItem() {
+		return this.selectedItemInventoryIndex >= 0;
+	}
+
+	spellName(id) {
+		return GameData.spellName[id];
+	}
+
+	itemName(id) {
+		return GameData.itemName[id];
+	}
+
+	npcName(id) {
+		return GameData.npcName[id];
+	}
+
 	populateContextMenu() {
 		// wildlvl
 		let i = 2203 - (this.localRegionY + this.planeHeight + this.regionY);
@@ -7839,44 +8017,33 @@ updateLoop:
 		let plyrs = this.scene.getMousePickedFaces();
 
 		for (let menuIdx = 0; menuIdx < i1; menuIdx++) {
-			if (this.menuItemsCount > 200) {
+			if (this.menuItemsCount > 200)
 				break;
-			}
 
 			let pid = plyrs[menuIdx];
 			let gameModel = objs[menuIdx];
-			if (gameModel.faceTag[pid] <= 0xFFFF || gameModel.faceTag[pid] >= 200000 && gameModel.faceTag[pid] <= 300000)  {
+			let faceTag = gameModel.faceTag[pid]
+			// TODO: Find out what tags occupy 200k-300k??
+			// seems to me all entities fall into 2 byte range, or the first condition
+			// so why the other conditions?
+			// I actually think maybe this checks for traversable tile overlays only
+			// 'Walk here' falls under this section
+			if (faceTag < 0x10000 || (faceTag >= 200000 && faceTag <= 300000)) {
+				// if clicked on a sprite or mob(which is, also, a sprite)
 				if (gameModel === this.scene.view) {
-					let idx = gameModel.faceTag[pid] % 10000;
-					let type = Math.floor(gameModel.faceTag[pid] / 10000);
+					// We seperate types of sprites by 10000 slots to allow that many of any entity type in a scene graph
+					let idx = faceTag % 10000;
+					let type = Math.floor(faceTag / 10000);
 
+					// tag was from player index range
 					if (type === 1) {
-						let s = '';
-						let combatDelta = this.localPlayer.level - this.players[idx].level;
+						if (!this.players[idx]) continue;
+						let color = combatColor(this.localPlayer.level, this.players[idx].level);
+						let combatDifferential = ` ${color}(level-${this.players[idx].level})`;
 
-						if (this.localPlayer.level === 0 || this.players[idx].level === 0)
-							s = '@whi@';
-						else if (combatDelta < 0)
-							s = '@or1@';
-						else if (combatDelta < -3)
-							s = '@or2@';
-						else if (combatDelta < -6)
-							s = '@or3@';
-						else if (combatDelta < -9)
-							s = '@red@';
-						else if (combatDelta > 0)
-							s = '@gr1@';
-						else if (combatDelta > 3)
-							s = '@gr2@';
-						else if (combatDelta > 6)
-							s = '@gr3@';
-						else if (combatDelta > 9)
-							s = '@gre@';
-						let combatDifferential = ` ${s}(level-${this.players[idx].level})`;
-
-						if (this.selectedSpell >= 0) {
+						if (this.castingSpell) {
 							if (GameData.spellType[this.selectedSpell] === 1 || GameData.spellType[this.selectedSpell] === 2) {
-								this.menuItemText1[this.menuItemsCount] = 'Cast ' + GameData.spellName[this.selectedSpell] + ' on';
+								this.menuItemText1[this.menuItemsCount] = 'Cast ' + this.spellName(this.selectedSpell) + ' on';
 								this.menuItemText2[this.menuItemsCount] = '@whi@' + this.players[idx].name + combatDifferential;
 								this.menuItemID[this.menuItemsCount] = 800;
 								this.menuItemX[this.menuItemsCount] = this.players[idx].currentX;
@@ -7885,7 +8052,7 @@ updateLoop:
 								this.menuSourceIndex[this.menuItemsCount] = this.selectedSpell;
 								this.menuItemsCount++;
 							}
-						} else if (this.selectedItemInventoryIndex >= 0) {
+						} else if (this.usingItem) {
 							this.menuItemText1[this.menuItemsCount] = 'Use ' + this.selectedItemName + ' with';
 							this.menuItemText2[this.menuItemsCount] = '@whi@' + this.players[idx].name + combatDifferential;
 							this.menuItemID[this.menuItemsCount] = 810;
@@ -7930,11 +8097,12 @@ updateLoop:
 							this.menuSourceType[this.menuItemsCount] = this.players[idx].serverIndex;
 							this.menuItemsCount++;
 						}
+					// tag was from ground-item index range
 					} else if (type === 2) {
-						if (this.selectedSpell >= 0) {
+						if (this.castingSpell) {
 							if (GameData.spellType[this.selectedSpell] === 3) {
-								this.menuItemText1[this.menuItemsCount] = 'Cast ' + GameData.spellName[this.selectedSpell] + ' on';
-								this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[this.groundItemId[idx]];
+								this.menuItemText1[this.menuItemsCount] = 'Cast ' + this.spellName(this.selectedSpell) + ' on';
+								this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(this.groundItemId[idx]);
 								this.menuItemID[this.menuItemsCount] = 200;
 								this.menuItemX[this.menuItemsCount] = this.groundItemX[idx];
 								this.menuItemY[this.menuItemsCount] = this.groundItemY[idx];
@@ -7942,9 +8110,9 @@ updateLoop:
 								this.menuSourceIndex[this.menuItemsCount] = this.selectedSpell;
 								this.menuItemsCount++;
 							}
-						} else if (this.selectedItemInventoryIndex >= 0) {
+						} else if (this.usingItem) {
 							this.menuItemText1[this.menuItemsCount] = 'Use ' + this.selectedItemName + ' with';
-							this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[this.groundItemId[idx]];
+							this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(this.groundItemId[idx]);
 							this.menuItemID[this.menuItemsCount] = 210;
 							this.menuItemX[this.menuItemsCount] = this.groundItemX[idx];
 							this.menuItemY[this.menuItemsCount] = this.groundItemY[idx];
@@ -7953,55 +8121,36 @@ updateLoop:
 							this.menuItemsCount++;
 						} else {
 							this.menuItemText1[this.menuItemsCount] = 'Take';
-							this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[this.groundItemId[idx]];
+							this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(this.groundItemId[idx]);
 							this.menuItemID[this.menuItemsCount] = 220;
 							this.menuItemX[this.menuItemsCount] = this.groundItemX[idx];
 							this.menuItemY[this.menuItemsCount] = this.groundItemY[idx];
 							this.menuSourceType[this.menuItemsCount] = this.groundItemId[idx];
 							this.menuItemsCount++;
 							this.menuItemText1[this.menuItemsCount] = 'Examine';
-							this.menuItemText2[this.menuItemsCount] = '@lre@' + GameData.itemName[this.groundItemId[idx]];
+							this.menuItemText2[this.menuItemsCount] = '@lre@' + this.itemName(this.groundItemId[idx]);
 							this.menuItemID[this.menuItemsCount] = 3200;
 							this.menuSourceType[this.menuItemsCount] = this.groundItemId[idx];
 							this.menuItemsCount++;
 						}
+					// tag was from NPC index range
 					} else if (type === 3) {
-						let s1 = '';
-						let levelDiff = -1;
-						if (!this.npcs[idx])
-							continue;
-						let id = this.npcs[idx].typeID;
-
-						if (GameData.npcAttackable[id] > 0) {
-							let npcLevel = Math.floor((GameData.npcAttack[id] + GameData.npcDefense[id] + GameData.npcStrength[id] + GameData.npcHits[id]) / 4);
-							// Adds 27 levels to the total before dividing for the average; makes lvl3.25 default 1,1,1,10 stats to lv10 combat or lvl99 stats 99,99,99,99 stats to 105.75 combat
-							let playerLevel = Math.floor((this.playerStatBase[0] + this.playerStatBase[1] + this.playerStatBase[2] + this.playerStatBase[3] + 27) / 4);
-
-							levelDiff = playerLevel - npcLevel;
-							s1 = '@yel@';
-							if (levelDiff < 0)
-								s1 = '@or1@';
-							if (levelDiff < -3)
-								s1 = '@or2@';
-							if (levelDiff < -6)
-								s1 = '@or3@';
-							if (levelDiff < -9)
-								s1 = '@red@';
-							if (levelDiff > 0)
-								s1 = '@gr1@';
-							if (levelDiff > 3)
-								s1 = '@gr2@';
-							if (levelDiff > 6)
-								s1 = '@gr3@';
-							if (levelDiff > 9)
-								s1 = '@gre@';
-							s1 = ' ' + s1 + '(level-' + npcLevel + ')';
+						if (!this.npcs[idx]) {
+							continue
 						}
+						let id = this.npcs[idx].typeID;
+						let npcLevel = Math.floor((GameData.npcAttack[id] + GameData.npcDefense[id] + GameData.npcStrength[id] + GameData.npcHits[id]) / 4);
+						let playerLevel = Math.floor((this.playerStatBase[0] + this.playerStatBase[1] + this.playerStatBase[2] + this.playerStatBase[3] + 27) / 4);
+						let combatDifferential = ` @whi@(level-${npcLevel})`;
 
-						if (this.selectedSpell >= 0) {
+						if (GameData.npcAttackable[id] > 0)
+							combatDifferential = ` ${combatColor(playerLevel, npcLevel)}(level-${npcLevel})`;
+
+						if (this.castingSpell) {
+							// We are trying to find a target for our spell
 							if (GameData.spellType[this.selectedSpell] === 2) {
-								this.menuItemText1[this.menuItemsCount] = 'Cast ' + GameData.spellName[this.selectedSpell] + ' on';
-								this.menuItemText2[this.menuItemsCount] = '@yel@' + GameData.npcName[this.npcs[idx].typeID];
+								this.menuItemText1[this.menuItemsCount] = 'Cast ' + this.spellName(this.selectedSpell) + ' on';
+								this.menuItemText2[this.menuItemsCount] = '@yel@' + this.npcName(this.npcs[idx].typeID);
 								this.menuItemID[this.menuItemsCount] = 700;
 								this.menuItemX[this.menuItemsCount] = this.npcs[idx].currentX;
 								this.menuItemY[this.menuItemsCount] = this.npcs[idx].currentY;
@@ -8009,9 +8158,9 @@ updateLoop:
 								this.menuSourceIndex[this.menuItemsCount] = this.selectedSpell;
 								this.menuItemsCount++;
 							}
-						} else if (this.selectedItemInventoryIndex >= 0) {
+						} else if (this.usingItem) {
 							this.menuItemText1[this.menuItemsCount] = 'Use ' + this.selectedItemName + ' with';
-							this.menuItemText2[this.menuItemsCount] = '@yel@' + GameData.npcName[this.npcs[idx].typeID];
+							this.menuItemText2[this.menuItemsCount] = '@yel@' + this.npcName(this.npcs[idx].typeID);
 							this.menuItemID[this.menuItemsCount] = 710;
 							this.menuItemX[this.menuItemsCount] = this.npcs[idx].currentX;
 							this.menuItemY[this.menuItemsCount] = this.npcs[idx].currentY;
@@ -8021,13 +8170,13 @@ updateLoop:
 						} else {
 							if (GameData.npcAttackable[id] > 0) {
 								this.menuItemText1[this.menuItemsCount] = 'Attack';
-								this.menuItemText2[this.menuItemsCount] = '@yel@' + GameData.npcName[this.npcs[idx].typeID] + s1;
+								this.menuItemText2[this.menuItemsCount] = '@yel@' + this.npcName(this.npcs[idx].typeID) + combatDifferential;
 
-								if (levelDiff >= 0) {
+								// sets to default left-click action if we're stronger than the npc
+								if (playerLevel - npcLevel >= 0)
 									this.menuItemID[this.menuItemsCount] = 715;
-								} else {
+								else
 									this.menuItemID[this.menuItemsCount] = 2715;
-								}
 
 								this.menuItemX[this.menuItemsCount] = this.npcs[idx].currentX;
 								this.menuItemY[this.menuItemsCount] = this.npcs[idx].currentY;
@@ -8036,7 +8185,7 @@ updateLoop:
 							}
 
 							this.menuItemText1[this.menuItemsCount] = 'Talk-to';
-							this.menuItemText2[this.menuItemsCount] = '@yel@' + GameData.npcName[this.npcs[idx].typeID];
+							this.menuItemText2[this.menuItemsCount] = '@yel@' + this.npcName(this.npcs[idx].typeID);
 							this.menuItemID[this.menuItemsCount] = 720;
 							this.menuItemX[this.menuItemsCount] = this.npcs[idx].currentX;
 							this.menuItemY[this.menuItemsCount] = this.npcs[idx].currentY;
@@ -8045,7 +8194,7 @@ updateLoop:
 
 							if (GameData.npcCommand[id] !== '') {
 								this.menuItemText1[this.menuItemsCount] = GameData.npcCommand[id];
-								this.menuItemText2[this.menuItemsCount] = '@yel@' + GameData.npcName[this.npcs[idx].typeID];
+								this.menuItemText2[this.menuItemsCount] = '@yel@' + this.npcName(this.npcs[idx].typeID);
 								this.menuItemID[this.menuItemsCount] = 725;
 								this.menuItemX[this.menuItemsCount] = this.npcs[idx].currentX;
 								this.menuItemY[this.menuItemsCount] = this.npcs[idx].currentY;
@@ -8054,20 +8203,21 @@ updateLoop:
 							}
 
 							this.menuItemText1[this.menuItemsCount] = 'Examine';
-							this.menuItemText2[this.menuItemsCount] = '@yel@' + GameData.npcName[this.npcs[idx].typeID];
+							this.menuItemText2[this.menuItemsCount] = '@yel@' + this.npcName(this.npcs[idx].typeID);
 							this.menuItemID[this.menuItemsCount] = 3700;
 							this.menuSourceType[this.menuItemsCount] = this.npcs[idx].typeID;
 							this.menuItemsCount++;
 						}
 					}
+				// else if boundary location sprite
 				} else if (gameModel && gameModel.key >= 10000) {
 					let idx = gameModel.key - 10000;
 					let id = this.wallObjectId[idx];
 
 					if (!this.wallObjectAlreadyInMenu[idx]) {
-						if (this.selectedSpell >= 0) {
+						if (this.castingSpell) {
 							if (GameData.spellType[this.selectedSpell] === 4) {
-								this.menuItemText1[this.menuItemsCount] = 'Cast ' + GameData.spellName[this.selectedSpell] + ' on';
+								this.menuItemText1[this.menuItemsCount] = 'Cast ' + this.spellName(this.selectedSpell) + ' on';
 								this.menuItemText2[this.menuItemsCount] = '@cya@' + GameData.wallObjectName[id];
 								this.menuItemID[this.menuItemsCount] = 300;
 								this.menuItemX[this.menuItemsCount] = this.wallObjectX[idx];
@@ -8076,7 +8226,7 @@ updateLoop:
 								this.menuSourceIndex[this.menuItemsCount] = this.selectedSpell;
 								this.menuItemsCount++;
 							}
-						} else if (this.selectedItemInventoryIndex >= 0) {
+						} else if (this.usingItem) {
 							this.menuItemText1[this.menuItemsCount] = 'Use ' + this.selectedItemName + ' with';
 							this.menuItemText2[this.menuItemsCount] = '@cya@' + GameData.wallObjectName[id];
 							this.menuItemID[this.menuItemsCount] = 310;
@@ -8115,14 +8265,15 @@ updateLoop:
 
 						this.wallObjectAlreadyInMenu[idx] = true;
 					}
+				// else if scenary location
 				} else if (gameModel && gameModel.key >= 0) {
 					let idx = gameModel.key;
 					let id = this.objectId[idx];
 
 					if (!this.objectAlreadyInMenu[idx]) {
-						if (this.selectedSpell >= 0) {
+						if (this.castingSpell) {
 							if (GameData.spellType[this.selectedSpell] === 5) {
-								this.menuItemText1[this.menuItemsCount] = 'Cast ' + GameData.spellName[this.selectedSpell] + ' on';
+								this.menuItemText1[this.menuItemsCount] = 'Cast ' + this.spellName(this.selectedSpell) + ' on';
 								this.menuItemText2[this.menuItemsCount] = '@cya@' + GameData.objectName[id];
 								this.menuItemID[this.menuItemsCount] = 400;
 								this.menuItemX[this.menuItemsCount] = this.objectX[idx];
@@ -8132,7 +8283,7 @@ updateLoop:
 								this.menuTargetIndex[this.menuItemsCount] = this.selectedSpell;
 								this.menuItemsCount++;
 							}
-						} else if (this.selectedItemInventoryIndex >= 0) {
+						} else if (this.usingItem) {
 							this.menuItemText1[this.menuItemsCount] = 'Use ' + this.selectedItemName + ' with';
 							this.menuItemText2[this.menuItemsCount] = '@cya@' + GameData.objectName[id];
 							this.menuItemID[this.menuItemsCount] = 410;
@@ -8174,20 +8325,20 @@ updateLoop:
 
 						this.objectAlreadyInMenu[idx] = true;
 					}
-				} else {
-					if (pid >= 0) {
-						pid = gameModel.faceTag[pid] - 200000;
-					}
-
-					if (pid >= 0) {
-						j = pid;
-					}
-				}
+				// else if lolidk
+				} else if (pid > -1 && (pid = gameModel.faceTag[pid] - 200000) > -1)//	pid >= 0 && (pid=gameModel.faceTag[pid]-200000) >= 0)
+					j = pid;
+						// pid = gameModel.faceTag[pid] - 200000;
+					// }
+// 
+					// if (pid >= 0) {
+					// }
+				// }
 			}
 		}
 
-		if (this.selectedSpell >= 0 && GameData.spellType[this.selectedSpell] <= 1) {
-			this.menuItemText1[this.menuItemsCount] = 'Cast ' + GameData.spellName[this.selectedSpell] + ' on self';
+		if (this.castingSpell && GameData.spellType[this.selectedSpell] <= 1) {
+			this.menuItemText1[this.menuItemsCount] = 'Cast ' + this.spellName(this.selectedSpell) + ' on self';
 			this.menuItemText2[this.menuItemsCount] = '';
 			this.menuItemID[this.menuItemsCount] = 1000;
 			this.menuSourceType[this.menuItemsCount] = this.selectedSpell;
@@ -8195,9 +8346,9 @@ updateLoop:
 		}
 
 		if (j !== -1) {
-			if (this.selectedSpell >= 0) {
+			if (this.castingSpell) {
 				if (GameData.spellType[this.selectedSpell] === 6) {
-					this.menuItemText1[this.menuItemsCount] = 'Cast ' + GameData.spellName[this.selectedSpell] + ' on ground';
+					this.menuItemText1[this.menuItemsCount] = 'Cast ' + this.spellName(this.selectedSpell) + ' on ground';
 					this.menuItemText2[this.menuItemsCount] = '';
 					this.menuItemID[this.menuItemsCount] = 900;
 					this.menuItemX[this.menuItemsCount] = this.world.localX[j];
@@ -8363,15 +8514,19 @@ updateLoop:
 	}
 
 	async loadMaps() {
-		this.world.mapPack = await this.readDataFile('maps' + VERSION.MAPS + '.jag', 'map', 70);
+		// this.world.mapPack = await this.readDataFile(`maps${MAPS}.jag`, 'map', 70);
+		this.world.mapPack = new JagArchive(await download(`./static/cache/maps${MAPS}.jag`), 'maps.jag');
 
 		if (this.members)
-			this.world.memberMapPack = await this.readDataFile('maps' + VERSION.MAPS + '.mem', 'members map', 75);
+			this.world.memberMapPack = new JagArchive(await download(`./static/cache/maps${MAPS}.mem`), 'maps.mem');
+			// this.world.memberMapPack = await this.readDataFile(`maps${MAPS}.mem`, 'members map', 75);
 
-		this.world.landscapePack = await this.readDataFile('land' + VERSION.MAPS + '.jag', 'landscape', 80);
+		this.world.landscapePack = new JagArchive(await download(`./static/cache/land${MAPS}.jag`), 'land.jag');
+		// this.world.landscapePack = await this.readDataFile(`land${MAPS}.jag`, 'landscape', 80);
 
 		if (this.members)
-			this.world.memberLandscapePack = await this.readDataFile('land' + VERSION.MAPS + '.mem', 'members landscape', 85);
+			this.world.memberLandscapePack = new JagArchive(await download(`./static/cache/land${MAPS}.mem`), 'land.mem');
+			// this.world.memberLandscapePack = await this.readDataFile(`land${MAPS}.mem`, 'members landscape', 85);
 	}
 
 	createBoundaryModel(x, y, direction, id, count) {
@@ -8433,44 +8588,22 @@ updateLoop:
 	}
 }
 
-Object.defineProperties(mudclient, {
-	'spriteMedia': {
-		value: 2000,
-	},
-	'spriteUtil': {
-		value: 2100,
-	},
-	'spriteItem': {
-		value: 2150,
-	},
-	'spriteLogo': {
-		value: 3150,
-	},
-	'spriteProjectile': {
-		value: 3160,
-	},
-	'spriteTexture': {
-		value: 3210,
-	},
-	'spriteTextureWorld': {
-		value: 3220,
-	},
-	'experienceTable': {
-		value: (() => {
-			if (!mudclient._experienceTable) {
-				mudclient._experienceTable = new Uint32Array(MAX_STAT);
-				let totalExp = 0;
-				for (let level = 0; level < MAX_STAT-1; level++) {
-					let exp = level+1 + 300 * (2 ** ((level+1) / 7)) >>> 0;
-					totalExp += exp;
-					// AND (NOT 3) will disable final 2 bits; identical semantics here to AND 0xFFFFFFC
-					mudclient._experienceTable[level] = totalExp & (~3 >>> 0);
-				}
-			}
-			return mudclient._experienceTable;
-		})(),
-	},
-});
-export {
-	mudclient
+mudclient['spriteMedia'] = 2000
+mudclient['spriteUtil'] = 2100
+mudclient['spriteItem'] = 2150
+mudclient['spriteLogo'] = 3150
+mudclient['spriteProjectile'] = 3160
+mudclient['spriteTexture'] = 3210
+mudclient['spriteTextureWorld'] = 3220
+mudclient['experienceTable'] = new Uint32Array(MAX_STAT);
+
+let totalExp = 0;
+for (let level = 0; level < MAX_STAT-1; level++) {
+	let exp = level+1 + 300 * (2 ** ((level+1) / 7)) >>> 0;
+	totalExp += exp;
+	// AND (NOT 3) will disable final 2 bits; identical semantics here to AND Color.WHITE.numberC
+	mudclient.experienceTable[level] = totalExp & (~3 >>> 0);
 }
+
+// module.exports = mudclient;
+// module.exports = mudclient

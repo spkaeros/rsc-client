@@ -1,4 +1,5 @@
 import Surface from './surface';
+import Color from './lib/graphics/color';
 
 const CONTROL_TYPES = {
 	TEXT: 0,
@@ -117,28 +118,22 @@ class Panel {
 
 	keyPress(code, key) {
 		if (this.focusControlIndex !== -1 && this.controlText[this.focusControlIndex] !== null && this.controlShown[this.focusControlIndex]) {
-			let inputLen = this.controlText[this.focusControlIndex].length;
-
 			if (code === 8 || /^Backspace$/.test(key)) {
 				// backspace
-				this.controlText[this.focusControlIndex] = this.controlText[this.focusControlIndex].slice(0, inputLen - 1);
+				this.controlText[this.focusControlIndex] = this.controlText[this.focusControlIndex].slice(0, -1);
 				return;
-			}
-			
-			if (code === 13 || code === 10 || /(Enter|Return)/.test(key)) {
+			} else if (code === 13 || code === 10 || /^(Enter|Return)$/.test(key)) {
 				// return/enter
 				this.controlClicked[this.focusControlIndex] = true;
 				return;
-			}
-			
-			if (code === 9 || /^Tab$/.test(key)) {
+			} else if (code === 9 || /^Tab$/.test(key)) {
 				do {
 					this.focusControlIndex = (this.focusControlIndex + 1) % this.controlCount;
 				} while (this.controlType[this.focusControlIndex] !== 5 && this.controlType[this.focusControlIndex] !== 6);
 				return;
 			}
 
-			if (inputLen < this.controlInputMaxLen[this.focusControlIndex]) {
+			if (this.controlText[this.focusControlIndex].length < this.controlInputMaxLen[this.focusControlIndex]) {
 				if (key.length > 1) {
 					console.log(key + " ignored in panel!");
 					return;
@@ -183,7 +178,7 @@ class Panel {
 	}
 
 	drawCheckbox(control, x, y, width, height) {
-		this.surface.drawBox(x, y, width, height, 0xffffff);
+		this.surface.drawBox(x, y, width, height, Color.WHITE.number);
 		this.surface.drawLineHoriz(x, y, width, this.colourBoxTopNBottom);
 		this.surface.drawLineVert(x, y, height, this.colourBoxTopNBottom);
 		this.surface.drawLineHoriz(x, (y + height) - 1, width, this.colourBoxLeftNRight);
@@ -222,8 +217,6 @@ class Panel {
 				text += 'X';
 		}
 
-		if (this.focusControlIndex === control)
-			text += '*';
 		if (this.controlType[control] === CONTROL_TYPES.LIST_INPUT) {
 			if (this.mouseLastButtonDown === 1 && this.mouseX >= x && this.mouseY >= y - Math.floor(height / 2) && this.mouseX <= x + width && this.mouseY <= y + Math.floor(height / 2))
 				this.focusControlIndex = control;
@@ -232,6 +225,8 @@ class Panel {
 					this.focusControlIndex = control;
 			x -= Math.floor(this.surface.textWidth(text, textSize) / 2);
 		}
+		if (this.focusControlIndex === control)
+			text += '*';
 
 		this.drawString(control, x, y + Math.floor(this.surface.textHeight(textSize) / 3), text, textSize);
 	}
@@ -242,8 +237,8 @@ class Panel {
 		this.surface.drawGradient(x, y, width, height, this.colourBoxLeftNRight, this.colourBoxTopNBottom);
 
 		if (Panel.drawBackgroundArrow) {
-			for (let i1 = x - (y & 0b111111); i1 < x + width; i1 += 0x80) {
-				for (let j1 = y - (y & 0b111111); j1 < y + height; j1 += 0x80) {
+			for (let i1 = x - (x & 0x3F); i1 < x + width; i1 += 0x80) {
+				for (let j1 = y - (y & 0x3F); j1 < y + height; j1 += 0x80) {
 					this.surface.f(i1, j1, 6 + Panel.spriteStart, 0x80);
 				}
 			}
@@ -280,7 +275,7 @@ class Panel {
 	}
 
 	drawLineHoriz(x, y, width) {
-		this.surface.drawLineHoriz(x, y, width, 0xffffff);
+		this.surface.drawLineHoriz(x, y, width, Color.WHITE.number);
 	}
 
 	drawTextList(control, x, y, width, height, textSize, listEntries, listEntryCount, listEntryPosition) {

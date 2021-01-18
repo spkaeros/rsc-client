@@ -1,4 +1,4 @@
-import {GameException} from './lib/game-exception';
+let GameException = require('./lib/game-exception');
 
 // Timer is a helper class designed to provide a standard way to execute tasks at specific intervals.
 // Each time the game engine updates the client state, we call tick() on every instance of a Timer that we know about, and this will increment
@@ -13,14 +13,14 @@ class Timer {
 		this.index = Timer.current = Timer.current + 1;
 	}
 
-	async tick(callback = this.cb) {
+	tick(callback = this.cb) {
 		if (!this.enabled)
 			return;
 
 		if (++this.tickCount >= this.tickThreshold) {
 			this.tickCount = 0;
 			try {
-				return await callback();
+				return callback();
 			} catch(exception) {
 				throw exception;
 				return;
@@ -38,14 +38,8 @@ class Timer {
 	}
 }
 
-Object.defineProperty(Timer, "fromSeconds", {
-	value: (i) => {
-		let timer = new Timer(i*50);
-		return timer;
-	},
-	// writable: false,
-	// configurable: false,
-	// enumerable: false,
-});
+Timer['fromSeconds'] = s => {
+	return new Timer(s*50);
+};
 
-export { Timer as default };
+module.exports = Timer;

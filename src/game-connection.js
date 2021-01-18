@@ -5,34 +5,36 @@ import Packet from './packet'
 import GameException from './lib/game-exception';
 import NetworkStream from './network-stream';
 import { Utility, EngineStates, WelcomeStates, GameStates, GamePanels } from './utility';
-import { getCookie as getCookie } from './mudclient';
+import mudclient from './mudclient';
 import VERSION from './version';
-import Ops from './gamelib/packets';
+// import Ops from './packets';
 import S_OPCODES from './opcodes/server';
 import C_OPCODES from './opcodes/client';
 import Timer from './timer';
 import ChatCipher from './chat-cipher';
+import sleepMillis from './lib/sleep';
 
-let encoder = new TextEncoder('utf-8');
+let Ops = require('./packets');
 let decoder = new TextDecoder('utf-8');
 
-export default class GameConnection extends GameShell {
+class GameConnection extends GameShell {
 	constructor(canvas) {
 		super(canvas);
+		this.socialListSize = 200
 		this.settingsBlockChat = false;
 		this.settingsBlockPrivate = false;
 		this.settingsBlockTrade = false;
 		this.settingsBlockDuel = false;
 		this.server = 'rsclassic.dev';
 		this.port = 43594;
-		this.username = getCookie('username');
+		this.username = mudclient.getCookie('username');
 		this.password = '';
 		this.friendListCount = 0;
-		this.friendListHashes = new BigUint64Array(GameConnection.socialListSize);
-		this.friendListOnline = new Array(GameConnection.socialListSize);
+		this.friendListHashes = new BigUint64Array(this.socialListSize);
+		this.friendListOnline = new Array(this.socialListSize);
 		this.ignoreListCount = 0;
-		this.ignoreList = new BigUint64Array(GameConnection.socialListSize);
-		this.privateMessageIds = new Uint32Array(GameConnection.socialListSize);
+		this.ignoreList = new BigUint64Array(this.socialListSize);
+		this.privateMessageIds = new Uint32Array(this.socialListSize);
 		this.timeoutCheck = Timer.fromSeconds(5);
 		this.clientStream = new NetworkStream();
 	}
@@ -109,7 +111,7 @@ export default class GameConnection extends GameShell {
 	async login(u, p, reconnecting, save) {
 		if (this.worldFullTimeout > 0) {
 			this.updateWelcomeStatuses('Please wait...', 'Connecting to server');
-			await this.sleep(2000);
+			await sleepMillis(2000);
 			this.updateWelcomeStatuses('Sorry! The server is currently full.', 'Please try again later');
 			return;
 		}
@@ -130,15 +132,15 @@ export default class GameConnection extends GameShell {
 			else
 				this.updateWelcomeStatuses('Please wait...', 'Connecting to server');
 
-			if (!this.clientStream.closed) {
-				this.clientStream.closeStream();
-				this.clientStream = new NetworkStream();
-			}
+			// if (!this.clientStream.closed) {
+				// this.clientStream.closeStream();
+			this.clientStream = new NetworkStream();
+			// }
 			// this.clientStream = new NetworkStream(await this.createSocket(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port), this);
 			await this.clientStream.connect(window.location.protocol.replace("http", "ws") + "//" + window.location.hostname, this.port);
 			this.clientStream.send(Ops.LOGIN(u, p, reconnecting));
 			let resp = await this.clientStream.readStream();
-			console.debug('login response:' + resp&(~64) + " (" + resp + ")");
+			console.log(`login response: ${resp&(~64)} (${resp})`);
 			switch ((resp&~64)) {
 			case 25:
 			case 24:
@@ -220,15 +222,14 @@ export default class GameConnection extends GameShell {
 			}
 			if (this.autoLoginTimeout > 0) {
 				this.autoLoginTimeout--;
-				await this.sleep(5000);
+				await sleepMillis(5000);
 				await this.login(u,p,reconnecting,save);
 			}
 			if (resp&64 !== 64)
 				this.clientStream.closeStream();
 			return;
 		} catch (e) {
-			this.networkException = new GameException(e);
-			console.log(this.networkException);
+			console.log(e);
 		}
 		this.updateWelcomeStatuses('Sorry! Unable to connect.', 'Check internet settings or try another world');
 	}
@@ -237,7 +238,7 @@ export default class GameConnection extends GameShell {
 		if (this.clientStream) {
 			try {
 				this.clientStream.queue(Ops.DISCONNECT());
-				// this.clientStream.closeStream();
+				this.clientStream.closeStream();
 			} catch (e) {
 				console.error(e);
 			}
@@ -247,7 +248,7 @@ export default class GameConnection extends GameShell {
 	}
 	
 	async lostConnection() {
-		// this.closeConnection();
+		this.closeConnection();
 		try {
 			this.socketException = new GameException(Error('Lost connection - attempting to re-establish...'), false);
 		} catch (e) {
@@ -270,44 +271,51 @@ export default class GameConnection extends GameShell {
 		this.graphics.fillRect(Math.floor(this.surface.width2 / 2) - 140, Math.floor(this.surface.height2 / 2) - 25, 280, 50);
 		// text
 		let font = Font.HELVETICA.bold(15);
-		this.drawString(this.graphics, s, font, this.surface.width2 >>> 1, (this.surface.height2 >>> 1) - 10);
-		this.drawString(this.graphics, s1, font, this.surface.width2 >>> 1, (this.surface.height2 >>> 1) + 10);
+		this.drawString(this.graphics, s, font, Math.floor(this.surface.width2 / 2), Math.floor(this.surface.height2 / 2) - 10);
+		this.drawString(this.graphics, s1, font, Math.floor(this.surface.width2 / 2), Math.floor(this.surface.height2 / 2) + 10);
 	}
 	
 	async checkConnection() {
 		this.timeoutCheck.tick(() => {
-			this.clientStream.send(Ops.PING());
+			this.clientStream.queue(Ops.PING());
 		})
 
-		if (this.clientStream.hasPacket()) {
+		if (this.clientStream.needsFlush())
 			this.timeoutCheck.tickCount = 0;
-		}
-		
-		try {
-			this.clientStream.tick();
-			// if (this.clientStream.didError) {
-				// throw this.socketException;
-			// }
-		} catch (e) {
-			console.error(e.message);
-			console.warn('Error in socket write subroutine:', e)
-			this.closeConnection();
-			return;
-		}
+		this.clientStream.writer.tick(() => this.clientStream.flush());
+		// } catch (e) {
+			// console.error(e.message);
+			// console.warn('Error in socket write subroutine:', e)
+			// this.closeConnection();
+			// return;
+		// }
 
-		try {
-			let buffer = await this.clientStream.nextPacket();
-			// if (this.clientStream.didError) {
-				// throw this.socketException;
-			// }
-			if (!buffer || buffer.length <= 0)
+		this.clientStream.nextPacket().then(buffer => {
+			if (!buffer || !buffer.length)
 				return;
 			this.handlePacket(buffer);
-		} catch(e) {
-			console.warn('Error in socket read subroutine:', e)
+		}).catch(error => {
 			this.closeConnection();
-			return;
-		}
+			throw error;
+		});
+		// try {
+			// 
+			// if (!buffer || buffer.length <= 0)
+				// return;
+			// this.handlePacket(buffer);
+		// } catch(e) {
+			// throw e;
+		// }
+		
+		// await this.clientStream.nextPacket().then(buffer => {
+			// if (!buffer || buffer.length <= 0)
+				// return;
+			// this.handlePacket(buffer);
+		// }).catch(err => {
+			// console.log(err);
+			// this.lostConnection();
+			// return;
+		// });
 	}
 	
 	handlePacket(data) {
@@ -352,7 +360,7 @@ export default class GameConnection extends GameShell {
 			for (let idx = 0; idx < this.friendListCount; idx++) {
 				if (this.friendListHashes[idx] === hash) {
 					if (this.friendListOnline[idx] !== online)
-						this.showServerMessage('@pri@' + Utility.hashToUsername(hash) + ' has logged ' + (online !== 0 ? 'in'  : 'out'));
+						this.showServerMessage('@pri@' + Utility.hashToUsername(hash) + ' has logged ' + (online ? 'in'  : 'out'));
 					this.friendListOnline[idx] = online;
 					this.sortFriendsList();
 					return;
@@ -446,19 +454,11 @@ export default class GameConnection extends GameShell {
 
 		let l = Utility.usernameToHash(s);
 		this.clientStream.queue(Ops.ADD_IGNORE(l));
-		if (this.ignoreListCount < GameConnection.socialListSize)
+		if (this.ignoreListCount < this.socialListSize)
 			this.ignoreList[this.ignoreListCount++] = l;
 	}
 	
 	ignoreRemove(l) {
-		// for (let ignored = 0; ignored < this.ignoreListCount; ignored++) {
-			// if (this.ignoreList[ignored] === l) {
-				// this.ignoreListCount--;
-				// for (let j = ignored; j < this.ignoreListCount; j++)
-					// this.ignoreList[j] = this.ignoreList[j + 1];
-				// return;
-			// }
-		// }
 		let idx = this.ignoreIdx(Utility.hashToUsername(l));
 		if (idx < 0)
 			return;
@@ -476,7 +476,7 @@ export default class GameConnection extends GameShell {
 		}
 
 		this.clientStream.queue(Ops.ADD_FRIEND(l));
-		if (this.friendListCount < GameConnection.maxSocialListSize) {
+		if (this.friendListCount < this.socialListSize) {
 			this.friendListHashes[this.friendListCount] = l;
 			this.friendListOnline[this.friendListCount++] = 0;
 		}
@@ -525,6 +525,9 @@ export default class GameConnection extends GameShell {
 	}
 }
 
-Object.defineProperty(GameConnection, 'socialListSize', {
-	value: 200,
-});
+// Object.defineProperty(GameConnection, 'socialListSize', {
+	// value: 200,
+// });
+
+// module.exports.GameConnection = GameConnection;
+export {GameConnection}

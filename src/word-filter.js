@@ -1,4 +1,5 @@
 import { Utility } from './utility';
+import JagArchive from './lib/jag';
 
 let C_TILDE = 126, C_EXCLM = 33, C_PRCNT = 37, C_AT = 64, C_ZERO = '0'.charCodeAt(0), C_NINE = '9'.charCodeAt(0),
 		C_ASTERISK = '*'.charCodeAt(0), C_BACKSLASH = '\\'.charCodeAt(0), C_BIG_A = 'A'.charCodeAt(0),
@@ -13,11 +14,11 @@ let ENCODER = new TextEncoder('utf-8');
 let DECODER = new TextDecoder('utf-8');
 
 class Chat {
-	constructor(buff) {
-		Filter.readFilteredWords(Buffer.from(Utility.loadData("badenc.txt", 0, buff)));
-		Filter.readFilteredHosts(Buffer.from(Utility.loadData("hostenc.txt", 0, buff)));
-		Filter.readFilteredHashFragments(Buffer.from(Utility.loadData("fragmentsenc.txt", 0, buff)));
-		Filter.readFilteredTLDs(Buffer.from(Utility.loadData("tldlist.txt", 0, buff)));
+	constructor(archive) {
+		Filter.readFilteredWords(Buffer.from(archive.get('badenc.txt').data));
+		Filter.readFilteredHosts(Buffer.from(archive.get('hostenc.txt').data));
+		Filter.readFilteredHashFragments(Buffer.from(archive.get('fragmentsenc.txt').data));
+		Filter.readFilteredTLDs(Buffer.from(archive.get('tldlist.txt').data));
 	}
 
 	decode(input) {

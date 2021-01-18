@@ -1,119 +1,63 @@
-import Enum from '../enum';
+let StyleList = {
+	NORMAL: 'normal',
+	BOLD: 'bold',
+	ITALIC: 'italic',
+};
 
-class FontStyle extends Enum {
-	constructor(s) {
-		super(s);
-	}
-}
-
-Object.defineProperty(FontStyle, 'NORMAL', {
-	get:() => {
-		return new FontStyle('normal');
-	},
-	set:void 0,
+let Font = (function(name = 'Times', style = StyleList.NORMAL, size = 15) {
+	return {
+		clone(props) {
+			let st = props.style || style;
+			if (!StyleList[st.toUpperCase()])
+				st = StyleList.NORMAL;
+			let sz = props.size || size;
+			return new Font(name, st, sz);
+		},
+		withStyle(s) {
+			return this.clone({style});
+		},
+		withSize(s) {
+			// return new Font(name, style, size);
+			return this.clone({size});
+		},
+		withConfig(st, sz) {
+			// return new Font(name, st || style, sz || size);
+			return this.clone({style: st || style, size: sz || size});
+		},
+		bold(sz) {
+			return this.clone({style: StyleList.BOLD, size: sz || size});
+		},
+		italic(sz) {
+			return this.clone({style: StyleList.ITALIC, size: sz || size});
+		},
+		regular(sz) {
+			return this.clone({style: StyleList.NORMAL, size: sz || size});
+		},
+		toString() {
+			return `${style} ${size}px ${name}`;
+		},
+		get string() {
+			return this.toString();
+		},
+		name,
+		style,
+		size,
+	};
 });
+const FontList = {
+	SANS: new Font("Sans"),
+	SERIF: new Font("Serif"),
+	SANSERIF: new Font("Sans-Serif"),
+	HELVETICA: new Font("Helvetica"),
+	ARIAL: new Font("Arial"),
+	TIMES: new Font("Times"),
+	TIMES_ROMAN: new Font("TimesRoman"),
+};
 
-Object.defineProperty(FontStyle, 'BOLD', {
-	get:() => {
-		return new FontStyle('bold');
-	},
-	set:void 0,
-});
+for (let k of Object.keys(StyleList))
+	Font[`STYLE_${k}`] = StyleList[k];
 
-Object.defineProperty(FontStyle, 'ITALIC', {
-	get:() => {
-		return new FontStyle('italic');
-	},
-	set:void 0,
-});
+for (let k of Object.keys(FontList))
+	Font[k] = FontList[k];
 
-class Font {
-	constructor(name, type = FontStyle.NORMAL, size = 15) {
-		this.name = name;
-		this.type = type;
-		this.size = size;
-	}
-
-	getType() {
-		return String(this.type);
-	}
-
-	withStyle(s) {
-		return new Font(this.name, s,  this.size)
-	}
-
-	bold(size = this.size) {
-		return new Font(this.name, FontStyle.BOLD, size);
-	}
-
-	italic(size = this.size) {
-		return new Font(this.name, FontStyle.ITALIC, size);
-	}
-
-	regular(size = this.size) {
-		return new Font(this.name, FontStyle.NORMAL, size);
-	}
-
-	withSize(s) {
-		return new Font(this.name, s,  this.size)
-	}
-
-	withConfig(style, size = this.size) {
-		return new Font(this.name, style,  size)
-	}
-
-	toString() {
-		return `${this.getType()} ${this.size}px ${this.name}`;
-	}
-	
-}
-
-Object.defineProperty(Font, 'TIMES', {
-	get:() => {
-		return new Font('Times');
-	},
-	set:void 0,
-});
-
-Object.defineProperty(Font, 'TIMES_ROMAN', {
-	get:() => {
-		return new Font('TimesRoman');
-	},
-	set:void 0,
-});
-
-Object.defineProperty(Font, 'HELVETICA', {
-	get:() => {
-		return new Font('Helvetica');
-	},
-	set:void 0,
-});
-
-Object.defineProperty(Font, 'ARIAL', {
-	get:() => {
-		return new Font('Arial');
-	},
-	set:void 0,
-});
-
-Object.defineProperty(Font, 'SANS', {
-	get:() => {
-		return new Font('Sans');
-	},
-	set:void 0,
-});
-
-Object.defineProperty(Font, 'SERIF', {
-	get:() => {
-		return new Font('Serif');
-	},
-	set:void 0,
-});
-Object.defineProperty(Font, 'SANSERIF', {
-	get:() => {
-		return new Font('Sans-Serif');
-	},
-	set:void 0,
-});
-
-export { Font as default };
+module.exports = Font;

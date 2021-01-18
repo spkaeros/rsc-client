@@ -1,17 +1,24 @@
-import GameException from './lib/game-exception';
-import Timer from './timer';
-import rng from './lib/isaac';
+let GameException = require('./lib/game-exception');
+let rng = require('./lib/isaac');
+let Timer = require('./timer');
+let Ops = require('./packets');
 
+// let {Timer} = require('./timer');
+// import PacketBuilder from './packets';
 const txtEncoder = new TextEncoder('utf-8');
 
-const HEADER_LEN = 3;
-// 24575 is maximum encodable byte length with the Jagex protocol (+3 for header/opcode)
+// The meta-data byte length for our packets.
+// structured as 2 bytes reserved for possible length information, and then 1 byte for the opcode.
+// Technically the 1 byte for opcode can be placed in the second byte maybe in the event
+// we're dealing with a frame-less or `raw` packet, I do believe
+const HEADER_SZ = 3;
+//24575 is maximum encodable byte length with the Jagex protocol (+3 for header/opcode)
+//the buffer can not possibly be filled in one packet beyond that length.
+// JaGEx and also I think it's plenty reasonable to default the buffer to 5000 bytes
 const BYTES_LIMIT = 5000;
 
 class Packet {
 	get opcode() {
-		if (!this._opcode)
-			this._opcode = 0;
 		return this._opcode;
 	}
 
@@ -19,20 +26,17 @@ class Packet {
 		this._opcode = op;
 	}
 	
-	constructor(id = -1) {
-		// the limitation is in the header encoding.  Length is encoded conditionally,
-		// and one branch subtracts 160 from the first byte (big-endian), before the shift resulting in
-		// a range of up to 24320, add 255 to this and you get 24575, our maximum encodable smart length.
-		this.data = new Int8Array(BYTES_LIMIT+HEADER_LEN);
+	constructor(op = -1) {
+		this.data = new Int8Array(BYTES_LIMIT+HEADER_SZ);
 		this.readLength = 0;
 		this.writeMarker = 0;
-		this.endMarker = HEADER_LEN;
+		this.endMarker = HEADER_SZ;
 		this.didError = false;
 		this.exceptionMessage = '';
 		this.writer = new Timer(20); // 1 write flush every 20 engine loops(.4 sec), 2.5 per sec
 		this.reader = new Timer(5); // 1 read call every 5 engine loops(.1 sec), 10 per sec
 		this.readTries = 0;
-		this.opcode = id;
+		this.opcode = op;
 		this.pqueue = [];
 	}
 
@@ -47,115 +51,8 @@ class Packet {
 		await this.readStreamBytes(len, 0, buff);
 	}
 	
-	async nextPacket() {
-		try {
-			return await this.reader.tick(async () => {
-				try {
-					if (this.didError) {
-						this.reset();
-						this.writeMarker = HEADER_LEN;
-						this.didError = true;
-						this.socketException = new GameException(Error(this.exceptionMessage));
-						this.pqueue = [];
-						return this.socketException;
-					}
-					if (++this.readTries > 1000) {
-						this.reader.tickCount = 0;
-						this.exceptionMessage = 'time-out';
-						this.didError = true;
-						this.socketException = new GameException(Error(this.exceptionMessage));
-						this.pqueue = [];
-						this.reset();
-						return this.socketException;
-					}
-
-					// header
-					if (this.readLength === 0 && this.availableStream() >= 2) {
-						this.readTries = 0;
-						this.readLength = await this.UInt8();
-						if (this.readLength >= 160)
-							this.readLength = ((this.readLength - 160) << 8) | await this.UInt8();
-					}
-					// frame
-					if (this.readLength > 0 && this.availableStream() >= this.readLength) {
-						this.readTries = 0;
-						let readLen = this.readLength;
-						let buff = Buffer.alloc(readLen);
-						if (readLen < 160)
-							buff[--readLen] = await this.UInt8();
-						if (readLen > 0)
-							await this.readStreamBytes(buff, 0, readLen);
-						this.readLength = 0;
-						this.reader.tickCount = 0;
-						this.readTries = 0;
-						if (Packet.inCipher)
-							buff[0] = (buff[0] - Packet.inCipher.random())&0xFF;
-						return Int8Array.from(buff);
-					}
-					
-					this.reader.tickCount = this.reader.tickThreshold - 1;
-				} catch(e) {
-					console.error(e);
-					throw e;
-				}
-				return void 0;
-			});
-		} catch(e) {
-			throw e;
-			return e;
-		}
-	}
-	
 	hasPacket() {
 		return this.writeMarker > 0 || this.pqueue.length > 0;
-	}
-
-	// Increments the timer 
-	tick() {
-		this.writer.tick(() => {
-			// Check to see if something went horribly wrong since last tick
-			if (this.didError) {
-				this.reset();
-				this.writeMarker = HEADER_LEN;
-				this.socketException = new GameException(Error(this.exceptionMessage));
-				this.pqueue = [];
-				return;
-			}
-			if (!this.hasPacket()) {
-				// No data to flush, we need to try again next tick
-				this.writer.tickCount = this.writer.tickThreshold-1;
-				return;
-			}
-			this.writer.tickCount = 0;
-			this.flush();
-		});
-	}
-	
-	// Flushes the outgoing packet buffer contents to the underlying socket connection.
-	flush() {
-		if (this.pqueue.length > 0 || this.writeMarker > 0) {
-			if (this.writeMarker > 0) {
-				this.send(this);
-				this.reset();
-			}
-			for (let enqueued = this.pqueue.shift(); enqueued; enqueued = this.pqueue.shift()) {
-				this.send(enqueued);
-			}
-		}
-	}
-
-	add(p) {
-		this.pqueue.push(p);
-	}
-
-	queue(p) {
-		this.pqueue.push(p);
-	}
-
-	send(p) {
-		if (!p.data)
-			console.warn("data-less packet, huge problem:" + p);
-		this.writeStreamBytes(p.data, 0, p.writeMarker);
 	}
 
 	// TODO:Rename sendPacket to something like encodePacket or just encode
@@ -204,11 +101,11 @@ class Packet {
 		}
 
 		if (!this.data)
-			this.data = new Uint8Array(BYTES_LIMIT+3);
+			this.data = new Uint8Array(BYTES_LIMIT+HEADER_SZ);
 
 		this.data[this.writeMarker + 2] = op & 0xFF;
-		if (op !== 0 && Packet.outCipher)
-			this.data[this.writeMarker + 2] = (op + Packet.outCipher.random()) & 0xFF;
+		if (op && Ops.outCipher)
+			this.data[this.writeMarker + 2] = (op + Ops.outCipher.random()) & 0xFF;
 		// set end caret to the buffer position directly following header bytes and opcode
 		this.endMarker = this.writeMarker + 3;
 		this.data[this.endMarker] = 0;
@@ -231,11 +128,11 @@ class Packet {
 	}
 
 	async getString() {
-		if (this.Uint8() !== 0) {
+		if (this.UInt8() !== 0) {
 			return "";
 		}
 		let s = "";
-		for (let i = this.Uint8(); i !== 0; i = this.Uint8())
+		for (let i = this.UInt8(); i !== 0; i = this.UInt8())
 			s += String.fromCharCode(i);
 
 		return s;
@@ -253,8 +150,9 @@ class Packet {
 
 	async getSmart08_32() {
 		let i = await this.UInt8();
-		if (i >= 128)
+		if (i >= 128) {
 			return ((i-128)<<24) | (await this.UInt8() << 16) | (await this.UInt8() << 8) | await this.UInt8();
+		}
 		return i;
 	}
 
@@ -299,13 +197,13 @@ class Packet {
 
 	// Queues up a big-endian unsigned short integer (uint16) into the current output packet buffer.
 	putShort(i) {
-		this.putUByte(i >> 8);
+		this.putUByte(i >>> 8);
 		this.putUByte(i);
 	}
 	
 	// Queues up a big-endian unsigned integer (uint32) into the current output packet buffer.
 	putInt(i) {
-		this.putShort(i>>16);
+		this.putShort(i >>> 16);
 		this.putShort(i);
 	}
 
@@ -407,33 +305,4 @@ class Packet {
 
 }
 
-Object.defineProperties(Packet, {
-	'initCipher': {
-		value: seed => {
-			Packet.inCipher.seed(seed);
-			Packet.outCipher.seed(seed);
-		},
-	},
-	'inCipher': {
-		get: () => {
-			if (!Packet._isaacIn)
-				Packet._isaacIn = rng();
-			return Packet._isaacIn;
-		},
-		set: c => {
-			Packet._isaacIn = c;
-		},
-	},
-	'outCipher': {
-		get: () => {
-			if (!Packet._isaacOut)
-				Packet._isaacOut = rng();
-			return Packet._isaacOut;
-		},
-		set: c => {
-			Packet._isaacOut = c;
-		},
-	},
-});
-
-export { Packet as default }
+module.exports = Packet;
