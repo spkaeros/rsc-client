@@ -75,8 +75,14 @@ function PacketBuilder(opcode = 0) {
 				throw Error('Type of alleged 64 bit uint is not a bigint!')
 
 			if (caret+8 < 5000) {
-				frame.writeUInt32BE(Number(l >> 32n & 0xFFFFFFFFn), caret);
-				frame.writeUInt32BE(Number(l & 0xFFFFFFFFn), caret+4);
+				frame.writeUInt8(Number(l >> 56n & 0xFFn), caret);
+				frame.writeUInt8(Number(l >> 48n & 0xFFn), caret+1);
+				frame.writeUInt8(Number(l >> 40n & 0xFFn), caret+2);
+				frame.writeUInt8(Number(l >> 32n & 0xFFn), caret+3);
+				frame.writeUInt8(Number(l >> 24n & 0xFFn), caret+4);
+				frame.writeUInt8(Number(l >> 16n & 0xFFn), caret+5);
+				frame.writeUInt8(Number(l >> 8n & 0xFFn), caret+6);
+				frame.writeUInt8(Number(l & 0xFFn), caret+7);
 				caret += 8;
 			}
 			return this;
@@ -88,22 +94,34 @@ function PacketBuilder(opcode = 0) {
 				throw Error('Type of alleged 64 bit uint is not a bigint!')
 
 			if (caret+8 < 5000) {
-				frame.writeUInt32BE(Number(l >> 32n & 0xFFFFFFFFn), caret);
-				frame.writeUInt32BE(Number(l & 0xFFFFFFFFn), caret+4);
+				frame.writeUInt8(Number(l >> 56n & 0xFFn), caret);
+				frame.writeUInt8(Number(l >> 48n & 0xFFn), caret+1);
+				frame.writeUInt8(Number(l >> 40n & 0xFFn), caret+2);
+				frame.writeUInt8(Number(l >> 32n & 0xFFn), caret+3);
+				frame.writeUInt8(Number(l >> 24n & 0xFFn), caret+4);
+				frame.writeUInt8(Number(l >> 16n & 0xFFn), caret+5);
+				frame.writeUInt8(Number(l >> 8n & 0xFFn), caret+6);
+				frame.writeUInt8(Number(l & 0xFFn), caret+7);
 				caret += 8;
 			}
 			return this;
 		},
 		putInt(i) {
 			if (caret+4 < 5000) {
-				frame.writeUInt32BE(i & 0xFFFFFFFF, caret);
+				frame.writeUInt8(i >>> 24 & 0xFF, caret);
+				frame.writeUInt8(i >>> 16 & 0xFF, caret+1);
+				frame.writeUInt8(i >>> 8 & 0xFF, caret+2);
+				frame.writeUInt8(i & 0xFF, caret+3);
 				caret += 4;
 			}
 			return this;
 		},
 		putUint32(i) {
 			if (caret+4 < 5000) {
-				frame.writeUInt32BE(i & 0xFFFFFFFF, caret);
+				frame.writeUInt8(i >>> 24 & 0xFF, caret);
+				frame.writeUInt8(i >>> 16 & 0xFF, caret+1);
+				frame.writeUInt8(i >>> 8 & 0xFF, caret+2);
+				frame.writeUInt8(i & 0xFF, caret+3);
 				caret += 4;
 			}
 			return this;
@@ -124,8 +142,8 @@ function PacketBuilder(opcode = 0) {
 			if (i < 0x80) {
 				frame.writeUInt8(i, caret++);
 			} else {
-				frame.writeUInt16BE(i+0x8000, caret);
-				caret += 2;
+				frame.writeUInt8(((i >>> 8) + 0x80) & 0xFF, caret++);
+				frame.writeUInt8(i & 0xFF, caret++);
 			}
 			return this;
 		},
@@ -137,15 +155,15 @@ function PacketBuilder(opcode = 0) {
 		},
 		putShort(i) {
 			if (caret+2 < 5000) {
-				frame.writeUInt16BE(i & 0xFFFF, caret);
-				caret += 2;
+				frame.writeUInt8((i >>> 8) & 0xFF, caret++);
+				frame.writeUInt8(i & 0xFF, caret++);
 			}
 			return this;
 		},
 		putUint16(i) {
 			if (caret+2 < 5000) {
-				frame.writeUInt16BE(i & 0xFFFF, caret);
-				caret += 2;
+				frame.writeUInt8((i >>> 8) & 0xFF, caret++);
+				frame.writeUInt8(i & 0xFF, caret++);
 			}
 			return this;
 		},
