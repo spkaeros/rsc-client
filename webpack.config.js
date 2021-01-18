@@ -1,21 +1,24 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
-const webpack = require('webpack');
 const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
+// const webpack = require('webpack');
 
 module.exports = {
     entry: path.resolve(__dirname, 'index.js'),	
     // entry: './index.js',
     output: {
-        path: path.resolve(__dirname, 'dist'),
+        path: path.resolve(__dirname, 'pkg'),
         filename: 'rsclassic.js',
     },
     plugins: [
         new HtmlWebpackPlugin(),
         new WasmPackPlugin({
+        	path: './pkg',
             crateDirectory: path.resolve(__dirname, "game/static"),
-			contentBasePublicPath: '/game/static'
+			contentBasePublicPath: '/game/static',
+			output: 'rsclassic.wasm'
         }),
+        // new babelLoader(),
         // Have this example work in Edge which doesn't ship `TextEncoder` or
         // `TextDecoder` at this time.
         // new webpack.ProvidePlugin({
@@ -23,6 +26,5 @@ module.exports = {
           // TextEncoder: ['text-encoding', 'TextEncoder']
         // })
     ],
-    mode: 'production'
-    // mode: 'debug'
+    mode:'development'
 };
